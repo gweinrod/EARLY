@@ -24,6 +24,8 @@ import tensorflow as tf
 ROOT = Path(__file__).resolve().parents[1]
 CALIBRATION_DIR = ROOT / "data" / "calibration"
 VOICE_BANK_DIR = ROOT / "data" / "voice-bank"
+ARCHIVE_CALIBRATION_DIR = ROOT / "data" / "training-archive" / "calibration"
+ARCHIVE_VOICE_BANK_DIR = ROOT / "data" / "training-archive" / "voice-bank"
 MODELS_DIR = ROOT / "public" / "models"
 EMBEDDING_LEN = 13
 
@@ -37,6 +39,7 @@ def _add_sample(
     xs: list[list[float]],
     ys: list[int],
     vocab: dict[str, int],
+    seen: set[str],
 ) -> bool:
     if row.get("stageId") != stage_id:
         return False
@@ -53,6 +56,11 @@ def _add_sample(
     if not label_key or label_key not in vocab:
         return False
 
+    dedupe_key = f"{label_key}:{','.join(f'{float(x):.6f}' for x in emb)}"
+    if dedupe_key in seen:
+        return False
+    seen.add(dedupe_key)
+
     xs.append([float(x) for x in emb])
     ys.append(vocab[label_key])
     return True
@@ -65,8 +73,15 @@ def load_samples(stage_id: str) -> tuple[list[list[float]], list[int], dict[str,
 
     xs: list[list[float]] = []
     ys: list[int] = []
+    seen: set[str] = set()
 
-    for samples_dir in (VOICE_BANK_DIR, CALIBRATION_DIR):
+    sample_dirs = (
+        ARCHIVE_VOICE_BANK_DIR,
+        ARCHIVE_CALIBRATION_DIR,
+        VOICE_BANK_DIR,
+        CALIBRATION_DIR,
+    )
+    for samples_dir in sample_dirs:
         if not samples_dir.is_dir():
             continue
         for path in samples_dir.glob("*.json"):
@@ -74,9 +89,23 @@ def load_samples(stage_id: str) -> tuple[list[list[float]], list[int], dict[str,
                 row = json.loads(path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 continue
-            _add_sample(row, stage_id, xs, ys, vocab)
+            _add_sample(row, stage_id, xs, ys, vocab, seen)
 
     return xs, ys, vocab
+
+
+def apply_base_weights(model: tf.keras.Model, base_path: Path) -> None:
+    spec = json.loads(base_path.read_text(encoding="utf-8"))
+    dense_layers = [layer for layer in model.layers if layer.weights]
+    exported = spec.get("dense", [])
+    if len(dense_layers) != len(exported):
+        raise SystemExit(
+            f"base-weights.json has {len(exported)} dense layers, model has {len(dense_layers)}",
+        )
+    import numpy as np
+
+    for layer, weights in zip(dense_layers, exported, strict=True):
+        layer.set_weights([np.array(weights["kernel"]), np.array(weights["bias"])])
 
 
 def build_model(num_classes: int) -> tf.keras.Model:
@@ -120,16 +149,26 @@ def main() -> None:
     y_t = tf.constant(ys, dtype=tf.int32)
     num_classes = len(vocab)
 
+    stage_dir = MODELS_DIR / args.stage
+    stage_dir.mkdir(parents=True, exist_ok=True)
+    base_path = stage_dir / "base-weights.json"
+    finetune = base_path.is_file()
+
     model = build_model(num_classes)
+    if finetune:
+        apply_base_weights(model, base_path)
+        print(f"Fine-tuning from {base_path.name} ({len(xs)} samples, archive + cloud).")
+    else:
+        print(f"Training new model from scratch ({len(xs)} samples).")
+
+    lr = 0.0005 if finetune else 0.002
+    epochs = min(args.epochs, 35) if finetune and args.epochs >= 60 else args.epochs
     model.compile(
-        optimizer=tf.keras.optimizers.Adam(learning_rate=0.002),
+        optimizer=tf.keras.optimizers.Adam(learning_rate=lr),
         loss="sparse_categorical_crossentropy",
         metrics=["accuracy"],
     )
-    model.fit(x_t, y_t, epochs=args.epochs, batch_size=min(16, len(xs)), shuffle=True, verbose=1)
-
-    stage_dir = MODELS_DIR / args.stage
-    stage_dir.mkdir(parents=True, exist_ok=True)
+    model.fit(x_t, y_t, epochs=epochs, batch_size=min(16, len(xs)), shuffle=True, verbose=1)
 
     dense_export: list[dict] = []
     for layer in model.layers:
@@ -143,17 +182,15 @@ def main() -> None:
             }
         )
 
+    weights_spec = {
+        "inputDim": EMBEDDING_LEN,
+        "numClasses": num_classes,
+        "dense": dense_export,
+    }
     weights_path = stage_dir / "train-weights.json"
-    weights_path.write_text(
-        json.dumps(
-            {
-                "inputDim": EMBEDDING_LEN,
-                "numClasses": num_classes,
-                "dense": dense_export,
-            },
-            indent=2,
-        )
-        + "\n",
+    weights_path.write_text(json.dumps(weights_spec, indent=2) + "\n", encoding="utf-8")
+    (stage_dir / "base-weights.json").write_text(
+        json.dumps(weights_spec, indent=2) + "\n",
         encoding="utf-8",
     )
 

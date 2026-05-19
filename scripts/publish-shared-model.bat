@@ -54,7 +54,7 @@ if errorlevel 2 (
   exit /b 1
 )
 
-echo [1/4] Pull samples from Vercel Blob...
+echo [1/5] Pull samples from Vercel Blob...
 call npm run calibration:pull
 if errorlevel 1 (
   echo FAILED at calibration:pull
@@ -62,7 +62,15 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/4] Train TensorFlow.js model...
+echo [2/5] Archive samples locally (kept after you clear cloud)...
+call npm run training:archive
+if errorlevel 1 (
+  echo FAILED at training:archive
+  exit /b 1
+)
+
+echo.
+echo [3/5] Train TensorFlow.js model (fine-tune if base-weights.json exists)...
 python tools\train_global_model.py --stage %STAGE%
 if errorlevel 1 (
   echo FAILED at train_global_model.py
@@ -71,7 +79,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [3/4] Bump app version...
+echo [4/5] Bump app version...
 call npm run version:bump
 if errorlevel 1 (
   echo FAILED at version:bump
@@ -79,7 +87,7 @@ if errorlevel 1 (
 )
 
 echo.
-echo [4/4] Done. Model files: public\models\%STAGE%\
+echo [5/5] Done. Model files: public\models\%STAGE%\
 type public\models\%STAGE%\manifest.json 2>nul
 echo.
 

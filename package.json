@@ -1,7 +1,7 @@
 {
   "name": "early",
   "private": true,
-  "version": "0.40.0",
+  "version": "0.41.0",
   "type": "module",
   "scripts": {
     "version:bump": "node scripts/bump-version.mjs",
@@ -13,6 +13,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "calibration:pull": "node tools/pull_calibration_samples.mjs",
+    "training:archive": "node tools/archive_training_samples.mjs",
+    "training:export-base": "node tools/export_base_weights.mjs",
     "seed:blob-counts": "node tools/seed-blob-counts.mjs",
     "calibration:train": "python tools/train_global_model.py",
     "publish:model": "scripts\\publish-shared-model.bat"

@@ -49,7 +49,10 @@ function showDataStatus(msg: string): void {
 async function onClearServer(): Promise<void> {
   if (
     !confirm(
-      'Delete ALL voice samples and teacher judgments from the server (Vercel Blob)?\n\nThis cannot be undone.',
+      'Delete ALL voice samples and teacher judgments from the server (Vercel Blob)?\n\n' +
+        'The shared classroom model on the app is NOT removed.\n' +
+        'Run publish from your PC after new practice to add training data back into the model.\n\n' +
+        'This cannot be undone.',
     )
   ) {
     return;
@@ -63,7 +66,9 @@ async function onClearServer(): Promise<void> {
 async function onClearLocal(): Promise<void> {
   if (
     !confirm(
-      'Clear on THIS device:\n• session log\n• voice bank\n• neural models\n• pending uploads\n\nYou will need to record your voice again. Continue?',
+      'Clear on THIS device:\n• session log\n• voice bank\n• browser model cache\n• pending uploads\n\n' +
+        'The shared model (v3+) reloads from the app on refresh.\n' +
+        'Local training archive on your PC is not affected.\n\nContinue?',
     )
   ) {
     return;
