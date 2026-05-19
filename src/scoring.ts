@@ -1,6 +1,7 @@
+import type { DspPrediction } from './dsp-predict';
 import type { FeedbackItem } from './feedback';
 
-export type ScoringBasis = 'heuristic' | 'asr' | 'asr_only';
+export type ScoringBasis = 'dsp_tf' | 'heuristic' | 'asr' | 'asr_only';
 
 /** Any explicit pass/fail from DSP heuristics (not info/warn). */
 export function heuristicVerdict(items: FeedbackItem[]): boolean | null {
@@ -11,16 +12,19 @@ export function heuristicVerdict(items: FeedbackItem[]): boolean | null {
 }
 
 /**
- * Classroom scoring: trust acoustic heuristics when available, ASR only as fallback.
- * Month-one path toward ML — session logs keep both signals for training.
+ * Student pass/fail: DSP (TF + heuristics) first, ASR only when DSP has no signal.
  */
 export function deriveAppPass(
   asrPass: boolean,
-  heuristicItems: FeedbackItem[],
+  dsp: Pick<DspPrediction, 'dspPass' | 'heuristicPass' | 'tf' | 'guessedWord'>,
+  targetWord: string,
 ): { appPass: boolean; basis: ScoringBasis } {
-  const h = heuristicVerdict(heuristicItems);
-  if (h !== null) {
-    return { appPass: h, basis: 'heuristic' };
+  const t = targetWord.toLowerCase();
+  if (dsp.tf && dsp.tf.confidence >= 0.22) {
+    return { appPass: dsp.guessedWord === t, basis: 'dsp_tf' };
+  }
+  if (dsp.heuristicPass !== null) {
+    return { appPass: dsp.dspPass, basis: 'heuristic' };
   }
   return { appPass: asrPass, basis: 'asr' };
 }

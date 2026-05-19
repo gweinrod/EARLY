@@ -1,6 +1,4 @@
-import { VC } from './data';
 import { NMCC, type Frame } from './dsp';
-import { trainingBuffer } from './net';
 
 export type FeedbackType = 'pass' | 'fail' | 'warn' | 'info';
 
@@ -74,13 +72,6 @@ export function addHistory(
   $('histRows').innerHTML = html;
 }
 
-export function updateNetBadge(n: number, loss?: number): void {
-  const badge = $('netBadge');
-  const txt = $('netTxt');
-  const lossStr = loss !== undefined ? ` · loss: ${loss.toFixed(3)}` : '';
-  txt.textContent = `pure JS · 13→16→8→6 · ${n} sample${n !== 1 ? 's' : ''}${lossStr} · ${n >= 8 ? 'model active' : 'model cold'}`;
-  badge.className = n >= 8 ? 'active' : 'info';
-}
 
 export function drawHeatmap(frames: Frame[]): void {
   show('hmWrap');
@@ -137,24 +128,23 @@ export function drawHeatmap(frames: Frame[]): void {
   }
 }
 
-export function showProbBars(probs: number[], ms: string): void {
+export function showTfWordBars(
+  top3: { word: string; probability: number }[],
+  topConfidence: number,
+): void {
   show('pbWrap');
-  let top = 0;
-  for (let i = 1; i < probs.length; i++) if (probs[i] > probs[top]) top = i;
-
   let html = '';
-  for (let i = 0; i < VC.length; i++) {
-    const p = Math.round(probs[i] * 100);
-    const isTop = i === top;
+  for (const row of top3) {
+    const p = Math.round(row.probability * 100);
+    const isTop = row.probability >= topConfidence - 1e-6;
     html += `<div class="pb-row">
-      <span class="pb-lbl${isTop ? ' hi' : ''}">${VC[i].label}</span>
+      <span class="pb-lbl${isTop ? ' hi' : ''}">${row.word}</span>
       <div class="pb-bg"><div class="pb-fill${isTop ? ' hi' : ''}" style="width:${p}%"></div></div>
       <span class="pb-val${isTop ? ' hi' : ''}">${p}%</span>
     </div>`;
   }
   $('pbBars').innerHTML = html;
-  const n = trainingBuffer.X.length;
-  $('pbMeta').textContent = `inference ${ms}ms · ${n} training sample${n !== 1 ? 's' : ''} · ${n < 8 ? 'cold' : 'active'}`;
+  $('pbMeta').textContent = 'TensorFlow.js WASM · whole-word classifier';
 }
 
 export function drawWave(an: AnalyserNode, listening: () => boolean): () => void {

@@ -1,12 +1,17 @@
 import { createSpeechRecognition, transcriptMatchesTarget } from './asr';
-import { initCollectorPanel, promptTeacherJudgment, syncStudentIdField } from './collector-ui';
+import {
+  initCollectorPanel,
+  promptTeacherJudgment,
+  setJudgmentCompleteHandler,
+  showDspVerdict,
+  syncStudentIdField,
+} from './collector-ui';
 import { GROUP_KEYS, GROUPS, W2C } from './data';
-import { extractFrames, extractNucleusMfcc, resetMelFilterbank } from './dsp';
-import { heuristicFeedback, type FeedbackItem } from './feedback';
+import { ensureDspEngine, runDspPrediction, type DspPrediction } from './dsp-predict';
+import { extractFrames, resetMelFilterbank } from './dsp';
 import { generateNonsenseWord, pickCurriculumWord } from './phonemes/generator';
 import { analyzeReferenceCatalog } from './reference-offline';
 import { buildRecordingBlob, createMediaRecorder } from './recorder';
-import { oneHot, trainingBuffer, vowelNet } from './net';
 import { applySettingsToDocument, loadSettings, saveSettings, type AppSettings } from './settings';
 import {
   flagsFromFeedback,
@@ -16,6 +21,7 @@ import {
 } from './session-log';
 import { deriveAppPass } from './scoring';
 import { acousticStudentMessage, toStudentFeedback } from './student-feedback';
+import { trainOnCalibrationSample } from './tf-phoneme';
 import {
   $,
   addFB,
@@ -26,9 +32,8 @@ import {
   hide,
   show,
   showErr,
-  showProbBars,
+  showTfWordBars,
   showResultBanner,
-  updateNetBadge,
   updateScores,
 } from './ui';
 
@@ -41,8 +46,7 @@ let mediaRec: MediaRecorder | null = null;
 let recStream: MediaStream | null = null;
 let listening = false;
 let stopWave: (() => void) | null = null;
-let lastNuc: number[] | null = null;
-let lastHeuristicItems: FeedbackItem[] = [];
+let lastDsp: DspPrediction | null = null;
 let pendingHeard: string | null = null;
 let pendingAsrPass: boolean | null = null;
 
@@ -83,53 +87,7 @@ function nextWord(): void {
   }
 }
 
-/** Run vowel net silently for training data; optional debug UI. */
-function runVowelNet(frames: ReturnType<typeof extractFrames>): number | null {
-  const gtype = GROUPS[curGroup]?.type;
-  if (gtype !== 'vowel') return null;
-
-  lastNuc = extractNucleusMfcc(frames);
-  if (!lastNuc) return null;
-
-  const t0 = performance.now();
-  const probs = vowelNet.predict(lastNuc);
-  const ms = (performance.now() - t0).toFixed(2);
-
-  if (settings.showMlDebug) {
-    showProbBars(probs, ms);
-    let top = 0;
-    for (let i = 1; i < probs.length; i++) if (probs[i] > probs[top]) top = i;
-    const exp = W2C[curWord];
-    const conf = Math.round(probs[top] * 100);
-    const n = trainingBuffer.X.length;
-    if (n < 8) {
-      addFB({
-        t: 'info',
-        s: `Neural net: model cold — need ~10 correct vowel attempts (have ${n})`,
-      });
-    } else if (top === exp) {
-      addFB({ t: 'pass', s: `Neural net: class ${top} ✓ (${conf}% · ${ms}ms)` });
-    } else {
-      addFB({ t: 'fail', s: `Neural net: predicted ${top}, expected ${exp ?? '?'}` });
-    }
-  }
-
-  return W2C[curWord] ?? null;
-}
-
-function trainVowelNetSilently(): void {
-  if (!lastNuc) return;
-  const ci = W2C[curWord];
-  if (ci === undefined) return;
-  trainingBuffer.X.push(lastNuc.slice());
-  trainingBuffer.Y.push(oneHot(ci, 6));
-  const loss = vowelNet.train(trainingBuffer.X, trainingBuffer.Y);
-  if (settings.showMlDebug) {
-    updateNetBadge(trainingBuffer.X.length, loss);
-  }
-}
-
-function displayFeedback(items: FeedbackItem[]): void {
+function displayFeedback(items: ReturnType<typeof runDspPrediction>['heuristicItems']): void {
   const shown = settings.collectorMode && !settings.showMlDebug ? toStudentFeedback(items) : items;
   for (const fb of shown) addFB(fb);
 }
@@ -152,13 +110,20 @@ async function processAudio(): Promise<void> {
 
     if (settings.showMlDebug) drawHeatmap(frames);
 
-    lastNuc = null;
-    lastHeuristicItems = heuristicFeedback(frames, curWord, curGroup);
-    runVowelNet(frames);
-    displayFeedback(lastHeuristicItems);
+    lastDsp = runDspPrediction(frames, curWord, curGroup);
+    displayFeedback(lastDsp.heuristicItems);
+
+    if (settings.showMlDebug && lastDsp.tf) {
+      showTfWordBars(lastDsp.tf.top3, lastDsp.tf.confidence);
+    }
+
+    if (settings.collectorMode) {
+      showDspVerdict(lastDsp.summary, lastDsp.guessedWord, curWord);
+    }
   } catch {
     displayFeedback([{ t: 'warn', s: 'Could not decode audio' }]);
     pendingHeard = null;
+    lastDsp = null;
     return;
   }
 
@@ -170,7 +135,21 @@ async function processAudio(): Promise<void> {
 }
 
 function finishAttempt(heard: string, asrPass: boolean): void {
-  const { appPass, basis } = deriveAppPass(asrPass, lastHeuristicItems);
+  const dsp =
+    lastDsp ??
+    ({
+      embedding: null,
+      heuristicItems: [],
+      heuristicPass: null,
+      tf: null,
+      guessedWord: null,
+      guessConfidence: 0,
+      targetProbability: 0,
+      summary: 'DSP not run',
+      dspPass: false,
+    } satisfies DspPrediction);
+
+  const { appPass, basis } = deriveAppPass(asrPass, dsp, curWord);
 
   total++;
   if (appPass) correct++;
@@ -183,12 +162,10 @@ function finishAttempt(heard: string, asrPass: boolean): void {
     : {
         t: appPass ? ('pass' as const) : ('fail' as const),
         s:
-          `app ${appPass ? 'pass' : 'fail'} (${basis}) · speech-to-text: “${heard}” — ` +
-          `${asrPass ? 'matches target' : `expected “${curWord}”`}`,
+          `app ${appPass ? 'pass' : 'fail'} (${basis}) · DSP “${dsp.guessedWord ?? '—'}” · ` +
+          `ASR “${heard}”`,
       };
   addFB(studentMsg, true);
-
-  if (appPass) trainVowelNetSilently();
 
   if (settings.collectorMode) {
     const sidInput = $('studentId') as HTMLInputElement;
@@ -202,16 +179,29 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       asrPass,
       appPass,
       scoringBasis: basis,
-      heuristicFlags: flagsFromFeedback(lastHeuristicItems),
-      asrTranscriptWrong: null,
-      nucleusMfcc: lastNuc,
+      heuristicFlags: flagsFromFeedback(dsp.heuristicItems),
+      nucleusMfcc: dsp.embedding,
       vowelClassIndex: W2C[curWord] ?? null,
+      dspGuessWord: dsp.guessedWord,
+      dspGuessConfidence: dsp.guessConfidence,
+      dspTargetProbability: dsp.targetProbability,
+      dspPass: dsp.dspPass,
+      dspSummary: dsp.summary,
       teacherAgrees: null,
+      asrTranscriptWrong: null,
+      dspGuessWrong: null,
     });
     promptTeacherJudgment(attempt);
   }
 
   stopRec();
+}
+
+async function onTeacherJudgment(agrees: boolean, asrWrong: boolean, dspWrong: boolean): Promise<void> {
+  if (!lastDsp?.embedding) return;
+  if (agrees && !asrWrong && !dspWrong) {
+    await trainOnCalibrationSample(lastDsp.embedding, curWord);
+  }
 }
 
 async function toggleRec(): Promise<void> {
@@ -241,7 +231,6 @@ async function toggleRec(): Promise<void> {
     };
     mediaRec.start(100);
 
-    // iOS: fresh SpeechRecognition per tap, started only inside user gesture
     const recognition = createSpeechRecognition();
     if (recognition) {
       recognition.onresult = (e: SpeechRecognitionEvent) => {
@@ -314,9 +303,6 @@ function applySettingsUi(): void {
   const debugToggle = $('debugMode') as HTMLInputElement;
   debugToggle.checked = settings.showMlDebug;
 
-  if (settings.showMlDebug) show('netBadge');
-  else hide('netBadge');
-
   const collectorPanel = $('collectorPanel');
   if (settings.collectorMode) show('collectorPanel');
   else hide('collectorPanel');
@@ -328,6 +314,9 @@ function init(): void {
   initPills();
   if (settings.collectorMode) {
     initCollectorPanel();
+    setJudgmentCompleteHandler((j) => {
+      void onTeacherJudgment(j.agrees, j.asrWrong, j.dspWrong);
+    });
     const meta = getSessionMeta();
     syncStudentIdField(meta.studentId);
   }
@@ -353,7 +342,11 @@ function init(): void {
     showErr('Microphone needs HTTPS or localhost — use Safari on iPad after deploying to Vercel.');
   }
 
-  if (settings.showMlDebug) updateNetBadge(0);
+  void ensureDspEngine().then(() => {
+    $('netTxt').textContent = 'TensorFlow.js WASM · word classifier ready';
+    show('netBadge');
+  });
+
   nextWord();
 
   if (REFERENCE_AUDIO_PATHS.length > 0) {

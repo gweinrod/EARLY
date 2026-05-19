@@ -7,4 +7,7 @@ export default defineConfig({
     host: true,
     port: 5173,
   },
+  optimizeDeps: {
+    exclude: ['@tensorflow/tfjs-backend-wasm'],
+  },
 });

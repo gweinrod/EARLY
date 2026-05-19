@@ -16,13 +16,20 @@ export interface AttemptLog {
   asrPass: boolean;
   /** Pass/fail shown to student (heuristics first, ASR fallback). */
   appPass: boolean;
-  scoringBasis: 'heuristic' | 'asr' | 'asr_only';
+  scoringBasis: 'heuristic' | 'asr' | 'asr_only' | 'dsp_tf';
   heuristicFlags: HeuristicFlag[];
   nucleusMfcc: number[] | null;
   vowelClassIndex: number | null;
+  dspGuessWord: string | null;
+  dspGuessConfidence: number | null;
+  dspTargetProbability: number | null;
+  dspPass: boolean;
+  dspSummary: string | null;
   teacherAgrees: boolean | null;
   /** Teacher says speech-to-text transcript did not match what the student said. */
   asrTranscriptWrong: boolean | null;
+  /** Teacher says DSP / neural word guess did not match what the student said. */
+  dspGuessWrong: boolean | null;
 }
 
 export interface SessionMeta {
@@ -57,15 +64,20 @@ export function setStudentId(studentId: string): void {
 }
 
 function normalizeAttempt(row: AttemptLog): AttemptLog {
-  if (row.appPass !== undefined && row.scoringBasis !== undefined) {
-    return { ...row, asrTranscriptWrong: row.asrTranscriptWrong ?? null };
-  }
-  return {
+  const base: AttemptLog = {
     ...row,
-    appPass: row.asrPass,
-    scoringBasis: 'asr_only',
+    appPass: row.appPass ?? row.asrPass,
+    scoringBasis: row.scoringBasis ?? 'asr_only',
+    dspPass: row.dspPass ?? row.appPass ?? row.asrPass,
+    dspGuessWord: row.dspGuessWord ?? null,
+    dspGuessConfidence: row.dspGuessConfidence ?? null,
+    dspTargetProbability: row.dspTargetProbability ?? null,
+    dspSummary: row.dspSummary ?? null,
     asrTranscriptWrong: row.asrTranscriptWrong ?? null,
+    dspGuessWrong: row.dspGuessWrong ?? null,
+    teacherAgrees: row.teacherAgrees ?? null,
   };
+  return base;
 }
 
 export function loadAttempts(): AttemptLog[] {
@@ -96,16 +108,19 @@ export function logAttempt(entry: Omit<AttemptLog, 'id' | 'sessionId' | 'timesta
   return row;
 }
 
-export function updateTeacherJudgment(
-  attemptId: string,
-  teacherAgrees: boolean,
-  asrTranscriptWrong: boolean,
-): void {
+export interface TeacherJudgment {
+  teacherAgrees: boolean;
+  asrTranscriptWrong: boolean;
+  dspGuessWrong: boolean;
+}
+
+export function updateTeacherJudgment(attemptId: string, judgment: TeacherJudgment): void {
   const attempts = loadAttempts();
   const row = attempts.find((a) => a.id === attemptId);
   if (!row) return;
-  row.teacherAgrees = teacherAgrees;
-  row.asrTranscriptWrong = asrTranscriptWrong;
+  row.teacherAgrees = judgment.teacherAgrees;
+  row.asrTranscriptWrong = judgment.asrTranscriptWrong;
+  row.dspGuessWrong = judgment.dspGuessWrong;
   saveAttempts(attempts);
 }
 

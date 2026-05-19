@@ -1,9 +1,12 @@
-# Phoneme ML roadmap (after classroom logging)
+# Phoneme ML roadmap (calibration → classroom)
 
 ASR (Web Speech API) is useful for demos but **unreliable for scoring**. EARLY now:
 
-1. **Scores attempts** with DSP heuristics when available (`src/scoring.ts`), ASR only as fallback.
-2. Logs **`asrPass`**, **`appPass`**, **`asrTranscriptWrong`**, and teacher **agree/disagree** for training.
+1. **Full DSP pipeline** in `src/dsp.ts` (FFT → mel → MFCC) on every recording.
+2. **TensorFlow.js WASM** whole-word classifier (`src/tf-phoneme.ts`) — 13-d nucleus → 128 → 64 → 32 → ~60 curriculum words.
+3. **Teacher sees DSP guess** in the collector panel; mark **speech-to-text wrong** and/or **DSP guess wrong**.
+4. **Calibration training**: agree + neither flag wrong → one online TF step; weights persist in `localStorage`.
+5. Logs **`dspGuessWord`**, **`dspPass`**, **`appPass`**, **`asrTranscriptWrong`**, **`dspGuessWrong`**, **`teacherAgrees`**.
 
 ## Phase 2a — Train from exported session logs (next engineering)
 

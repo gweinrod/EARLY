@@ -38,8 +38,14 @@
         <button type="button" class="btn-agree" id="btnAgree">agree with app</button>
         <button type="button" class="btn-disagree" id="btnDisagree">disagree</button>
         <button type="button" class="btn-asr-wrong" id="btnAsrWrong" aria-pressed="false">speech-to-text wrong</button>
+        <button type="button" class="btn-dsp-wrong" id="btnDspWrong" aria-pressed="false">DSP guess wrong</button>
       </div>
-      <p id="judgmentHint" class="judgment-hint">Agree/disagree = app pass or fail. Tap speech-to-text wrong if the transcript is not what the student said.</p>
+      <p id="judgmentHint" class="judgment-hint">Agree/disagree = app pass or fail. Mark speech-to-text or DSP wrong when that label does not match what the student said.</p>
+      <div id="dspVerdict" class="dsp-verdict" style="display:none">
+        <p class="sec-label">DSP analysis</p>
+        <p id="dspGuessWord" class="dsp-guess-word"></p>
+        <p id="dspVerdictDetail" class="dsp-verdict-detail"></p>
+      </div>
       <p id="judgmentStatus" class="judgment-status"></p>
     </div>
     <div class="teacher-toggles">
