@@ -67,8 +67,22 @@ export function createSpeechRecognition(): SpeechRecognition | null {
   const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition;
   if (!SR) return null;
   const recognition = new SR();
-  recognition.continuous = false;
-  recognition.interimResults = false;
+  recognition.continuous = true;
+  recognition.interimResults = true;
   recognition.lang = 'en-US';
+  recognition.maxAlternatives = 1;
   return recognition;
+}
+
+/** Best final transcript from a Chrome / webkit recognition result event. */
+export function transcriptFromEvent(e: SpeechRecognitionEvent): string {
+  let text = '';
+  for (let i = e.resultIndex; i < e.results.length; i++) {
+    const chunk = e.results[i];
+    if (chunk.isFinal) text += chunk[0].transcript;
+  }
+  if (!text && e.results.length > 0) {
+    text = e.results[e.results.length - 1][0].transcript;
+  }
+  return text.trim().toLowerCase();
 }

@@ -1,4 +1,4 @@
-import { createSpeechRecognition } from './asr';
+import { createSpeechRecognition, transcriptFromEvent } from './asr';
 import {
   initCollectorPanel,
   promptTeacherJudgment,
@@ -53,6 +53,9 @@ let audioCtx: AudioContext | null = null;
 let recChunks: Blob[] = [];
 let mediaRec: MediaRecorder | null = null;
 let recStream: MediaStream | null = null;
+let activeRecognition: SpeechRecognition | null = null;
+let asrWaitTimer: ReturnType<typeof setTimeout> | null = null;
+let attemptFinalized = false;
 let listening = false;
 let stopWave: (() => void) | null = null;
 let lastDsp: DspPrediction | null = null;
@@ -110,6 +113,9 @@ async function processAudio(): Promise<void> {
     if (frames.length < 4) {
       displayFeedback([{ t: 'warn', s: 'Recording too short — try again' }]);
       pendingHeard = null;
+      attemptFinalized = true;
+      clearAsrWait();
+      releaseMic();
       return;
     }
 
@@ -136,23 +142,64 @@ async function processAudio(): Promise<void> {
     displayFeedback([{ t: 'warn', s: 'Could not decode audio' }]);
     pendingHeard = null;
     lastDsp = null;
+    attemptFinalized = true;
+    clearAsrWait();
+    releaseMic();
     return;
   }
 
-  if (settings.collectorMode) {
-    const heard = pendingHeard ?? '';
-    const asrPass = pendingAsrPass ?? false;
-    finishAttempt(heard, asrPass);
-    pendingHeard = null;
-    pendingAsrPass = null;
-    return;
+  scheduleAttemptFinalize();
+}
+
+function clearAsrWait(): void {
+  if (asrWaitTimer) {
+    clearTimeout(asrWaitTimer);
+    asrWaitTimer = null;
   }
+}
+
+function releaseMic(): void {
+  if (recStream) {
+    recStream.getTracks().forEach((t) => t.stop());
+    recStream = null;
+  }
+  activeRecognition = null;
+}
+
+function scheduleAttemptFinalize(): void {
+  if (attemptFinalized) return;
 
   if (pendingHeard !== null && pendingAsrPass !== null) {
-    finishAttempt(pendingHeard, pendingAsrPass);
-    pendingHeard = null;
-    pendingAsrPass = null;
+    finalizeAttempt();
+    return;
   }
+
+  clearAsrWait();
+  const waitMs = activeRecognition ? 2800 : 0;
+  asrWaitTimer = setTimeout(() => {
+    asrWaitTimer = null;
+    finalizeAttempt();
+  }, waitMs);
+}
+
+function finalizeAttempt(): void {
+  if (attemptFinalized) return;
+  attemptFinalized = true;
+  clearAsrWait();
+  releaseMic();
+
+  const heard = pendingHeard ?? '';
+  const asrPass = pendingAsrPass ?? false;
+  pendingHeard = null;
+  pendingAsrPass = null;
+
+  finishAttempt(heard, asrPass);
+}
+
+function applyAsrTranscript(heard: string): void {
+  pendingHeard = heard;
+  pendingAsrPass = transcriptMatchesItem(curStageId, heard, curItem);
+  if (!listening) scheduleAttemptFinalize();
 }
 
 function finishAttempt(heard: string, asrPass: boolean): void {
@@ -271,6 +318,11 @@ async function toggleRec(): Promise<void> {
     return;
   }
 
+  attemptFinalized = false;
+  clearAsrWait();
+  pendingHeard = null;
+  pendingAsrPass = null;
+
   const ctx = getAudioContext();
   if (ctx.state === 'suspended') await ctx.resume();
 
@@ -292,18 +344,21 @@ async function toggleRec(): Promise<void> {
     };
     mediaRec.start(100);
 
-    const recognition = createSpeechRecognition();
-    if (recognition) {
+    activeRecognition = createSpeechRecognition();
+    if (activeRecognition) {
+      const recognition = activeRecognition;
       recognition.onresult = (e: SpeechRecognitionEvent) => {
-        const heard = e.results[0][0].transcript.trim().toLowerCase();
-        pendingHeard = heard;
-        pendingAsrPass = transcriptMatchesItem(curStageId, heard, curItem);
-        stopRec();
+        const heard = transcriptFromEvent(e);
+        if (!heard) return;
+        applyAsrTranscript(heard);
+        if (listening) stopRec();
       };
-      recognition.onerror = () => {
-        pendingHeard = '';
-        pendingAsrPass = false;
-        stopRec();
+      recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
+        if (e.error !== 'aborted' && pendingHeard === null) {
+          pendingHeard = '';
+          pendingAsrPass = false;
+        }
+        if (listening) stopRec();
       };
       recognition.onend = () => {
         if (listening) stopRec();
@@ -311,11 +366,8 @@ async function toggleRec(): Promise<void> {
       try {
         recognition.start();
       } catch {
-        /* already started */
+        activeRecognition = null;
       }
-    } else if (settings.collectorMode) {
-      pendingHeard = '';
-      pendingAsrPass = false;
     }
 
     listening = true;
@@ -335,11 +387,18 @@ function stopRec(): void {
   if (!listening) return;
   listening = false;
   if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
-  if (recStream) recStream.getTracks().forEach((t) => t.stop());
   stopWave?.();
   stopWave = null;
   $('btnRec').classList.remove('on');
   $('btnLbl').textContent = 'tap to speak';
+
+  if (activeRecognition) {
+    try {
+      activeRecognition.stop();
+    } catch {
+      scheduleAttemptFinalize();
+    }
+  }
 }
 
 function initStagePills(): void {
@@ -411,7 +470,7 @@ function init(): void {
   });
 
   if (!navigator.mediaDevices?.getUserMedia) {
-    showErr('Microphone needs HTTPS or localhost — use Safari on iPad after deploying to Vercel.');
+    showErr('Microphone needs HTTPS or localhost (e.g. https://early-sigma.vercel.app or npm run dev).');
   }
 
   void ensureDspEngine(curStageId).then(async () => {
