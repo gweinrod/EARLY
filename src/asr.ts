@@ -79,21 +79,19 @@ export interface TranscriptSlice {
   isFinal: boolean;
 }
 
+/** Full cumulative transcript (Chrome builds results across events). */
+export function fullTranscriptFromEvent(e: SpeechRecognitionEvent): string {
+  let text = '';
+  for (let i = 0; i < e.results.length; i++) {
+    text += e.results[i][0].transcript;
+  }
+  return text.trim().toLowerCase();
+}
+
 /** Latest transcript chunk from a recognition result event. */
 export function transcriptFromEvent(e: SpeechRecognitionEvent): TranscriptSlice {
-  let text = '';
-  let isFinal = false;
-  for (let i = e.resultIndex; i < e.results.length; i++) {
-    const chunk = e.results[i];
-    if (chunk.isFinal) {
-      isFinal = true;
-      text += chunk[0].transcript;
-    }
-  }
-  if (!text && e.results.length > 0) {
-    const last = e.results[e.results.length - 1];
-    text = last[0].transcript;
-    isFinal = last.isFinal;
-  }
-  return { text: text.trim().toLowerCase(), isFinal };
+  const text = fullTranscriptFromEvent(e);
+  const last = e.results.length > 0 ? e.results[e.results.length - 1] : null;
+  const isFinal = last?.isFinal ?? false;
+  return { text, isFinal };
 }

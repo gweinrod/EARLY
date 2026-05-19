@@ -1,4 +1,4 @@
-import { createSpeechRecognition, transcriptFromEvent } from './asr';
+import { createSpeechRecognition, fullTranscriptFromEvent } from './asr';
 import { APP_VERSION } from './version';
 import {
   autoConfirmAsrPass,
@@ -59,6 +59,7 @@ let asrWaitTimer: ReturnType<typeof setTimeout> | null = null;
 let attemptFinalized = false;
 let dspProcessed = false;
 let asrEnded = false;
+let endingTake = false;
 let listening = false;
 let stopWave: (() => void) | null = null;
 let lastDsp: DspPrediction | null = null;
@@ -162,6 +163,7 @@ function releaseMic(): void {
     recStream = null;
   }
   activeRecognition = null;
+  endingTake = false;
 }
 
 function scheduleAttemptFinalize(): void {
@@ -174,14 +176,55 @@ function scheduleAttemptFinalize(): void {
 
   if (!dspProcessed) return;
 
-  if (activeRecognition && !asrEnded) return;
-
   clearAsrWait();
-  const graceMs = pendingHeard !== null ? 80 : 3500;
+
+  if (!asrEnded) {
+    asrWaitTimer = setTimeout(() => {
+      asrWaitTimer = null;
+      if (!asrEnded) {
+        asrEnded = true;
+        stopMediaRecorder();
+      }
+    }, 8000);
+    return;
+  }
+
+  const graceMs = pendingHeard && pendingHeard.length > 0 ? 50 : 600;
   asrWaitTimer = setTimeout(() => {
     asrWaitTimer = null;
     finalizeAttempt();
   }, graceMs);
+}
+
+function stopMediaRecorder(): void {
+  if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
+  else scheduleAttemptFinalize();
+}
+
+function onAsrSessionEnd(): void {
+  if (asrEnded) return;
+  asrEnded = true;
+  stopMediaRecorder();
+}
+
+function beginEndTake(): void {
+  if (endingTake) return;
+  endingTake = true;
+  listening = false;
+  stopWave?.();
+  stopWave = null;
+  $('btnRec').classList.remove('on');
+  $('btnLbl').textContent = 'tap to speak';
+
+  if (activeRecognition) {
+    try {
+      activeRecognition.stop();
+    } catch {
+      onAsrSessionEnd();
+    }
+  } else {
+    onAsrSessionEnd();
+  }
 }
 
 function finalizeAttempt(): void {
@@ -328,13 +371,14 @@ function onVoiceBootstrapComplete(): void {
 
 async function toggleRec(): Promise<void> {
   if (listening) {
-    stopRec();
+    beginEndTake();
     return;
   }
 
   attemptFinalized = false;
   dspProcessed = false;
   asrEnded = false;
+  endingTake = false;
   clearAsrWait();
   pendingHeard = null;
   pendingAsrPass = null;
@@ -358,31 +402,32 @@ async function toggleRec(): Promise<void> {
     mediaRec.onstop = () => {
       void processAudio();
     };
-    mediaRec.start(100);
 
     activeRecognition = createSpeechRecognition();
     if (activeRecognition) {
       const recognition = activeRecognition;
       recognition.onresult = (e: SpeechRecognitionEvent) => {
-        const { text: heard, isFinal } = transcriptFromEvent(e);
-        if (!heard) return;
-        applyAsrTranscript(heard);
-        const matched = transcriptMatchesItem(curStageId, heard, curItem);
-        if (listening && (isFinal || matched)) stopRec();
+        const heard = fullTranscriptFromEvent(e);
+        const last = e.results.length > 0 ? e.results[e.results.length - 1] : null;
+        const isFinal = last?.isFinal ?? false;
+        if (heard) applyAsrTranscript(heard);
+        const matched = heard ? transcriptMatchesItem(curStageId, heard, curItem) : false;
+        if (listening && (isFinal || matched)) beginEndTake();
       };
       recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
-        asrEnded = true;
         if (e.error !== 'aborted' && pendingHeard === null) {
           pendingHeard = '';
           pendingAsrPass = false;
         }
-        if (listening) stopRec();
-        else scheduleAttemptFinalize();
+        if (listening) beginEndTake();
+        else {
+          onAsrSessionEnd();
+          scheduleAttemptFinalize();
+        }
       };
       recognition.onend = () => {
-        asrEnded = true;
-        if (listening) stopRec();
-        else scheduleAttemptFinalize();
+        onAsrSessionEnd();
+        scheduleAttemptFinalize();
       };
       try {
         recognition.start();
@@ -393,6 +438,8 @@ async function toggleRec(): Promise<void> {
     } else {
       asrEnded = true;
     }
+
+    mediaRec.start(100);
 
     listening = true;
     $('btnRec').classList.add('on');
@@ -405,25 +452,6 @@ async function toggleRec(): Promise<void> {
   } catch (e) {
     showErr(`Mic denied — ${e instanceof Error ? e.message : String(e)}`);
   }
-}
-
-function stopRec(): void {
-  if (!listening) return;
-  listening = false;
-  stopWave?.();
-  stopWave = null;
-  $('btnRec').classList.remove('on');
-  $('btnLbl').textContent = 'tap to speak';
-
-  if (activeRecognition) {
-    try {
-      activeRecognition.stop();
-    } catch {
-      asrEnded = true;
-    }
-  }
-
-  if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
 }
 
 function initStagePills(): void {
