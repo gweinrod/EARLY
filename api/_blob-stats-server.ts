@@ -55,7 +55,7 @@ export async function incrementStageCount(
   return next;
 }
 
-export function statsFromCounts(
+function statsFromCounts(
   counts: Record<string, number>,
   stageId?: string,
 ): { total: number; byStage: Record<string, number> } {
@@ -71,30 +71,47 @@ function countsTotal(counts: Record<string, number>): number {
   return Object.values(counts).reduce((a, n) => a + n, 0);
 }
 
-/** One-time rebuild when counts.json is missing (e.g. after deploy). */
-export async function rebuildCountsFromList(
-  kind: BlobStoreKind,
+export async function listSampleStats(
+  prefixRoot: string,
   token: string,
-  listFn: (stageId?: string) => Promise<{ total: number; byStage: Record<string, number> }>,
-): Promise<Record<string, number>> {
-  const stats = await listFn(undefined);
-  await writeStageCounts(kind, stats.byStage, token);
-  return stats.byStage;
+  stageId?: string,
+): Promise<{ total: number; byStage: Record<string, number> }> {
+  const prefix = stageId ? `${prefixRoot}/${stageId}/` : `${prefixRoot}/`;
+  const byStage: Record<string, number> = {};
+  let cursor: string | undefined;
+  let total = 0;
+
+  for (;;) {
+    const page = await list({ prefix, limit: 1000, cursor, token });
+    for (const blob of page.blobs) {
+      if (!blob.pathname.endsWith('.json')) continue;
+      if (blob.pathname.includes('/_meta/')) continue;
+      total++;
+      const parts = blob.pathname.split('/');
+      const stage = parts[1];
+      if (stage) byStage[stage] = (byStage[stage] ?? 0) + 1;
+    }
+    if (!page.hasMore) break;
+    cursor = page.cursor;
+  }
+
+  return { total, byStage };
 }
 
 export async function resolveStageStats(
   kind: BlobStoreKind,
   token: string,
   stageId: string | undefined,
-  listFn: (stageId?: string) => Promise<{ total: number; byStage: Record<string, number> }>,
 ): Promise<{ total: number; byStage: Record<string, number> }> {
   let counts = await readStageCounts(kind, token);
   if (countsTotal(counts) === 0) {
     try {
-      counts = await rebuildCountsFromList(kind, token, listFn);
+      const stats = await listSampleStats(kind, token);
+      await writeStageCounts(kind, stats.byStage, token);
+      counts = stats.byStage;
     } catch {
       if (stageId) {
-        return listFn(stageId);
+        return listSampleStats(kind, token, stageId);
       }
       return { total: 0, byStage: {} };
     }

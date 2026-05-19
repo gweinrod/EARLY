@@ -1,7 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { put } from '@vercel/blob';
-import { blobToken, incrementStageCount, resolveStageStats } from './blob-meta';
-import { listSampleStats } from './list-sample-stats';
+import { blobToken, incrementStageCount, resolveStageStats } from './_blob-stats-server';
 
 const SAMPLE_VERSION = 1;
 const EMBEDDING_LEN = 13;
@@ -27,15 +26,6 @@ function isValidSample(body: unknown): body is VoiceBankSamplePayload {
   return b.embedding.every((n) => typeof n === 'number' && Number.isFinite(n));
 }
 
-async function sampleStats(
-  blobTok: string,
-  stageId?: string,
-): Promise<{ total: number; byStage: Record<string, number> }> {
-  return resolveStageStats('voice-bank', blobTok, stageId, (sid) =>
-    listSampleStats('voice-bank', blobTok, sid),
-  );
-}
-
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
   const tok = blobToken();
   if (!tok) {
@@ -53,7 +43,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return;
     }
     try {
-      const stats = await sampleStats(tok, stageId);
+      const stats = await resolveStageStats('voice-bank', tok, stageId);
       res.status(200).json(stats);
     } catch (e) {
       res.status(500).json({ error: 'stats_failed', message: String(e) });
