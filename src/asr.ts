@@ -19,10 +19,42 @@ export function levenshtein(a: string, b: string): number {
   return d[m][n];
 }
 
+/** Strip punctuation so ASR trailing periods do not break equality. */
+export function normalizeWord(s: string): string {
+  return s.trim().toLowerCase().replace(/[^a-z0-9']/g, '');
+}
+
+function escapeRegExp(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
+
+/**
+ * True when speech-to-text said the target word.
+ * Intentionally strict on short words: edit distance 1 treated "clit" as "flit".
+ */
 export function transcriptMatchesTarget(heard: string, target: string): boolean {
-  const h = heard.trim().toLowerCase();
-  const t = target.toLowerCase();
-  return h === t || h.includes(t) || levenshtein(h, t) <= 1;
+  const t = normalizeWord(target);
+  if (!t) return false;
+
+  const raw = heard.trim().toLowerCase();
+  const tokens = raw.split(/\s+/).map(normalizeWord).filter(Boolean);
+
+  if (tokens.some((tok) => tok === t)) return true;
+
+  // Phrase heard as one string without spaces, e.g. "sayflit" — rare; keep whole-string exact.
+  if (normalizeWord(raw) === t) return true;
+
+  // Multi-word transcript containing the target as its own word.
+  if (/\s/.test(raw) && new RegExp(`\\b${escapeRegExp(t)}\\b`, 'i').test(raw)) return true;
+
+  // One-slip tolerance only on longer words with same length and onset (not clit/flit).
+  if (t.length >= 6) {
+    return tokens.some(
+      (tok) => tok.length === t.length && tok[0] === t[0] && levenshtein(tok, t) === 1,
+    );
+  }
+
+  return false;
 }
 
 type SpeechRecognitionCtor = new () => SpeechRecognition;
