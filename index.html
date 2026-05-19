@@ -1,0 +1,58 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phoneme Practice</title>
+  <link rel="stylesheet" href="/styles/main.css" />
+</head>
+<body>
+<div class="container">
+  <div id="errBox"></div>
+  <div id="netBadge">
+    &#x25CF;&nbsp;
+    <span id="netTxt">pure JS · arch: 13→16→8→6 · 0 training samples · model cold</span>
+  </div>
+  <p class="sec-label">phoneme group</p>
+  <div class="pills" id="pillGroup"></div>
+  <div class="word-mode">
+    <label class="mode-toggle">
+      <input type="checkbox" id="nonsenseMode" checked />
+      <span>nonsense words</span>
+    </label>
+  </div>
+  <div class="scores">
+    <div class="sbox"><div class="snum" id="sC">0</div><div class="slbl">correct</div></div>
+    <div class="sbox"><div class="snum" id="sT">0</div><div class="slbl">attempts</div></div>
+    <div class="sbox"><div class="snum" id="sP">—</div><div class="slbl">accuracy</div></div>
+  </div>
+  <p class="word-label">say this word</p>
+  <div id="tWord">—</div>
+  <div id="tPhon"></div>
+  <div class="wave-wrap"><canvas id="waveCanvas" height="72"></canvas></div>
+  <div class="btns">
+    <button type="button" class="btn-rec" id="btnRec">
+      <span class="dot"></span>
+      <span id="btnLbl">tap to speak</span>
+    </button>
+    <button type="button" class="btn-next" id="btnNext">→ next word</button>
+  </div>
+  <div id="hmWrap">
+    <p class="sec-label">mfcc heatmap — time × coefficients c0–c12</p>
+    <canvas id="hmCanvas" height="104"></canvas>
+    <div class="hm-legend"><div class="hm-grad"></div><span>negative → zero → positive</span></div>
+  </div>
+  <div id="pbWrap">
+    <p class="sec-label">neural network — vowel class probabilities</p>
+    <div id="pbBars"></div>
+    <p id="pbMeta"></p>
+  </div>
+  <div id="fbList"></div>
+  <div id="histBlock">
+    <p class="sec-label" style="margin-top: 0.5rem">recent attempts</p>
+    <div id="histRows"></div>
+  </div>
+</div>
+<script type="module" src="/src/main.ts"></script>
+</body>
+</html>

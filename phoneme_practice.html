@@ -1,0 +1,1103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Phoneme Practice</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    body {
+      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+      background: #f8fafc;
+      color: #1e293b;
+      min-height: 100vh;
+    }
+
+    .container {
+      max-width: 680px;
+      margin: 0 auto;
+      padding: 2rem 1.25rem;
+    }
+
+    /* ── NET BADGE ── */
+    #netBadge {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 8px 12px;
+      border-radius: 8px;
+      background: #f1f5f9;
+      font-size: 12px;
+      color: #64748b;
+      font-family: 'Courier New', monospace;
+      margin-bottom: 1.25rem;
+      transition: background 0.3s, color 0.3s;
+    }
+    #netBadge.active  { background: #dcfce7; color: #16a34a; }
+    #netBadge.info    { background: #dbeafe; color: #1d4ed8; }
+    #netBadge.warning { background: #fef9c3; color: #854d0e; }
+
+    /* ── PILLS ── */
+    .pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1.5rem; }
+    .pill {
+      padding: 5px 14px;
+      border-radius: 99px;
+      border: 1px solid #e2e8f0;
+      background: transparent;
+      font-size: 13px;
+      color: #64748b;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .pill:hover { border-color: #93c5fd; color: #1d4ed8; }
+    .pill.on    { background: #dbeafe; border-color: #93c5fd; color: #1d4ed8; font-weight: 500; }
+
+    /* ── SCORES ── */
+    .scores { display: flex; gap: 10px; margin-bottom: 1.5rem; }
+    .sbox {
+      flex: 1;
+      background: #f1f5f9;
+      border-radius: 8px;
+      padding: 0.75rem;
+      text-align: center;
+    }
+    .snum { font-size: 22px; font-weight: 500; }
+    .slbl { font-size: 12px; color: #64748b; margin-top: 2px; }
+
+    /* ── TARGET WORD ── */
+    .word-label { font-size: 12px; color: #94a3b8; margin-bottom: 6px; letter-spacing: 0.04em; }
+    #tWord {
+      font-size: 56px;
+      font-weight: 600;
+      letter-spacing: -1.5px;
+      line-height: 1;
+      margin-bottom: 0.4rem;
+    }
+    #tPhon { font-family: 'Courier New', monospace; font-size: 13px; color: #64748b; margin-bottom: 1.25rem; }
+
+    /* ── WAVEFORM ── */
+    .wave-wrap {
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      height: 72px;
+      background: #f8fafc;
+      margin-bottom: 1rem;
+      overflow: hidden;
+    }
+    #waveCanvas { width: 100%; height: 72px; display: block; }
+
+    /* ── BUTTONS ── */
+    .btns { display: flex; gap: 10px; margin-bottom: 1.25rem; flex-wrap: wrap; }
+    .btn-rec {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      padding: 10px 22px;
+      border-radius: 8px;
+      border: 1px solid #cbd5e1;
+      background: #fff;
+      color: #1e293b;
+      font-size: 14px;
+      font-weight: 500;
+      cursor: pointer;
+      transition: all 0.12s;
+    }
+    .btn-rec:hover { background: #f8fafc; }
+    .btn-rec.on {
+      background: #fef2f2;
+      border-color: #fca5a5;
+      color: #dc2626;
+    }
+    .btn-next {
+      padding: 10px 22px;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      background: transparent;
+      color: #64748b;
+      font-size: 14px;
+      cursor: pointer;
+    }
+    .btn-next:hover { background: #f1f5f9; }
+    .dot {
+      width: 8px; height: 8px;
+      border-radius: 50%;
+      background: currentColor;
+      display: inline-block;
+      flex-shrink: 0;
+    }
+    .btn-rec.on .dot { animation: pulse 1s infinite; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.3; } }
+
+    /* ── SECTION LABELS ── */
+    .sec-label { font-size: 11px; color: #94a3b8; margin-bottom: 8px; letter-spacing: 0.05em; text-transform: uppercase; }
+
+    /* ── HEATMAP ── */
+    #hmWrap { margin-bottom: 1.25rem; display: none; }
+    #hmCanvas { display: block; border-radius: 8px; border: 1px solid #e2e8f0; }
+    .hm-legend {
+      display: flex; align-items: center; gap: 8px;
+      margin-top: 5px; font-size: 11px; color: #94a3b8;
+    }
+    .hm-grad {
+      width: 72px; height: 7px; border-radius: 4px;
+      background: linear-gradient(to right, #4488ff, #ffffff, #ff4444);
+      border: 1px solid #e2e8f0;
+    }
+
+    /* ── PROB BARS ── */
+    #pbWrap { margin-bottom: 1.25rem; display: none; }
+    .pb-row { display: flex; align-items: center; gap: 8px; margin-bottom: 5px; }
+    .pb-lbl { font-family: 'Courier New', monospace; font-size: 11px; width: 92px; flex-shrink: 0; color: #64748b; }
+    .pb-lbl.hi { color: #1d4ed8; font-weight: 600; }
+    .pb-bg { flex: 1; height: 14px; background: #f1f5f9; border-radius: 3px; overflow: hidden; }
+    .pb-fill { height: 100%; background: #e2e8f0; transition: width 0.35s ease; }
+    .pb-fill.hi { background: #93c5fd; }
+    .pb-val { font-family: 'Courier New', monospace; font-size: 11px; width: 30px; text-align: right; color: #94a3b8; }
+    .pb-val.hi { color: #1d4ed8; font-weight: 600; }
+    #pbMeta { font-size: 11px; color: #94a3b8; margin-top: 6px; font-family: 'Courier New', monospace; }
+
+    /* ── FEEDBACK ── */
+    #fbList { display: flex; flex-direction: column; gap: 8px; margin-bottom: 1.25rem; }
+    .fb {
+      display: flex; align-items: flex-start; gap: 10px;
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      border: 1px solid #e2e8f0;
+      background: #fff;
+      font-size: 14px;
+      line-height: 1.55;
+      color: #1e293b;
+    }
+    .fb.pass { border-color: #86efac; background: #f0fdf4; color: #15803d; }
+    .fb.fail { border-color: #fca5a5; background: #fef2f2; color: #dc2626; }
+    .fb.warn { border-color: #fde68a; background: #fffbeb; color: #92400e; }
+    .fb-icon { font-size: 16px; flex-shrink: 0; margin-top: 2px; }
+
+    /* ── HISTORY ── */
+    #histBlock { display: none; }
+    .hist-row {
+      display: flex; justify-content: space-between; align-items: center;
+      padding: 6px 0;
+      border-top: 1px solid #f1f5f9;
+      font-size: 14px; gap: 8px;
+    }
+    .h-heard { font-size: 13px; color: #64748b; flex: 1; text-align: center; }
+    .badge { font-size: 12px; padding: 2px 8px; border-radius: 99px; }
+    .badge.ok { background: #dcfce7; color: #16a34a; }
+    .badge.no { background: #fee2e2; color: #dc2626; }
+
+    /* ── ERROR BOX ── */
+    #errBox {
+      padding: 0.75rem 1rem;
+      border-radius: 8px;
+      background: #fef2f2;
+      border: 1px solid #fca5a5;
+      color: #dc2626;
+      font-size: 13px;
+      margin-bottom: 1rem;
+      display: none;
+      font-family: 'Courier New', monospace;
+    }
+  </style>
+</head>
+<body>
+<div class="container">
+
+  <div id="errBox"></div>
+
+  <div id="netBadge">
+    &#x25CF;&nbsp;
+    <span id="netTxt">pure JS &middot; arch: 13&rarr;16&rarr;8&rarr;6 &middot; 0 training samples &middot; model cold</span>
+  </div>
+
+  <p class="sec-label">phoneme group</p>
+  <div class="pills" id="pillGroup"></div>
+
+  <div class="scores">
+    <div class="sbox"><div class="snum" id="sC">0</div><div class="slbl">correct</div></div>
+    <div class="sbox"><div class="snum" id="sT">0</div><div class="slbl">attempts</div></div>
+    <div class="sbox"><div class="snum" id="sP">&mdash;</div><div class="slbl">accuracy</div></div>
+  </div>
+
+  <p class="word-label">say this word</p>
+  <div id="tWord">—</div>
+  <div id="tPhon"></div>
+
+  <div class="wave-wrap"><canvas id="waveCanvas" height="72"></canvas></div>
+
+  <div class="btns">
+    <button class="btn-rec" id="btnRec" onclick="toggleRec()">
+      <span class="dot"></span>
+      <span id="btnLbl">tap to speak</span>
+    </button>
+    <button class="btn-next" onclick="nextWord()">&#8594; next word</button>
+  </div>
+
+  <div id="hmWrap">
+    <p class="sec-label">mfcc heatmap &mdash; time &times; coefficients c0&ndash;c12</p>
+    <canvas id="hmCanvas" height="104"></canvas>
+    <div class="hm-legend"><div class="hm-grad"></div><span>negative &rarr; zero &rarr; positive</span></div>
+  </div>
+
+  <div id="pbWrap">
+    <p class="sec-label">neural network &mdash; vowel class probabilities</p>
+    <div id="pbBars"></div>
+    <p id="pbMeta"></p>
+  </div>
+
+  <div id="fbList"></div>
+
+  <div id="histBlock">
+    <p class="sec-label" style="margin-top: 0.5rem">recent attempts</p>
+    <div id="histRows"></div>
+  </div>
+
+</div>
+
+<script>
+// =============================================================
+//  DATA
+// =============================================================
+var GROUPS = {
+  "bl / cl / fl": {
+    words: ["blip","clam","flab","blot","cleft","flop","blend","clunk","flint","bluff"],
+    phonemes: ["/bl/","/kl/","/fl/"],
+    type: "onset-stop-liquid"
+  },
+  "str / spr / scr": {
+    words: ["strop","sprig","scram","strip","spray","scrub","stress","spring","screen","strong"],
+    phonemes: ["/str/","/spr/","/skr/"],
+    type: "onset-sibilant"
+  },
+  "short vowels": {
+    words: ["bat","bet","bit","bot","but","cap","peg","tip","dog","cup"],
+    phonemes: ["/æ/","/ɛ/","/ɪ/","/ɒ/","/ʌ/"],
+    type: "vowel"
+  },
+  "long vowels": {
+    words: ["lake","feet","bike","coat","cute","bake","seed","kite","roam","fuse"],
+    phonemes: ["/eɪ/","/iː/","/aɪ/","/oʊ/","/juː/"],
+    type: "vowel"
+  },
+  "ending blends": {
+    words: ["lamp","dent","mask","raft","band","limp","went","desk","left","bond"],
+    phonemes: ["/mp/","/nt/","/sk/","/ft/","/nd/"],
+    type: "coda"
+  }
+};
+
+// 6 vowel classes used by the neural net
+var VC = [
+  { label: "high-front",  ipa: "/iː/ /ɪ/"    },
+  { label: "mid-front",   ipa: "/eɪ/ /ɛ/"    },
+  { label: "low-front",   ipa: "/æ/"          },
+  { label: "low-back",    ipa: "/ɑ/ /ɒ/ /aɪ/" },
+  { label: "high-back",   ipa: "/uː/ /juː/"   },
+  { label: "mid-central", ipa: "/ʌ/ /oʊ/"     }
+];
+
+// word → vowel class index (only vowel-group words need entries)
+var W2C = {
+  feet:0, seed:0, bit:0, tip:0,
+  lake:1, bake:1, bet:1, peg:1,
+  bat:2,  cap:2,
+  bot:3,  dog:3, bike:3, kite:3,
+  cute:4, fuse:4,
+  but:5,  cup:5, coat:5, roam:5
+};
+
+// per-word articulation hints
+var VH = {
+  bat:  { label:"/æ/",  ex:"low-front",   tip:"drop jaw wide, tongue low and front" },
+  cap:  { label:"/æ/",  ex:"low-front",   tip:"jaw wide open, lips slightly spread" },
+  bet:  { label:"/ɛ/",  ex:"mid-front",   tip:"half-open, tongue mid-height front" },
+  peg:  { label:"/ɛ/",  ex:"mid-front",   tip:"half-open mouth, tongue mid-front" },
+  bit:  { label:"/ɪ/",  ex:"high-front",  tip:"slight smile, tongue high and front" },
+  tip:  { label:"/ɪ/",  ex:"high-front",  tip:"small opening, tongue raised front" },
+  bot:  { label:"/ɒ/",  ex:"low-back",    tip:"rounded lips, jaw drops, tongue back" },
+  dog:  { label:"/ɒ/",  ex:"low-back",    tip:"rounded lips, tongue back and low" },
+  but:  { label:"/ʌ/",  ex:"mid-central", tip:"relaxed jaw, tongue center of mouth" },
+  cup:  { label:"/ʌ/",  ex:"mid-central", tip:"neutral jaw, tongue mid-central" },
+  lake: { label:"/eɪ/", ex:"mid-front",   tip:"glide from mid-front upward" },
+  bake: { label:"/eɪ/", ex:"mid-front",   tip:"start mid and glide toward a smile" },
+  feet: { label:"/iː/", ex:"high-front",  tip:"spread lips wide, tongue high and front" },
+  seed: { label:"/iː/", ex:"high-front",  tip:"tense tongue very front and high" },
+  bike: { label:"/aɪ/", ex:"low-back",    tip:"glide from low-back to high-front" },
+  kite: { label:"/aɪ/", ex:"low-back",    tip:"open wide, then close into a smile" },
+  coat: { label:"/oʊ/", ex:"mid-central", tip:"start mid-back, round and close lips" },
+  roam: { label:"/oʊ/", ex:"mid-central", tip:"round lips and glide backward" },
+  cute: { label:"/juː/",ex:"high-back",   tip:"begin with /j/ then round lips" },
+  fuse: { label:"/juː/",ex:"high-back",   tip:"/j/ onset then tight lip rounding" }
+};
+
+var CODA_BLENDS = {
+  lamp:"-mp", dent:"-nt", mask:"-sk", raft:"-ft", band:"-nd",
+  limp:"-mp", went:"-nt", desk:"-sk", left:"-ft", bond:"-nd"
+};
+
+
+// =============================================================
+//  NEURAL NETWORK (pure JS, no dependencies)
+//  Architecture: 13 → 16 (ReLU) → 8 (ReLU) → 6 (softmax)
+//  Training: full-batch SGD, cross-entropy loss, backprop
+// =============================================================
+
+function softmax(x) {
+  var max = x[0], i, ex = [], s = 0;
+  for (i = 1; i < x.length; i++) if (x[i] > max) max = x[i];
+  for (i = 0; i < x.length; i++) { ex[i] = Math.exp(x[i] - max); s += ex[i]; }
+  for (i = 0; i < x.length; i++) ex[i] /= s;
+  return ex;
+}
+
+function oneHot(idx, n) {
+  var v = [], i;
+  for (i = 0; i < n; i++) v[i] = (i === idx) ? 1 : 0;
+  return v;
+}
+
+// Glorot uniform initialization
+function glorot(ni, no) {
+  var lim = Math.sqrt(6 / (ni + no));
+  return (Math.random() * 2 - 1) * lim;
+}
+
+function Net(dims, lr) {
+  this.dims = dims;
+  this.lr   = lr || 0.02;
+  this.W    = [];   // weight matrices
+  this.b    = [];   // bias vectors
+  var l, i, j, ni, no, row, wl, bl;
+  for (l = 0; l < dims.length - 1; l++) {
+    ni = dims[l]; no = dims[l + 1];
+    wl = [];
+    for (i = 0; i < ni; i++) {
+      row = [];
+      for (j = 0; j < no; j++) row.push(glorot(ni, no));
+      wl.push(row);
+    }
+    bl = [];
+    for (j = 0; j < no; j++) bl.push(0);
+    this.W.push(wl);
+    this.b.push(bl);
+  }
+}
+
+// Forward pass — returns all activations a[] and pre-activations z[]
+Net.prototype.forward = function (x) {
+  var a = [x.slice()], z = [], l, i, j, ni, no, zi, sum, al;
+  for (l = 0; l < this.W.length; l++) {
+    ni = this.W[l].length;
+    no = this.W[l][0].length;
+    zi = [];
+    for (j = 0; j < no; j++) {
+      sum = this.b[l][j];
+      for (i = 0; i < ni; i++) sum += a[l][i] * this.W[l][i][j];
+      zi.push(sum);
+    }
+    z.push(zi);
+    if (l === this.W.length - 1) {
+      al = softmax(zi);
+    } else {
+      al = [];
+      for (i = 0; i < zi.length; i++) al.push(zi[i] > 0 ? zi[i] : 0); // ReLU
+    }
+    a.push(al);
+  }
+  return { a: a, z: z };
+};
+
+Net.prototype.predict = function (x) {
+  var res = this.forward(x);
+  return res.a[res.a.length - 1];
+};
+
+// Full-batch SGD over arrays X (inputs) and Y (one-hot targets)
+Net.prototype.train = function (X, Y) {
+  var L = this.W.length;
+  var dW = [], db = [], l, i, j, s, ni, no, row, dwl, dbl;
+
+  // initialise gradient accumulators to zero
+  for (l = 0; l < L; l++) {
+    ni = this.W[l].length; no = this.W[l][0].length;
+    dwl = [];
+    for (i = 0; i < ni; i++) { row = []; for (j = 0; j < no; j++) row.push(0); dwl.push(row); }
+    dW.push(dwl);
+    dbl = []; for (j = 0; j < no; j++) dbl.push(0);
+    db.push(dbl);
+  }
+
+  var totalLoss = 0, fwd, a, z, y, pred, delta, newDelta, sum2;
+
+  for (s = 0; s < X.length; s++) {
+    fwd  = this.forward(X[s]);
+    a    = fwd.a;
+    z    = fwd.z;
+    y    = Y[s];
+    pred = a[L];
+
+    // cross-entropy loss
+    for (i = 0; i < pred.length; i++)
+      totalLoss -= y[i] * Math.log(Math.max(pred[i], 1e-15));
+
+    // output delta: d(CE)/d(z_L) = pred - y  (softmax + CE identity)
+    delta = [];
+    for (i = 0; i < pred.length; i++) delta.push(pred[i] - y[i]);
+
+    // backprop through layers
+    for (l = L - 1; l >= 0; l--) {
+      ni = a[l].length;
+      // accumulate weight / bias gradients
+      for (i = 0; i < ni; i++)
+        for (j = 0; j < delta.length; j++)
+          dW[l][i][j] += a[l][i] * delta[j];
+      for (j = 0; j < delta.length; j++)
+        db[l][j] += delta[j];
+
+      // propagate delta to previous layer (ReLU mask on z[l-1])
+      if (l > 0) {
+        newDelta = [];
+        for (i = 0; i < a[l].length; i++) {
+          if (z[l - 1][i] > 0) {
+            sum2 = 0;
+            for (j = 0; j < delta.length; j++) sum2 += delta[j] * this.W[l][i][j];
+            newDelta.push(sum2);
+          } else {
+            newDelta.push(0);
+          }
+        }
+        delta = newDelta;
+      }
+    }
+  }
+
+  // SGD parameter update
+  var n = X.length;
+  for (l = 0; l < L; l++) {
+    for (i = 0; i < this.W[l].length; i++)
+      for (j = 0; j < this.W[l][i].length; j++)
+        this.W[l][i][j] -= this.lr * dW[l][i][j] / n;
+    for (j = 0; j < this.b[l].length; j++)
+      this.b[l][j] -= this.lr * db[l][j] / n;
+  }
+
+  return totalLoss / n;
+};
+
+var net      = new Net([13, 16, 8, 6]);
+var TD       = { X: [], Y: [] };   // training buffer
+var lastNuc  = null;               // MFCC nucleus of most recent recording
+
+
+// =============================================================
+//  DSP PIPELINE (pure JS)
+//  FFT → mel filterbank → log → DCT-II = MFCCs
+// =============================================================
+
+var FSIZE  = 512;   // FFT frame size
+var HSIZE  = 256;   // hop size (50% overlap)
+var NMEL   = 26;    // mel filterbank filters
+var NMCC   = 13;    // MFCC coefficients kept
+
+// Pre-compute Hamming window
+var HAMMING = (function () {
+  var h = [], i;
+  for (i = 0; i < FSIZE; i++)
+    h.push(0.54 - 0.46 * Math.cos(2 * Math.PI * i / (FSIZE - 1)));
+  return h;
+}());
+
+var melFB = null;   // built lazily on first use
+
+function hzToMel(f) { return 2595 * Math.log(1 + f / 700) / Math.LN10; }
+function melToHz(m) { return 700 * (Math.pow(10, m / 2595) - 1); }
+
+function buildMelFilterbank(sr) {
+  var lo = hzToMel(80), hi = hzToMel(sr / 2);
+  var pts = [], bins = [], i, m, k, f;
+  for (i = 0; i <= NMEL + 1; i++)
+    pts.push(melToHz(lo + i * (hi - lo) / (NMEL + 1)));
+  for (i = 0; i < pts.length; i++)
+    bins.push(Math.floor((FSIZE + 1) * pts[i] / sr));
+  var filters = [];
+  for (m = 0; m < NMEL; m++) {
+    f = new Float32Array(FSIZE >> 1);
+    for (k = bins[m]; k < bins[m + 1]; k++)
+      if (bins[m + 1] > bins[m]) f[k] = (k - bins[m]) / (bins[m + 1] - bins[m]);
+    for (k = bins[m + 1]; k < bins[m + 2]; k++)
+      if (bins[m + 2] > bins[m + 1]) f[k] = (bins[m + 2] - k) / (bins[m + 2] - bins[m + 1]);
+    filters.push(f);
+  }
+  return filters;
+}
+
+// Cooley-Tukey in-place FFT, returns magnitude spectrum (first n/2 bins)
+function fftMag(sig) {
+  var n = sig.length, re = sig.slice(), im = [], i, j, bit, t;
+  for (i = 0; i < n; i++) im.push(0);
+
+  // bit-reversal permutation
+  for (i = 1, j = 0; i < n; i++) {
+    bit = n >> 1;
+    while (j & bit) { j ^= bit; bit >>= 1; }
+    j ^= bit;
+    if (i < j) { t = re[i]; re[i] = re[j]; re[j] = t; }
+  }
+
+  // butterfly passes
+  var len, ang, c0, s0, cr, ci, p, q, uR, uI, vR, vI, nr;
+  for (len = 2; len <= n; len <<= 1) {
+    ang = -2 * Math.PI / len;
+    c0  = Math.cos(ang);
+    s0  = Math.sin(ang);
+    for (i = 0; i < n; i += len) {
+      cr = 1; ci = 0;
+      for (j = 0; j < (len >> 1); j++) {
+        p = i + j; q = p + (len >> 1);
+        uR = re[p]; uI = im[p];
+        vR = re[q] * cr - im[q] * ci;
+        vI = re[q] * ci + im[q] * cr;
+        re[p] = uR + vR; im[p] = uI + vI;
+        re[q] = uR - vR; im[q] = uI - vI;
+        nr = cr * c0 - ci * s0;
+        ci = cr * s0 + ci * c0;
+        cr = nr;
+      }
+    }
+  }
+
+  var out = [];
+  for (i = 0; i < n >> 1; i++)
+    out.push(Math.sqrt(re[i] * re[i] + im[i] * im[i]));
+  return out;
+}
+
+// DCT-II: returns first n coefficients
+function dct2(x, n) {
+  var N = x.length, out = [], k, i, s;
+  for (k = 0; k < n; k++) {
+    s = 0;
+    for (i = 0; i < N; i++)
+      s += x[i] * Math.cos(Math.PI * k * (2 * i + 1) / (2 * N));
+    out.push(s * Math.sqrt(2 / N));
+  }
+  return out;
+}
+
+// Extract feature frames from a Float32Array of PCM audio
+function extractFrames(audio, sr) {
+  if (!melFB) melFB = buildMelFilterbank(sr);
+  var frames = [], st, seg, w, mag, lm, mfcc, zcr, rms, num, den, fq, k, i, e;
+
+  for (st = 0; st + FSIZE < audio.length; st += HSIZE) {
+    seg = audio.slice(st, st + FSIZE);
+
+    // windowed frame
+    w = [];
+    for (i = 0; i < FSIZE; i++) w.push(seg[i] * HAMMING[i]);
+
+    mag  = fftMag(w);
+
+    // mel filterbank energies → log
+    lm = [];
+    for (var m = 0; m < NMEL; m++) {
+      e = 0;
+      for (k = 0; k < mag.length; k++) e += melFB[m][k] * mag[k] * mag[k];
+      lm.push(Math.log(Math.max(e, 1e-10)));
+    }
+
+    mfcc = dct2(lm, NMCC);
+
+    // zero-crossing rate
+    zcr = 0;
+    for (i = 1; i < seg.length; i++)
+      if ((seg[i] >= 0) !== (seg[i - 1] >= 0)) zcr++;
+    zcr /= seg.length;
+
+    // root mean square
+    rms = 0;
+    for (i = 0; i < seg.length; i++) rms += seg[i] * seg[i];
+    rms = Math.sqrt(rms / seg.length);
+
+    // spectral centroid
+    num = 0; den = 0;
+    for (k = 0; k < mag.length; k++) {
+      fq = k * sr / FSIZE;
+      num += fq * mag[k];
+      den += mag[k];
+    }
+
+    frames.push({ mfcc: mfcc, zcr: zcr, rms: rms, cen: den > 0 ? num / den : 0 });
+  }
+  return frames;
+}
+
+
+// =============================================================
+//  HEURISTIC FEEDBACK
+// =============================================================
+
+function heuristicFeedback(frames, word, group) {
+  var out = [], i, j;
+  var mxR = 0;
+  for (i = 0; i < frames.length; i++) if (frames[i].rms > mxR) mxR = frames[i].rms;
+  var thr = mxR * 0.12;
+  var vf  = frames.filter(function (f) { return f.rms > thr; });
+
+  if (vf.length < 3) return [{ t: 'warn', s: 'No speech detected — check microphone' }];
+
+  function avg(arr, fn) { var s = 0, i; for (i = 0; i < arr.length; i++) s += fn(arr[i]); return s / arr.length; }
+
+  var onset = vf.slice(0, Math.max(1, Math.floor(vf.length * 0.25)));
+  var nS    = Math.floor(vf.length * 0.2);
+  var nE    = Math.floor(vf.length * 0.8);
+  var nuc   = vf.slice(nS, Math.max(nS + 1, nE));
+  var coda  = vf.slice(Math.max(0, vf.length - Math.floor(vf.length * 0.22)));
+
+  var oCen    = avg(onset, function (f) { return f.cen; });
+  var oZCR    = avg(onset, function (f) { return f.zcr; });
+  var avgZCR  = avg(vf,    function (f) { return f.zcr; });
+  var codaRMS = avg(coda,  function (f) { return f.rms; });
+
+  // averaged nucleus MFCCs
+  var nucM = [];
+  for (i = 0; i < NMCC; i++) {
+    var s = 0;
+    for (j = 0; j < nuc.length; j++) s += nuc[j].mfcc[i];
+    nucM.push(s / (nuc.length || 1));
+  }
+
+  var gtype  = (GROUPS[group] || {}).type || '';
+  var durMs  = frames.length * HSIZE / 44100 * 1000;
+
+  if (durMs < 180)
+    out.push({ t: 'warn', s: 'Word was very short — speak it more fully' });
+
+  // ── onset cluster analysis ──
+  if (gtype === 'onset-sibilant') {
+    if (oCen > 3800 && oZCR > 0.12)
+      out.push({ t: 'pass', s: '/s/ onset strong — centroid ' + Math.round(oCen) + ' Hz (sibilant energy present)' });
+    else
+      out.push({ t: 'fail', s: '/s/ onset weak — centroid ' + Math.round(oCen) + ' Hz, need >3800 Hz. Push air through narrow tongue gap' });
+  }
+
+  if (gtype === 'onset-stop-liquid') {
+    if (word.charAt(0) === 'f') {
+      if (oCen > 3200)
+        out.push({ t: 'pass', s: '/f/ detected — labiodental fricative energy (' + Math.round(oCen) + ' Hz)' });
+      else
+        out.push({ t: 'fail', s: '/f/ onset weak — upper teeth on lower lip, push air. Centroid: ' + Math.round(oCen) + ' Hz' });
+    } else {
+      if (oCen < 2400)
+        out.push({ t: 'pass', s: 'Stop onset sounds right (' + Math.round(oCen) + ' Hz — not fricative-like)' });
+      else
+        out.push({ t: 'fail', s: 'Onset too fricative-like (' + Math.round(oCen) + ' Hz) — feel a full lip/tongue closure for /b/ or /k/' });
+    }
+  }
+
+  // ── vowel analysis ──
+  if (gtype === 'vowel') {
+    var m1   = nucM[1], m2 = nucM[2];
+    var desc = (m1 < 0 ? 'high' : 'low') + '-' + (m2 > 0 ? 'front' : 'back');
+    var hint = VH[word];
+    out.push({ t: 'info', s: 'MFCC heuristic: ' + desc + ' (c\u2081=' + m1.toFixed(1) + ', c\u2082=' + m2.toFixed(1) + ')' + (hint ? ' — for ' + hint.label + ': ' + hint.tip : '') });
+    if (hint) {
+      var match = desc === hint.ex || (Math.abs(m1) < 3 && hint.ex.indexOf('mid') >= 0);
+      out.push({ t: match ? 'pass' : 'fail', s: match ? 'Heuristic matches ' + hint.ex + ' quality for ' + hint.label : 'Heuristic: detected ' + desc + ', expected ' + hint.ex + ' for ' + hint.label });
+    }
+  }
+
+  // ── coda blend analysis ──
+  if (gtype === 'coda') {
+    var bl = CODA_BLENDS[word] || 'blend';
+    if (codaRMS > thr * 1.3)
+      out.push({ t: 'pass', s: bl + ' coda energy present (RMS ' + codaRMS.toFixed(4) + ')' });
+    else
+      out.push({ t: 'fail', s: bl + ' ending sounds clipped — articulate both consonants, hold the last one' });
+  }
+
+  if (avgZCR > 0.28)
+    out.push({ t: 'info', s: 'High background noise — try in a quieter space' });
+
+  return out;
+}
+
+
+// =============================================================
+//  RECORDING & AUDIO PROCESSING
+// =============================================================
+
+var audioCtx   = null;
+var recChunks  = [];
+var mediaRec   = null;
+var recStream  = null;
+var recognition= null;
+var listening  = false;
+var animId     = null;
+
+var correct = 0, total = 0, history = [];
+var curGroup = Object.keys(GROUPS)[0];
+var curWord  = '';
+
+function toggleRec() {
+  if (listening) { stopRec(); return; }
+
+  if (!audioCtx) audioCtx = new (window.AudioContext || window.webkitAudioContext)();
+  if (audioCtx.state === 'suspended') audioCtx.resume();
+
+  navigator.mediaDevices.getUserMedia({ audio: true, video: false })
+    .then(function (stream) {
+      recStream = stream;
+      var src = audioCtx.createMediaStreamSource(stream);
+      var an  = audioCtx.createAnalyser();
+      an.fftSize = 2048;
+      src.connect(an);
+
+      recChunks = [];
+      try {
+        mediaRec = new MediaRecorder(stream);
+        mediaRec.ondataavailable = function (e) { if (e.data.size > 0) recChunks.push(e.data); };
+        mediaRec.onstop = processAudio;
+        mediaRec.start(100);
+      } catch (e) {
+        showErr('MediaRecorder: ' + e.message);
+        stream.getTracks().forEach(function (t) { t.stop(); });
+        return;
+      }
+
+      startASR();
+      listening = true;
+      document.getElementById('btnRec').classList.add('on');
+      document.getElementById('btnLbl').textContent = 'listening...';
+      clearFB();
+      hide('hmWrap');
+      hide('pbWrap');
+      drawWave(an);
+    })
+    .catch(function (e) { showErr('Mic denied — ' + e.message); });
+}
+
+function stopRec() {
+  if (!listening) return;
+  listening = false;
+  if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
+  if (recStream) recStream.getTracks().forEach(function (t) { t.stop(); });
+  cancelAnimationFrame(animId);
+  document.getElementById('btnRec').classList.remove('on');
+  document.getElementById('btnLbl').textContent = 'tap to speak';
+}
+
+function drawWave(an) {
+  var cv  = document.getElementById('waveCanvas');
+  cv.width  = (cv.offsetWidth || 600) * window.devicePixelRatio;
+  cv.height = 72 * window.devicePixelRatio;
+  var ctx = cv.getContext('2d');
+  var buf = new Uint8Array(an.frequencyBinCount);
+
+  function frame() {
+    if (!listening) return;
+    animId = requestAnimationFrame(frame);
+    an.getByteTimeDomainData(buf);
+    ctx.clearRect(0, 0, cv.width, cv.height);
+    ctx.strokeStyle = '#94a3b8';
+    ctx.lineWidth   = 1.5;
+    ctx.beginPath();
+    var sw = cv.width / buf.length, i, y;
+    for (i = 0; i < buf.length; i++) {
+      y = (buf[i] / 128) * (cv.height / 2);
+      i === 0 ? ctx.moveTo(0, y) : ctx.lineTo(i * sw, y);
+    }
+    ctx.stroke();
+  }
+  frame();
+}
+
+function processAudio() {
+  if (!recChunks.length) return;
+  var blob = new Blob(recChunks, { type: 'audio/webm' });
+
+  blob.arrayBuffer().then(function (ab) {
+    audioCtx.decodeAudioData(ab, function (aB) {
+      var audio  = Array.from(aB.getChannelData(0));
+      var sr     = aB.sampleRate;
+      var frames = extractFrames(audio, sr);
+
+      if (frames.length < 4) {
+        addFB({ t: 'warn', s: 'Recording too short — try again' });
+        return;
+      }
+
+      drawHeatmap(frames);
+      lastNuc = null;
+
+      var gtype = (GROUPS[curGroup] || {}).type || '';
+
+      // ── neural network (vowels only) ──
+      if (gtype === 'vowel') {
+        var mxR = 0, i, j, s;
+        for (i = 0; i < frames.length; i++) if (frames[i].rms > mxR) mxR = frames[i].rms;
+        var thr = mxR * 0.12;
+        var vf  = frames.filter(function (f) { return f.rms > thr; });
+
+        if (vf.length >= 3) {
+          var nS  = Math.floor(vf.length * 0.2);
+          var nE  = Math.floor(vf.length * 0.8);
+          var nuc = vf.slice(nS, Math.max(nS + 1, nE));
+
+          if (nuc.length > 0) {
+            var nucM = [];
+            for (i = 0; i < NMCC; i++) {
+              s = 0;
+              for (j = 0; j < nuc.length; j++) s += nuc[j].mfcc[i];
+              nucM.push(s / nuc.length);
+            }
+            lastNuc = nucM;
+
+            var t0    = performance.now();
+            var probs = net.predict(nucM);
+            var ms    = (performance.now() - t0).toFixed(2);
+
+            showProbBars(probs, ms);
+
+            var top = 0;
+            for (i = 1; i < probs.length; i++) if (probs[i] > probs[top]) top = i;
+            var exp  = W2C[curWord];
+            var conf = Math.round(probs[top] * 100);
+            var n    = TD.X.length;
+
+            if (n < 8) {
+              addFB({ t: 'info', s: 'Neural net: model cold — need ~10 correct vowel attempts before predictions are reliable (have ' + n + ')' });
+            } else if (top === exp) {
+              addFB({ t: 'pass', s: 'Neural net: ' + VC[top].label + ' \u2713 (' + conf + '% confidence \u00b7 ' + n + ' training samples \u00b7 ' + ms + 'ms)' });
+            } else {
+              addFB({ t: 'fail', s: 'Neural net: predicted ' + VC[top].label + ' (' + conf + '%), expected ' + (VC[exp] || { label: '?' }).label + (VH[curWord] ? ' \u2014 ' + VH[curWord].tip : '') });
+            }
+          }
+        }
+      }
+
+      // heuristic feedback for all groups
+      heuristicFeedback(frames, curWord, curGroup).forEach(addFB);
+
+    }, function () { addFB({ t: 'warn', s: 'Could not decode audio' }); });
+  });
+}
+
+
+// =============================================================
+//  SPEECH RECOGNITION (Web Speech API)
+// =============================================================
+
+function startASR() {
+  var SR = window.SpeechRecognition || window.webkitSpeechRecognition;
+  if (!SR) return;
+
+  recognition = new SR();
+  recognition.continuous      = false;
+  recognition.interimResults  = false;
+  recognition.lang            = 'en-US';
+
+  recognition.onresult = function (e) {
+    var heard = e.results[0][0].transcript.trim().toLowerCase();
+    var pass  = heard === curWord ||
+                heard.indexOf(curWord) >= 0 ||
+                levenshtein(heard, curWord) <= 1;
+
+    total++;
+    if (pass) correct++;
+    updateScores();
+    addHistory(curWord, heard, pass);
+    addFB({ t: pass ? 'pass' : 'fail', s: 'speech-to-text: \u201c' + heard + '\u201d \u2014 ' + (pass ? 'matches target' : 'expected \u201c' + curWord + '\u201d') }, true);
+
+    // online training step
+    if (pass && lastNuc) {
+      var ci = W2C[curWord];
+      if (ci !== undefined) {
+        TD.X.push(lastNuc.slice());
+        TD.Y.push(oneHot(ci, 6));
+        var loss = net.train(TD.X, TD.Y);
+        var n    = TD.X.length;
+        var badge = document.getElementById('netBadge');
+        var txt   = document.getElementById('netTxt');
+        txt.textContent = 'pure JS \u00b7 13\u219216\u21928\u21926 \u00b7 ' + n + ' sample' + (n !== 1 ? 's' : '') + ' \u00b7 loss: ' + loss.toFixed(3) + ' \u00b7 ' + (n >= 8 ? 'model active' : 'model cold');
+        badge.className = n >= 8 ? 'active' : 'info';
+      }
+    }
+
+    stopRec();
+  };
+
+  recognition.onerror = function () { stopRec(); };
+  recognition.onend   = function () { if (listening) stopRec(); };
+
+  try { recognition.start(); } catch (e) { /* already started */ }
+}
+
+
+// =============================================================
+//  VISUALISATION
+// =============================================================
+
+function drawHeatmap(frames) {
+  show('hmWrap');
+  var cv = document.getElementById('hmCanvas');
+  var W  = cv.parentElement.offsetWidth || 600;
+  cv.width = W; cv.height = 104; cv.style.width = W + 'px';
+  var ctx = cv.getContext('2d');
+  var nF = frames.length, nC = NMCC;
+  var cW = W / nF, cH = 104 / nC;
+
+  var mn = Infinity, mx = -Infinity, t, c, v;
+  for (t = 0; t < nF; t++)
+    for (c = 0; c < nC; c++) { v = frames[t].mfcc[c]; if (v < mn) mn = v; if (v > mx) mx = v; }
+  var rng = mx - mn || 1;
+
+  for (t = 0; t < nF; t++) {
+    for (c = 0; c < nC; c++) {
+      var n = (frames[t].mfcc[c] - mn) / rng;
+      var r, g, b, p;
+      if (n < 0.5) { p = n * 2; r = Math.round(p * 255); g = r; b = 255; }
+      else         { p = (1 - n) * 2; r = 255; g = Math.round(p * 255); b = g; }
+      ctx.fillStyle = 'rgb(' + r + ',' + g + ',' + b + ')';
+      ctx.fillRect(Math.round(t * cW), Math.round(c * cH), Math.ceil(cW) + 1, Math.ceil(cH) + 1);
+    }
+  }
+
+  ctx.fillStyle = 'rgba(0,0,0,0.45)';
+  ctx.font = Math.max(7, Math.round(cH * 0.65)) + 'px monospace';
+  for (c = 0; c < nC; c++)
+    ctx.fillText('c' + c, 2, Math.round(c * cH + cH * 0.78));
+}
+
+function showProbBars(probs, ms) {
+  show('pbWrap');
+  var top = 0, i;
+  for (i = 1; i < probs.length; i++) if (probs[i] > probs[top]) top = i;
+  var html = '', p, isTop;
+  for (i = 0; i < VC.length; i++) {
+    p    = Math.round(probs[i] * 100);
+    isTop = (i === top);
+    html += '<div class="pb-row">';
+    html += '<span class="pb-lbl' + (isTop ? ' hi' : '') + '">' + VC[i].label + '</span>';
+    html += '<div class="pb-bg"><div class="pb-fill' + (isTop ? ' hi' : '') + '" style="width:' + p + '%"></div></div>';
+    html += '<span class="pb-val' + (isTop ? ' hi' : '') + '">' + p + '%</span>';
+    html += '</div>';
+  }
+  document.getElementById('pbBars').innerHTML = html;
+  var n = TD.X.length;
+  document.getElementById('pbMeta').textContent =
+    'inference ' + ms + 'ms \u00b7 ' + n + ' training sample' + (n !== 1 ? 's' : '') + ' \u00b7 ' + (n < 8 ? 'cold' : 'active');
+}
+
+
+// =============================================================
+//  UI HELPERS
+// =============================================================
+
+function addFB(fb, prepend) {
+  var icons = { pass: '✓', fail: '✗', warn: '⚠', info: 'ℹ' };
+  var d = document.createElement('div');
+  d.className = 'fb' + (fb.t === 'pass' ? ' pass' : fb.t === 'fail' ? ' fail' : fb.t === 'warn' ? ' warn' : '');
+  d.innerHTML = '<span class="fb-icon">' + (icons[fb.t] || 'ℹ') + '</span><span>' + fb.s + '</span>';
+  var list = document.getElementById('fbList');
+  if (prepend) list.insertBefore(d, list.firstChild);
+  else         list.appendChild(d);
+}
+
+function clearFB() { document.getElementById('fbList').innerHTML = ''; }
+function show(id)   { document.getElementById(id).style.display = 'block'; }
+function hide(id)   { document.getElementById(id).style.display = 'none'; }
+
+function showErr(msg) {
+  var e = document.getElementById('errBox');
+  e.textContent = msg;
+  e.style.display = 'block';
+}
+
+function updateScores() {
+  document.getElementById('sC').textContent = correct;
+  document.getElementById('sT').textContent = total;
+  document.getElementById('sP').textContent = total > 0 ? Math.round(correct / total * 100) + '%' : '—';
+}
+
+function addHistory(w, h, pass) {
+  history.unshift({ w: w, h: h, pass: pass });
+  if (history.length > 5) history.pop();
+  show('histBlock');
+  var html = '', i, x;
+  for (i = 0; i < history.length; i++) {
+    x = history[i];
+    html += '<div class="hist-row">';
+    html += '<span>' + x.w + '</span>';
+    html += '<span class="h-heard">\u201c' + x.h + '\u201d</span>';
+    html += '<span class="badge ' + (x.pass ? 'ok' : 'no') + '">' + (x.pass ? '✓' : '✗') + '</span>';
+    html += '</div>';
+  }
+  document.getElementById('histRows').innerHTML = html;
+}
+
+function levenshtein(a, b) {
+  var m = a.length, n = b.length, i, j;
+  var d = [];
+  for (i = 0; i <= m; i++) {
+    d[i] = [];
+    for (j = 0; j <= n; j++)
+      d[i][j] = i === 0 ? j : j === 0 ? i : 0;
+  }
+  for (i = 1; i <= m; i++)
+    for (j = 1; j <= n; j++)
+      d[i][j] = a[i-1] === b[j-1] ? d[i-1][j-1] : 1 + Math.min(d[i-1][j], d[i][j-1], d[i-1][j-1]);
+  return d[m][n];
+}
+
+function nextWord() {
+  var ws = GROUPS[curGroup].words;
+  curWord = ws[Math.floor(Math.random() * ws.length)];
+  document.getElementById('tWord').textContent = curWord;
+  document.getElementById('tPhon').textContent = 'focus: ' + GROUPS[curGroup].phonemes.join('  ');
+  clearFB();
+  hide('hmWrap');
+  hide('pbWrap');
+}
+
+
+// =============================================================
+//  INIT
+// =============================================================
+
+(function init() {
+  try {
+    var groupKeys = Object.keys(GROUPS);
+    var container = document.getElementById('pillGroup');
+    var i;
+
+    for (i = 0; i < groupKeys.length; i++) {
+      (function (g, idx) {
+        var btn = document.createElement('button');
+        btn.className   = 'pill' + (idx === 0 ? ' on' : '');
+        btn.textContent = g;
+        btn.onclick = function () {
+          document.querySelectorAll('.pill').forEach(function (p) { p.classList.remove('on'); });
+          btn.classList.add('on');
+          curGroup = g;
+          melFB    = null;  // rebuild filterbank for new sample rate if needed
+          nextWord();
+        };
+        container.appendChild(btn);
+      }(groupKeys[i], i));
+    }
+
+    if (!navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) {
+      showErr('getUserMedia not available — serve this file over HTTP (e.g. npx serve .) and use Chrome or Edge');
+    }
+
+    nextWord();
+
+  } catch (err) {
+    showErr('Init error: ' + err.message);
+  }
+}());
+</script>
+</body>
+</html>
