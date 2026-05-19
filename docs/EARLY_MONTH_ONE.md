@@ -4,7 +4,7 @@ Source: [`claude imports/EARLY_cursor_context.pdf`](../claude%20imports/EARLY_cu
 
 ## Product identity
 
-- **EARLY** = Early Assisted Reading and Literacy for Youth
+- **EARLY** — classroom pronunciation practice (full name: Early Assisted Reading and Literacy for Youth)
 - **Now**: EARLY Student (this app) — pronunciation practice on iPad
 - **Later**: EARLY Teach (teacher dashboard), EARLY Assess (diagnostics)
 - **Data**: Real students in your classroom; labeled via session logs + your professional judgment

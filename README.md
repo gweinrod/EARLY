@@ -1,4 +1,4 @@
-# EARLY — Early Assisted Reading and Literacy for Youth
+# EARLY
 
 Browser-based phoneme pronunciation practice for **iPad in the classroom**. Students hear a target word, speak it, and get simple feedback; the app **silently** records MFCC features and heuristic flags while you log **agree / disagree** judgments for ML training data.
 
@@ -59,11 +59,11 @@ URL overrides: `?debug=1`, `?student=1`, `?nonsense=1`
 ## Private GitHub remote
 
 ```bash
-git remote add origin https://github.com/YOUR_USER/early-assisted-reading.git
+git remote add origin https://github.com/YOUR_USER/EARLY.git
 git push -u origin main
 ```
 
-Or with GitHub CLI: `gh repo create early-assisted-reading --private --source=. --push`
+Or with GitHub CLI: `gh repo create EARLY --private --source=. --push`
 
 ## Scripts
 
