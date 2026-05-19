@@ -10,7 +10,8 @@
     "build": "tsc && vite build",
     "preview": "vite preview",
     "calibration:pull": "node tools/pull_calibration_samples.mjs",
-    "calibration:train": "python tools/train_global_model.py"
+    "calibration:train": "python tools/train_global_model.py",
+    "publish:model": "scripts\\publish-shared-model.bat"
   },
   "devDependencies": {
     "@vercel/node": "^5.0.2",

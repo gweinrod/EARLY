@@ -21,21 +21,31 @@ The teacher panel shows **Cloud training: N samples on server** when uploads wor
 
 ## 3. Publish the shared model (your machine)
 
-```powershell
-cd C:\EARLY
-$env:BLOB_READ_WRITE_TOKEN = "..."   # from Vercel Blob settings
+**One-time:** `pip install tensorflow tensorflowjs`
 
-npm run calibration:pull
-pip install tensorflow tensorflowjs
-python tools/train_global_model.py --stage alphabet
+Put your token in repo-root `.env`:
 
-git add public/models/
-npm run version:bump
-git commit -m "Publish shared alphabet model vN"
-git push
+```
+BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...
 ```
 
-After deploy, all iPads/PCs load **vN** on next open (feedback: “Loaded shared classroom model”).
+**Windows batch (recommended):**
+
+```bat
+cd C:\EARLY
+scripts\publish-shared-model.bat
+scripts\publish-shared-model.bat deploy
+```
+
+Or: `npm run publish:model` (train only) — add `deploy` as the first argument to the `.bat` for git push.
+
+| Command | Does |
+|---------|------|
+| `publish-shared-model.bat` | pull → train → version bump (you commit manually) |
+| `publish-shared-model.bat deploy` | same + `git commit` + `git push` |
+| `publish-shared-model.bat consonants` | other stage (when train script supports it) |
+
+After deploy, all iPads/PCs load the new version on next open (feedback: “Loaded shared classroom model”).
 
 ## 4. Data layout in Blob
 
