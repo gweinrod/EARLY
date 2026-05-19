@@ -53,5 +53,5 @@ See [`DEPLOY.md`](DEPLOY.md) for GitHub + Vercel commands.
 2. Open in **Safari** on the classroom iPad
 3. Share → Add to Home Screen
 4. Enter anonymous student ID at start of each session
-5. After each word, tap **agree** or **disagree** with the app
+5. After each word: **agree** or **disagree** with the app’s pass/fail; tap **speech-to-text wrong** when the transcript is not what the student said (can combine with agree/disagree)
 6. End of session: export JSON and store for `tools/` training pipeline (Phase 2)

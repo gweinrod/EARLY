@@ -14,7 +14,8 @@ import {
   logAttempt,
   setStudentId,
 } from './session-log';
-import { asrStudentMessage, toStudentFeedback } from './student-feedback';
+import { deriveAppPass } from './scoring';
+import { acousticStudentMessage, toStudentFeedback } from './student-feedback';
 import {
   $,
   addFB,
@@ -169,21 +170,25 @@ async function processAudio(): Promise<void> {
 }
 
 function finishAttempt(heard: string, asrPass: boolean): void {
+  const { appPass, basis } = deriveAppPass(asrPass, lastHeuristicItems);
+
   total++;
-  if (asrPass) correct++;
+  if (appPass) correct++;
   updateScores(correct, total);
-  addHistory(curWord, heard, asrPass, history);
-  showResultBanner(asrPass);
+  addHistory(curWord, heard, appPass, history);
+  showResultBanner(appPass);
 
   const studentMsg = settings.collectorMode && !settings.showMlDebug
-    ? asrStudentMessage(asrPass, heard)
+    ? acousticStudentMessage(appPass)
     : {
-        t: asrPass ? ('pass' as const) : ('fail' as const),
-        s: `speech-to-text: “${heard}” — ${asrPass ? 'matches target' : `expected “${curWord}”`}`,
+        t: appPass ? ('pass' as const) : ('fail' as const),
+        s:
+          `app ${appPass ? 'pass' : 'fail'} (${basis}) · speech-to-text: “${heard}” — ` +
+          `${asrPass ? 'matches target' : `expected “${curWord}”`}`,
       };
   addFB(studentMsg, true);
 
-  if (asrPass) trainVowelNetSilently();
+  if (appPass) trainVowelNetSilently();
 
   if (settings.collectorMode) {
     const sidInput = $('studentId') as HTMLInputElement;
@@ -195,7 +200,10 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       word: curWord,
       heard,
       asrPass,
+      appPass,
+      scoringBasis: basis,
       heuristicFlags: flagsFromFeedback(lastHeuristicItems),
+      asrTranscriptWrong: null,
       nucleusMfcc: lastNuc,
       vowelClassIndex: W2C[curWord] ?? null,
       teacherAgrees: null,

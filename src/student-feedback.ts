@@ -25,9 +25,10 @@ export function toStudentFeedback(items: FeedbackItem[]): FeedbackItem[] {
   });
 }
 
-export function asrStudentMessage(pass: boolean, heard: string): FeedbackItem {
+/** Student-facing verdict from acoustic/heuristic scoring (not speech-to-text). */
+export function acousticStudentMessage(pass: boolean): FeedbackItem {
   if (pass) {
-    return { t: 'pass', s: 'Great — I heard the word!' };
+    return { t: 'pass', s: 'Nice — that sounded clear!' };
   }
-  return { t: 'fail', s: "Hmm, let's try that word again." };
+  return { t: 'fail', s: "Let's try that word again — say it slowly." };
 }

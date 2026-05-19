@@ -14,10 +14,15 @@ export interface AttemptLog {
   word: string;
   heard: string | null;
   asrPass: boolean;
+  /** Pass/fail shown to student (heuristics first, ASR fallback). */
+  appPass: boolean;
+  scoringBasis: 'heuristic' | 'asr' | 'asr_only';
   heuristicFlags: HeuristicFlag[];
   nucleusMfcc: number[] | null;
   vowelClassIndex: number | null;
   teacherAgrees: boolean | null;
+  /** Teacher says speech-to-text transcript did not match what the student said. */
+  asrTranscriptWrong: boolean | null;
 }
 
 export interface SessionMeta {
@@ -51,10 +56,22 @@ export function setStudentId(studentId: string): void {
   localStorage.setItem(META_KEY, JSON.stringify(meta));
 }
 
+function normalizeAttempt(row: AttemptLog): AttemptLog {
+  if (row.appPass !== undefined && row.scoringBasis !== undefined) {
+    return { ...row, asrTranscriptWrong: row.asrTranscriptWrong ?? null };
+  }
+  return {
+    ...row,
+    appPass: row.asrPass,
+    scoringBasis: 'asr_only',
+    asrTranscriptWrong: row.asrTranscriptWrong ?? null,
+  };
+}
+
 export function loadAttempts(): AttemptLog[] {
   try {
     const raw = localStorage.getItem(LOG_KEY);
-    return raw ? (JSON.parse(raw) as AttemptLog[]) : [];
+    return raw ? (JSON.parse(raw) as AttemptLog[]).map(normalizeAttempt) : [];
   } catch {
     return [];
   }
@@ -79,11 +96,16 @@ export function logAttempt(entry: Omit<AttemptLog, 'id' | 'sessionId' | 'timesta
   return row;
 }
 
-export function updateTeacherJudgment(attemptId: string, teacherAgrees: boolean): void {
+export function updateTeacherJudgment(
+  attemptId: string,
+  teacherAgrees: boolean,
+  asrTranscriptWrong: boolean,
+): void {
   const attempts = loadAttempts();
   const row = attempts.find((a) => a.id === attemptId);
   if (!row) return;
   row.teacherAgrees = teacherAgrees;
+  row.asrTranscriptWrong = asrTranscriptWrong;
   saveAttempts(attempts);
 }
 

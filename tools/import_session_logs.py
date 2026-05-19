@@ -35,7 +35,10 @@ def flatten_attempts(data: dict, source: str) -> list[dict]:
                 "word": a.get("word"),
                 "heard": a.get("heard"),
                 "asr_pass": a.get("asrPass"),
+                "app_pass": a.get("appPass"),
+                "scoring_basis": a.get("scoringBasis"),
                 "teacher_agrees": a.get("teacherAgrees"),
+                "asr_transcript_wrong": a.get("asrTranscriptWrong"),
                 "heuristic_flag_count": len(a.get("heuristicFlags") or []),
                 "has_mfcc": bool(a.get("nucleusMfcc")),
                 "vowel_class_index": a.get("vowelClassIndex"),
@@ -64,12 +67,14 @@ def main() -> int:
 
     judged = [r for r in all_rows if r["teacher_agrees"] is not None]
     disagreements = [r for r in judged if r["teacher_agrees"] is False]
+    asr_wrong = [r for r in all_rows if r.get("asr_transcript_wrong")]
     with_mfcc = [r for r in all_rows if r["has_mfcc"]]
 
     print(f"Files:     {len(args.files)}")
     print(f"Attempts:  {len(all_rows)}")
     print(f"Judged:    {len(judged)}")
     print(f"Disagree:  {len(disagreements)}  (high-value labels)")
+    print(f"ASR wrong: {len(asr_wrong)}  (transcript flagged by teacher)")
     print(f"With MFCC: {len(with_mfcc)}")
 
     if args.csv:
