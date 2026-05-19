@@ -11,6 +11,7 @@ import {
   clearServerTrainingData,
   formatClearServerMessage,
 } from './clear-training-data';
+import { refreshLocalTrainingStatus } from './local-training-stats';
 import { $, hide, show } from './ui';
 
 let pendingAttemptId: string | null = null;
@@ -175,6 +176,7 @@ function commitJudgment(
   hide('judgmentBlock');
 
   judgmentHandler?.({ agrees, asrWrong, dspWrong, teacherHeard, teacherHeardKey });
+  refreshLocalTrainingStatus(pendingStageId);
 
   const status = $('judgmentStatus');
   status.textContent = opts?.statusMessage ?? `Accepted “${teacherHeard}”.`;

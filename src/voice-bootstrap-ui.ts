@@ -9,6 +9,7 @@ import {
   loadVoiceBank,
 } from './voice-bank';
 import { clearSyncedVoiceBank, uploadVoiceBankSample } from './cloud-voice-bank';
+import { refreshLocalTrainingStatus } from './local-training-stats';
 import { deleteStoredModel, retrainFromVoiceBank } from './tf-phoneme';
 import { createMediaRecorder } from './recorder';
 import { $, hide, show } from './ui';
@@ -158,6 +159,7 @@ async function onBootstrapRecorded(): Promise<void> {
     targetKey: item.key,
     embedding: result.embedding,
   });
+  refreshLocalTrainingStatus(stageId);
   $('bootstrapStatus').textContent = `Saved ${item.display} (${item.spokenName}) — syncing to cloud.`;
 
   if (!isVoiceBankComplete(stageId)) {

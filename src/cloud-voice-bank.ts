@@ -82,6 +82,10 @@ export function clearVoiceBankQueue(): void {
   notifyCloudSyncActivity();
 }
 
+export function countVoiceQueueForStage(stageId: CurriculumStageId): number {
+  return loadQueue().filter((p) => p.stageId === stageId).length;
+}
+
 function toPayload(upload: VoiceBankUpload): QueuedVoicePayload {
   return {
     v: 1,

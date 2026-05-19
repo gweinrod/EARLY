@@ -35,6 +35,7 @@ import {
   subscribeCloudSync,
   uploadCalibrationSample,
 } from './cloud-calibration';
+import { refreshLocalTrainingStatus } from './local-training-stats';
 import {
   flushVoiceBankQueue,
   getVoiceBankQueueLength,
@@ -474,6 +475,7 @@ async function switchStage(stageId: CurriculumStageId): Promise<void> {
   }
   $('netTxt').textContent = `TensorFlow.js WASM · ${getStage(stageId).label}`;
   void refreshCloudStats(stageId, getVoiceBankQueueLength());
+  refreshLocalTrainingStatus(stageId);
   nextItem();
 }
 
@@ -661,7 +663,9 @@ function init(): void {
     syncStudentIdField(meta.studentId);
     subscribeCloudSync((s) => {
       $('cloudSyncStatus').textContent = formatCloudSyncLine(s);
+      refreshLocalTrainingStatus(curStageId);
     });
+    refreshLocalTrainingStatus(curStageId);
     void flushCloudQueue()
       .then(() => flushVoiceBankQueue())
       .then(async () => {

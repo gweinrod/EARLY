@@ -81,6 +81,17 @@ export function clearCloudQueue(): void {
   emit();
 }
 
+export function countCalibrationQueueForStage(stageId: CurriculumStageId): number {
+  try {
+    const raw = localStorage.getItem(QUEUE_KEY);
+    if (!raw) return 0;
+    const q = JSON.parse(raw) as Array<{ stageId?: string }>;
+    return q.filter((p) => p.stageId === stageId).length;
+  } catch {
+    return 0;
+  }
+}
+
 function toPayload(upload: CloudCalibrationUpload): QueuedPayload {
   return {
     v: 1,
@@ -196,12 +207,11 @@ export function formatCloudSyncLine(s: CloudSyncState): string {
   ) {
     return 'Cloud training: not connected (enable Vercel Blob on deploy).';
   }
-  const parts: string[] = [];
-  if (s.voiceBankTotal !== null) parts.push(`${s.voiceBankTotal} voice on server`);
-  if (s.serverTotal !== null) parts.push(`${s.serverTotal} judgments on server`);
+  const voice = s.voiceBankTotal ?? 0;
+  const judgments = s.serverTotal ?? 0;
+  let line = `Cloud training: ${voice} voice on server · ${judgments} judgments on server`;
   const pending = s.pending + s.voicePending;
-  if (pending > 0) parts.push(`${pending} waiting to upload`);
-  if (s.lastUploadAt && pending === 0) parts.push('synced');
-  if (s.lastError) parts.push(s.lastError);
-  return parts.length ? `Cloud training: ${parts.join(' · ')}` : 'Cloud training: connected';
+  if (pending > 0) line += ` · ${pending} waiting to upload`;
+  if (s.lastError) line += ` · ${s.lastError}`;
+  return line;
 }
