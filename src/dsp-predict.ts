@@ -7,6 +7,7 @@ import {
   isTfPredictBusy,
   isTfReady,
   predictWordForTarget,
+  type TfInitResult,
   type TfWordPrediction,
 } from './tf-phoneme';
 import type { CurriculumStageId } from './curriculum';
@@ -49,8 +50,8 @@ function heuristicSummary(items: FeedbackItem[]): string {
   return `Heuristics: pass — ${judged[0].s.slice(0, 80)}`;
 }
 
-export async function ensureDspEngine(stageId: CurriculumStageId): Promise<void> {
-  await initTfPhonemeModel(stageId);
+export async function ensureDspEngine(stageId: CurriculumStageId): Promise<TfInitResult> {
+  return initTfPhonemeModel(stageId);
 }
 
 export function runDspPrediction(

@@ -36,8 +36,33 @@ export function getActiveTfStage(): CurriculumStageId {
   return activeStage;
 }
 
-export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<void> {
-  if (ready && activeStage === stageId && model) return;
+export type TfModelLoadSource =
+  | 'published_fresh'
+  | 'published_cached'
+  | 'local'
+  | 'bootstrap'
+  | 'none';
+
+export interface TfInitResult {
+  source: TfModelLoadSource;
+  publishedVersion: number | null;
+}
+
+const noneResult = (): TfInitResult => ({ source: 'none', publishedVersion: null });
+
+async function publishedCachedResult(stageId: CurriculumStageId): Promise<TfInitResult> {
+  const manifest = await fetchPublishedManifest(stageId);
+  const stored = getStoredPublishedVersion(stageId);
+  if (manifest && stored >= manifest.version) {
+    return { source: 'published_cached', publishedVersion: manifest.version };
+  }
+  return { source: 'local', publishedVersion: null };
+}
+
+export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<TfInitResult> {
+  if (ready && activeStage === stageId && model) {
+    return publishedCachedResult(stageId);
+  }
 
   model?.dispose();
   model = null;
@@ -46,20 +71,21 @@ export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<vo
 
   setVocabularyStage(stageId);
   const vocabSize = getVocabWords().length;
-  if (vocabSize === 0) return;
+  if (vocabSize === 0) return noneResult();
 
   await tf.setBackend('wasm');
   await tf.ready();
 
-  if (await tryLoadPublishedModel(stageId)) {
-    return;
+  const published = await tryLoadPublishedModel(stageId);
+  if (published) {
+    return { source: 'published_fresh', publishedVersion: published.version };
   }
 
   const url = modelStorageUrl(stageId);
   try {
     model = await tf.loadLayersModel(url);
     ready = true;
-    return;
+    return publishedCachedResult(stageId);
   } catch {
     /* no saved model for this stage */
   }
@@ -69,12 +95,14 @@ export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<vo
     if (!bootstrapped) {
       model = null;
       ready = false;
+      return noneResult();
     }
-    return;
+    return { source: 'bootstrap', publishedVersion: null };
   }
 
   model = null;
   ready = false;
+  return noneResult();
 }
 
 function createModel(numClasses: number): tf.LayersModel {
@@ -176,9 +204,11 @@ async function persistModel(): Promise<void> {
 }
 
 /** Shared model shipped with the app (trained from all teachers' cloud samples). */
-async function tryLoadPublishedModel(stageId: CurriculumStageId): Promise<boolean> {
+async function tryLoadPublishedModel(
+  stageId: CurriculumStageId,
+): Promise<PublishedModelManifest | null> {
   const manifest = await fetchPublishedManifest(stageId);
-  if (!manifest || manifest.version <= getStoredPublishedVersion(stageId)) return false;
+  if (!manifest || manifest.version <= getStoredPublishedVersion(stageId)) return null;
 
   try {
     const loaded = await tf.loadLayersModel(manifest.modelUrl);
@@ -188,9 +218,10 @@ async function tryLoadPublishedModel(stageId: CurriculumStageId): Promise<boolea
     await model.save(modelStorageUrl(stageId));
     setStoredPublishedVersion(stageId, manifest.version);
     ready = true;
-    return true;
-  } catch {
-    return false;
+    return manifest;
+  } catch (err) {
+    console.warn('EARLY: failed to load published model', manifest.modelUrl, err);
+    return null;
   }
 }
 
@@ -207,7 +238,7 @@ export async function applyPublishedModelUpdate(stageId: CurriculumStageId): Pro
   model?.dispose();
   model = null;
   ready = false;
-  return tryLoadPublishedModel(stageId);
+  return (await tryLoadPublishedModel(stageId)) !== null;
 }
 
 function schedulePersist(): void {
