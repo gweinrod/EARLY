@@ -67,7 +67,8 @@ export function createSpeechRecognition(): SpeechRecognition | null {
   const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition;
   if (!SR) return null;
   const recognition = new SR();
-  recognition.continuous = false;
+  /** One tap = one session; we call stop() when done (do not use false — dies mid-take). */
+  recognition.continuous = true;
   recognition.interimResults = true;
   recognition.lang = 'en-US';
   recognition.maxAlternatives = 1;
