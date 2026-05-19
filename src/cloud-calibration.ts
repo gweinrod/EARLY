@@ -2,6 +2,10 @@ import type { CurriculumStageId } from './curriculum';
 import { APP_VERSION } from './version';
 
 const QUEUE_KEY = 'early.cloudQueue.v1';
+const UPLOADED_ATTEMPTS_KEY = 'early.cloudUploadedAttempts.v1';
+/** Min interval between server stat fetches (each used to call Blob list). */
+const STATS_REFRESH_MS = 5 * 60 * 1000;
+let lastStatsRefreshAt = 0;
 
 export interface CloudCalibrationUpload {
   stageId: CurriculumStageId;
@@ -77,6 +81,7 @@ function saveQueue(q: QueuedPayload[]): void {
 
 export function clearCloudQueue(): void {
   localStorage.removeItem(QUEUE_KEY);
+  localStorage.removeItem(UPLOADED_ATTEMPTS_KEY);
   state.pending = 0;
   emit();
 }
@@ -101,6 +106,36 @@ function toPayload(upload: CloudCalibrationUpload): QueuedPayload {
   };
 }
 
+function loadUploadedAttempts(): Set<string> {
+  try {
+    const raw = localStorage.getItem(UPLOADED_ATTEMPTS_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function markAttemptUploaded(attemptId: string): void {
+  const ids = loadUploadedAttempts();
+  ids.add(attemptId);
+  if (ids.size > 500) {
+    const trimmed = [...ids].slice(-400);
+    localStorage.setItem(UPLOADED_ATTEMPTS_KEY, JSON.stringify(trimmed));
+  } else {
+    localStorage.setItem(UPLOADED_ATTEMPTS_KEY, JSON.stringify([...ids]));
+  }
+}
+
+function isAttemptAlreadyUploaded(attemptId: string | undefined): boolean {
+  if (!attemptId) return false;
+  return loadUploadedAttempts().has(attemptId);
+}
+
+function bumpServerJudgmentCount(delta = 1): void {
+  if (state.serverTotal != null) state.serverTotal += delta;
+  else state.serverTotal = delta;
+}
+
 async function postSample(payload: QueuedPayload): Promise<boolean> {
   const res = await fetch('/api/calibration', {
     method: 'POST',
@@ -113,14 +148,26 @@ async function postSample(payload: QueuedPayload): Promise<boolean> {
     emit();
     return false;
   }
+  if (res.ok) {
+    try {
+      const data = (await res.json()) as { stageTotal?: number };
+      if (typeof data.stageTotal === 'number') state.serverTotal = data.stageTotal;
+      else bumpServerJudgmentCount();
+    } catch {
+      bumpServerJudgmentCount();
+    }
+  }
   return res.ok;
 }
 
 /** Upload one teacher-confirmed sample; queue locally if offline. */
 export async function uploadCalibrationSample(upload: CloudCalibrationUpload): Promise<void> {
+  if (upload.attemptId && isAttemptAlreadyUploaded(upload.attemptId)) return;
+
   const payload = toPayload(upload);
   try {
     if (await postSample(payload)) {
+      if (upload.attemptId) markAttemptUploaded(upload.attemptId);
       state.enabled = true;
       state.lastUploadAt = payload.createdAt;
       state.lastError = null;
@@ -146,6 +193,7 @@ export async function flushCloudQueue(): Promise<void> {
   for (const payload of q) {
     try {
       if (await postSample(payload)) {
+        if (payload.attemptId) markAttemptUploaded(payload.attemptId);
         state.enabled = true;
         state.lastUploadAt = payload.createdAt;
         state.lastError = null;
@@ -162,11 +210,19 @@ export async function flushCloudQueue(): Promise<void> {
   emit();
 }
 
-/** Fetch how many samples are stored for this stage (all devices). */
+/** Fetch server counts (throttled — avoids Blob list on every judgment). */
 export async function refreshCloudStats(
   stageId: CurriculumStageId,
   voicePending = 0,
+  opts?: { force?: boolean },
 ): Promise<void> {
+  const now = Date.now();
+  if (!opts?.force && now - lastStatsRefreshAt < STATS_REFRESH_MS) {
+    state.voicePending = voicePending;
+    emit();
+    return;
+  }
+  lastStatsRefreshAt = now;
   state.voicePending = voicePending;
   try {
     const [calRes, voiceRes] = await Promise.all([

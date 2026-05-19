@@ -57,7 +57,7 @@ async function onClearServer(): Promise<void> {
   showDataStatus('Clearing server…');
   const result = await clearServerTrainingData();
   showDataStatus(formatClearServerMessage(result));
-  if (result.ok) refreshCloudHandler?.();
+  if (result.ok) refreshCloudHandler?.(); // force refresh after server clear
 }
 
 async function onClearLocal(): Promise<void> {

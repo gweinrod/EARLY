@@ -1,5 +1,13 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
-import { list, put } from '@vercel/blob';
+import { put } from '@vercel/blob';
+import {
+  blobToken,
+  incrementStageCount,
+  readStageCounts,
+  rebuildCountsFromList,
+  statsFromCounts,
+} from './blob-meta';
+import { listSampleStats } from './list-sample-stats';
 
 const SAMPLE_VERSION = 1;
 const EMBEDDING_LEN = 13;
@@ -20,10 +28,6 @@ export interface CalibrationSamplePayload {
   createdAt: string;
 }
 
-function token(): string | undefined {
-  return process.env.BLOB_READ_WRITE_TOKEN;
-}
-
 function isValidSample(body: unknown): body is CalibrationSamplePayload {
   if (!body || typeof body !== 'object') return false;
   const b = body as CalibrationSamplePayload;
@@ -39,31 +43,23 @@ function isValidSample(body: unknown): body is CalibrationSamplePayload {
   return true;
 }
 
-async function sampleStats(stageId: string | undefined): Promise<{ total: number; byStage: Record<string, number> }> {
-  const prefix = stageId ? `calibration/${stageId}/` : 'calibration/';
-  const byStage: Record<string, number> = {};
-  let cursor: string | undefined;
-  let total = 0;
-
-  for (;;) {
-    const page = await list({ prefix, limit: 1000, cursor, token: token()! });
-    for (const blob of page.blobs) {
-      if (!blob.pathname.endsWith('.json')) continue;
-      total++;
-      const parts = blob.pathname.split('/');
-      const stage = parts[1];
-      if (stage) byStage[stage] = (byStage[stage] ?? 0) + 1;
-    }
-    if (!page.hasMore) break;
-    cursor = page.cursor;
+async function sampleStats(
+  blobTok: string,
+  stageId?: string,
+): Promise<{ total: number; byStage: Record<string, number> }> {
+  let counts = await readStageCounts('calibration', blobTok);
+  const knownTotal = Object.values(counts).reduce((a, n) => a + n, 0);
+  if (knownTotal === 0) {
+    counts = await rebuildCountsFromList('calibration', blobTok, (sid) =>
+      listSampleStats('calibration', blobTok, sid),
+    );
   }
-
-  return { total, byStage };
+  return statsFromCounts(counts, stageId);
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {
-  const blobToken = token();
-  if (!blobToken) {
+  const tok = blobToken();
+  if (!tok) {
     res.status(503).json({
       error: 'cloud_storage_not_configured',
       hint: 'Set BLOB_READ_WRITE_TOKEN on Vercel (Storage → Blob).',
@@ -78,7 +74,7 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
       return;
     }
     try {
-      const stats = await sampleStats(stageId);
+      const stats = await sampleStats(tok, stageId);
       res.status(200).json(stats);
     } catch (e) {
       res.status(500).json({ error: 'stats_failed', message: String(e) });
@@ -105,10 +101,11 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     await put(pathname, JSON.stringify(sample), {
       access: 'public',
       contentType: 'application/json',
-      token: blobToken,
+      token: tok,
       addRandomSuffix: false,
     });
-    res.status(201).json({ ok: true, id, pathname });
+    const stageTotal = await incrementStageCount('calibration', sample.stageId, tok);
+    res.status(201).json({ ok: true, id, pathname, stageTotal });
   } catch (e) {
     res.status(500).json({ error: 'upload_failed', message: String(e) });
   }

@@ -5,6 +5,7 @@ import { notifyCloudSyncActivity } from './cloud-calibration';
 
 const QUEUE_KEY = 'early.cloudVoiceQueue.v1';
 const SYNCED_KEY = 'early.voiceBank.synced.v1';
+const CLOUD_INITIAL_SYNC_KEY = 'early.voiceBank.initialCloudSync.v1';
 
 export interface VoiceBankUpload {
   stageId: CurriculumStageId;
@@ -61,6 +62,14 @@ export function clearSyncedVoiceBank(stageId: CurriculumStageId): void {
     if (id.startsWith(prefix)) ids.delete(id);
   }
   saveSyncedIds(ids);
+  try {
+    const raw = localStorage.getItem(CLOUD_INITIAL_SYNC_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    delete map[stageId];
+    localStorage.setItem(CLOUD_INITIAL_SYNC_KEY, JSON.stringify(map));
+  } catch {
+    /* ignore */
+  }
 }
 
 function loadQueue(): QueuedVoicePayload[] {
@@ -98,6 +107,27 @@ function toPayload(upload: VoiceBankUpload): QueuedVoicePayload {
   };
 }
 
+function isInitialCloudSyncDone(stageId: CurriculumStageId): boolean {
+  try {
+    const raw = localStorage.getItem(CLOUD_INITIAL_SYNC_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    return !!map[stageId];
+  } catch {
+    return false;
+  }
+}
+
+function markInitialCloudSyncDone(stageId: CurriculumStageId): void {
+  try {
+    const raw = localStorage.getItem(CLOUD_INITIAL_SYNC_KEY);
+    const map = raw ? (JSON.parse(raw) as Record<string, boolean>) : {};
+    map[stageId] = true;
+    localStorage.setItem(CLOUD_INITIAL_SYNC_KEY, JSON.stringify(map));
+  } catch {
+    /* ignore */
+  }
+}
+
 async function postSample(payload: QueuedVoicePayload): Promise<boolean> {
   const res = await fetch('/api/voice-bank', {
     method: 'POST',
@@ -128,6 +158,8 @@ export async function uploadVoiceBankSample(upload: VoiceBankUpload): Promise<vo
 
 /** Upload local voice bank samples that have not been sent to the server yet. */
 export async function syncLocalVoiceBankToCloud(stageId: CurriculumStageId): Promise<void> {
+  if (isInitialCloudSyncDone(stageId)) return;
+
   const bank = loadVoiceBank(stageId);
   for (const [key, embeddings] of Object.entries(bank.samples)) {
     for (const embedding of embeddings) {
@@ -135,6 +167,7 @@ export async function syncLocalVoiceBankToCloud(stageId: CurriculumStageId): Pro
     }
   }
   await flushVoiceBankQueue();
+  markInitialCloudSyncDone(stageId);
 }
 
 export function getVoiceBankQueueLength(): number {

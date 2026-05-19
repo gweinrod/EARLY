@@ -59,9 +59,13 @@ After deploy, all iPads/PCs load the new version on next open (feedback: “Load
 ```
 voice-bank/<stageId>/<uuid>.json   — guided voice recordings
 calibration/<stageId>/<uuid>.json  — teacher judgments
+voice-bank/_meta/counts.json       — per-stage totals (avoids list() on every page load)
+calibration/_meta/counts.json
 ```
 
 Publish pulls both into `data/voice-bank/` and `data/calibration/`; training uses all of them.
+
+**Blob usage:** Advanced ops are `put`, `list`, `copy`. The app avoids calling `list()` on every judgment (stats read `counts.json` instead). Judgments still cost one `put` each; re-uploading the same attempt is skipped on device.
 
 ## 5. Privacy
 

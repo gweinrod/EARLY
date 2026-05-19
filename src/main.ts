@@ -457,9 +457,7 @@ async function onTeacherJudgment(j: {
     studentId: meta.studentId || undefined,
     attemptId: lastLoggedAttemptId ?? undefined,
   }).then(() => {
-    void flushCloudQueue()
-      .then(() => flushVoiceBankQueue())
-      .then(() => refreshCloudStats(curStageId, getVoiceBankQueueLength()));
+    void flushCloudQueue().then(() => flushVoiceBankQueue());
   });
 }
 
@@ -699,7 +697,7 @@ function init(): void {
       void onTeacherJudgment(j);
     });
     setCloudRefreshHandler(() => {
-      void refreshCloudStats(curStageId, getVoiceBankQueueLength());
+      void refreshCloudStats(curStageId, getVoiceBankQueueLength(), { force: true });
     });
     const meta = getSessionMeta();
     syncStudentIdField(meta.studentId);
@@ -714,7 +712,7 @@ function init(): void {
         if (settings.collectorMode && isVoiceBankComplete(curStageId)) {
           await syncLocalVoiceBankToCloud(curStageId);
         }
-        await refreshCloudStats(curStageId, getVoiceBankQueueLength());
+        await refreshCloudStats(curStageId, getVoiceBankQueueLength(), { force: true });
       });
   }
 
