@@ -136,6 +136,9 @@ export function updateTeacherJudgment(attemptId: string, judgment: TeacherJudgme
   row.dspGuessWrong = judgment.dspGuessWrong;
   row.teacherHeard = judgment.teacherHeard || null;
   row.teacherHeardKey = judgment.teacherHeardKey;
+  if (judgment.teacherAgrees) {
+    row.appPass = true;
+  }
   saveAttempts(attempts);
 }
 

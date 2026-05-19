@@ -69,6 +69,11 @@ export function addHistory(
 ): void {
   history.unshift({ w, h, pass });
   if (history.length > 5) history.pop();
+  renderHistory(history);
+}
+
+export function renderHistory(history: { w: string; h: string; pass: boolean }[]): void {
+  if (!history.length) return;
   show('histBlock');
   let html = '';
   for (const x of history) {

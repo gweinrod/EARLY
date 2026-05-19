@@ -58,6 +58,7 @@ import {
   $,
   addFB,
   addHistory,
+  renderHistory,
   clearFB,
   drawHeatmap,
   drawWave,
@@ -437,6 +438,23 @@ function finishAttempt(heard: string, asrPass: boolean): void {
   }
 }
 
+/** Teacher accept overrides a failed automatic score to a pass for the student UI. */
+function applyTeacherAcceptAsPass(teacherHeard: string): void {
+  const latest = history[0];
+  if (!latest || latest.w !== curItem.display || latest.pass) return;
+
+  latest.pass = true;
+  if (teacherHeard.trim()) latest.h = teacherHeard.trim();
+  correct++;
+  updateScores(correct, total);
+  renderHistory(history);
+  showResultBanner(true);
+
+  if (settings.collectorMode && !settings.showMlDebug) {
+    addFB(acousticStudentMessage(true), true);
+  }
+}
+
 async function onTeacherJudgment(j: {
   agrees: boolean;
   asrWrong: boolean;
@@ -721,6 +739,7 @@ function init(): void {
   if (settings.collectorMode) {
     initCollectorPanel();
     setJudgmentCompleteHandler((j) => {
+      if (j.agrees) applyTeacherAcceptAsPass(j.teacherHeard);
       void onTeacherJudgment(j);
     });
     setCloudRefreshHandler(() => {
