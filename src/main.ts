@@ -1,8 +1,4 @@
-import {
-  createSpeechRecognition,
-  eventHasFinalTranscript,
-  fullTranscriptFromEvent,
-} from './asr';
+import { createSpeechRecognition, fullTranscriptFromEvent } from './asr';
 import { APP_VERSION } from './version';
 import {
   autoConfirmAsrPass,
@@ -19,6 +15,7 @@ import {
   pickRandomItem,
   STAGE_ORDER,
   transcriptMatchesItem,
+  transcriptMatchesItemForAutoStop,
 } from './curriculum';
 import { ensureDspEngine, runDspPrediction, type DspPrediction } from './dsp-predict';
 import { extractFrames, resetMelFilterbank } from './dsp';
@@ -84,14 +81,10 @@ let takeStartedAt = 0;
 let maxTakeTimer: ReturnType<typeof setTimeout> | null = null;
 let asrPauseTimer: ReturnType<typeof setTimeout> | null = null;
 let listening = false;
-let asrRetryDone = false;
-let sawFinalAsr = false;
-/** After a final transcript, end take if the speaker pauses this long. */
-const ASR_PAUSE_MS = 1400;
-/** Longer wait when we only have interim text (lets "bee" finish before stop). */
-const ASR_PAUSE_INTERIM_MS = 2200;
-/** Ignore single-letter interim matches in the first ~400ms of a take. */
-const MIN_TAKE_MS = 400;
+/** End take after this pause once we have any transcript (post-speech tail). */
+const ASR_PAUSE_MS = 1100;
+/** Brief floor so auto-stop does not fire on the first syllable. */
+const MIN_TAKE_MS = 280;
 let stopWave: (() => void) | null = null;
 let lastDsp: DspPrediction | null = null;
 let pendingHeard: string | null = null;
@@ -202,8 +195,6 @@ function resetTakeState(): void {
   dspProcessed = false;
   asrEnded = false;
   endingTake = false;
-  asrRetryDone = false;
-  sawFinalAsr = false;
   clearAsrWait();
   pendingHeard = null;
   pendingAsrPass = null;
@@ -234,7 +225,7 @@ function scheduleMediaStop(): void {
   const hasTranscript = pendingHeard !== null && pendingHeard.length > 0;
   if (!hasTranscript) setAsrWaitStatus('checking speech…');
 
-  const ms = hasTranscript ? 200 : 2800;
+  const ms = hasTranscript ? 450 : 2800;
   asrWaitTimer = setTimeout(() => {
     asrWaitTimer = null;
     if (pendingHeard === null) {
@@ -600,15 +591,12 @@ async function toggleRec(): Promise<void> {
         const heard = fullTranscriptFromEvent(e);
         if (!heard) return;
 
-        if (eventHasFinalTranscript(e)) sawFinalAsr = true;
         applyAsrTranscript(heard);
         if (!listening) return;
 
-        // Do not auto-stop on interim "b" / "p" — wait for final "bee" / "pee" and a minimum take length.
         if (
-          sawFinalAsr &&
           Date.now() - takeStartedAt >= MIN_TAKE_MS &&
-          transcriptMatchesItem(curStageId, heard, curItem)
+          transcriptMatchesItemForAutoStop(curStageId, heard, curItem)
         ) {
           clearAsrPauseTimer();
           endTake();
@@ -616,13 +604,12 @@ async function toggleRec(): Promise<void> {
         }
 
         clearAsrPauseTimer();
-        const pauseMs = sawFinalAsr ? ASR_PAUSE_MS : ASR_PAUSE_INTERIM_MS;
         asrPauseTimer = setTimeout(() => {
           asrPauseTimer = null;
           if (listening && session === takeSessionId && !endingTake && pendingHeard) {
             endTake();
           }
-        }, pauseMs);
+        }, ASR_PAUSE_MS);
       };
       recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
         if (session !== takeSessionId) return;
@@ -635,27 +622,13 @@ async function toggleRec(): Promise<void> {
           return;
         }
         if (!listening) return;
-
-        if (pendingHeard) {
-          clearAsrPauseTimer();
-          endTake();
-          return;
-        }
-
-        if (!asrRetryDone) {
-          asrRetryDone = true;
-          setTimeout(() => {
-            if (session !== takeSessionId || !listening || endingTake) return;
-            if (pendingHeard) {
-              endTake();
-              return;
-            }
-            try {
-              recognition.start();
-            } catch {
-              /* leave take open until pause or max timer */
-            }
-          }, 400);
+        // Do not call recognition.start() again — that forces a second utterance.
+        // Pause timer or max-take timer will end the session.
+        if (pendingHeard && !asrPauseTimer) {
+          asrPauseTimer = setTimeout(() => {
+            asrPauseTimer = null;
+            if (listening && session === takeSessionId && !endingTake) endTake();
+          }, 500);
         }
       };
       try {

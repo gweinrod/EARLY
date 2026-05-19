@@ -141,6 +141,21 @@ export function transcriptMatchesItem(
   );
 }
 
+/**
+ * Stricter than transcriptMatchesItem for mic auto-stop: ignore a lone interim letter
+ * (e.g. "b" while the user is still saying "bee").
+ */
+export function transcriptMatchesItemForAutoStop(
+  stageId: CurriculumStageId,
+  heard: string,
+  item: CurriculumItem,
+): boolean {
+  if (!transcriptMatchesItem(stageId, heard, item)) return false;
+  const tokens = normalizeHeardLabel(heard).split(/\s+/).filter(Boolean);
+  if (tokens.length === 1 && tokens[0].length === 1 && tokens[0] === item.key) return false;
+  return true;
+}
+
 export function pickRandomItem(stageId: CurriculumStageId, excludeKey?: string): CurriculumItem {
   const items = getStage(stageId).items;
   if (!items.length) throw new Error(`Stage ${stageId} has no items`);
