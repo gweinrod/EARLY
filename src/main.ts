@@ -1,4 +1,4 @@
-import { createSpeechRecognition, transcriptMatchesTarget } from './asr';
+import { createSpeechRecognition } from './asr';
 import {
   initCollectorPanel,
   promptTeacherJudgment,
@@ -6,11 +6,16 @@ import {
   showDspVerdict,
   syncStudentIdField,
 } from './collector-ui';
-import { GROUP_KEYS, GROUPS, W2C } from './data';
+import {
+  type CurriculumItem,
+  type CurriculumStageId,
+  getStage,
+  pickRandomItem,
+  STAGE_ORDER,
+  transcriptMatchesItem,
+} from './curriculum';
 import { ensureDspEngine, runDspPrediction, type DspPrediction } from './dsp-predict';
 import { extractFrames, resetMelFilterbank } from './dsp';
-import { generateNonsenseWord, pickCurriculumWord } from './phonemes/generator';
-import { analyzeReferenceCatalog } from './reference-offline';
 import { buildRecordingBlob, createMediaRecorder } from './recorder';
 import { applySettingsToDocument, loadSettings, saveSettings, type AppSettings } from './settings';
 import {
@@ -21,7 +26,7 @@ import {
 } from './session-log';
 import { deriveAppPass } from './scoring';
 import { acousticStudentMessage, toStudentFeedback } from './student-feedback';
-import { trainOnCalibrationSample } from './tf-phoneme';
+import { trainCalibrationSample } from './tf-phoneme';
 import {
   $,
   addFB,
@@ -36,8 +41,6 @@ import {
   showResultBanner,
   updateScores,
 } from './ui';
-
-const REFERENCE_AUDIO_PATHS: string[] = [];
 
 let settings: AppSettings = loadSettings();
 let audioCtx: AudioContext | null = null;
@@ -54,8 +57,8 @@ let correct = 0;
 let total = 0;
 const history: { w: string; h: string; pass: boolean }[] = [];
 
-let curGroup = GROUP_KEYS[0];
-let curWord = '';
+let curStageId: CurriculumStageId = settings.curriculumStage;
+let curItem: CurriculumItem = getStage(curStageId).items[0];
 
 function getAudioContext(): AudioContext {
   if (!audioCtx) {
@@ -67,27 +70,23 @@ function getAudioContext(): AudioContext {
   return audioCtx;
 }
 
-function setTargetWord(display: string, phonLabel: string): void {
-  curWord = display;
-  $('tWord').textContent = display;
-  $('tPhon').textContent = phonLabel;
+function setTargetItem(item: CurriculumItem): void {
+  curItem = item;
+  const stage = getStage(curStageId);
+  $('tWord').textContent = item.display;
+  $('tPhon').textContent = `say: ${item.spokenName} · ${item.phonemeNote}`;
+  $('stageSubtitle').textContent = stage.subtitle;
   clearFB();
   hide('hmWrap');
   hide('pbWrap');
   hide('resultBanner');
 }
 
-function nextWord(): void {
-  if (settings.useNonsenseWords) {
-    const gen = generateNonsenseWord(curGroup);
-    setTargetWord(gen.display, `focus: ${gen.phonemeFocus}`);
-  } else {
-    const pick = pickCurriculumWord(curGroup);
-    setTargetWord(pick.display, pick.phonemeFocus);
-  }
+function nextItem(): void {
+  setTargetItem(pickRandomItem(curStageId, curItem.key));
 }
 
-function displayFeedback(items: ReturnType<typeof runDspPrediction>['heuristicItems']): void {
+function displayFeedback(items: DspPrediction['heuristicItems']): void {
   const shown = settings.collectorMode && !settings.showMlDebug ? toStudentFeedback(items) : items;
   for (const fb of shown) addFB(fb);
 }
@@ -110,7 +109,7 @@ async function processAudio(): Promise<void> {
 
     if (settings.showMlDebug) drawHeatmap(frames);
 
-    lastDsp = runDspPrediction(frames, curWord, curGroup);
+    lastDsp = runDspPrediction(frames, curItem.key, curStageId);
     displayFeedback(lastDsp.heuristicItems);
 
     if (settings.showMlDebug && lastDsp.tf) {
@@ -118,7 +117,7 @@ async function processAudio(): Promise<void> {
     }
 
     if (settings.collectorMode) {
-      showDspVerdict(lastDsp.summary, lastDsp.guessedWord, curWord);
+      showDspVerdict(lastDsp.summary, lastDsp.tf?.guessedKey ?? null, curItem.display, curItem.key);
     }
   } catch {
     displayFeedback([{ t: 'warn', s: 'Could not decode audio' }]);
@@ -149,12 +148,12 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       dspPass: false,
     } satisfies DspPrediction);
 
-  const { appPass, basis } = deriveAppPass(asrPass, dsp, curWord);
+  const { appPass, basis } = deriveAppPass(asrPass, { ...dsp, guessedKey: dsp.tf?.guessedKey }, curItem.key);
 
   total++;
   if (appPass) correct++;
   updateScores(correct, total);
-  addHistory(curWord, heard, appPass, history);
+  addHistory(curItem.display, heard, appPass, history);
   showResultBanner(appPass);
 
   const studentMsg = settings.collectorMode && !settings.showMlDebug
@@ -162,7 +161,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
     : {
         t: appPass ? ('pass' as const) : ('fail' as const),
         s:
-          `app ${appPass ? 'pass' : 'fail'} (${basis}) · DSP “${dsp.guessedWord ?? '—'}” · ` +
+          `app ${appPass ? 'pass' : 'fail'} (${basis}) · DSP “${dsp.tf?.guessedKey ?? '—'}” · ` +
           `ASR “${heard}”`,
       };
   addFB(studentMsg, true);
@@ -173,16 +172,17 @@ function finishAttempt(heard: string, asrPass: boolean): void {
     const meta = getSessionMeta();
     const attempt = logAttempt({
       studentId: meta.studentId,
-      group: curGroup,
-      word: curWord,
+      group: getStage(curStageId).label,
+      word: curItem.display,
+      targetKey: curItem.key,
       heard,
       asrPass,
       appPass,
       scoringBasis: basis,
       heuristicFlags: flagsFromFeedback(dsp.heuristicItems),
       nucleusMfcc: dsp.embedding,
-      vowelClassIndex: W2C[curWord] ?? null,
-      dspGuessWord: dsp.guessedWord,
+      vowelClassIndex: null,
+      dspGuessWord: dsp.tf?.guessedKey ?? null,
       dspGuessConfidence: dsp.guessConfidence,
       dspTargetProbability: dsp.targetProbability,
       dspPass: dsp.dspPass,
@@ -190,18 +190,44 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       teacherAgrees: null,
       asrTranscriptWrong: null,
       dspGuessWrong: null,
+      teacherHeard: null,
+      teacherHeardKey: null,
+      curriculumStage: curStageId,
     });
-    promptTeacherJudgment(attempt);
+    promptTeacherJudgment(attempt, curStageId);
   }
 
   stopRec();
 }
 
-async function onTeacherJudgment(agrees: boolean, asrWrong: boolean, dspWrong: boolean): Promise<void> {
+async function onTeacherJudgment(j: {
+  agrees: boolean;
+  asrWrong: boolean;
+  dspWrong: boolean;
+  teacherHeard: string;
+  teacherHeardKey: string | null;
+}): Promise<void> {
   if (!lastDsp?.embedding) return;
-  if (agrees && !asrWrong && !dspWrong) {
-    await trainOnCalibrationSample(lastDsp.embedding, curWord);
-  }
+  await trainCalibrationSample({
+    embedding: lastDsp.embedding,
+    targetKey: curItem.key,
+    teacherHeard: j.teacherHeard,
+    teacherHeardKey: j.teacherHeardKey,
+    agrees: j.agrees,
+    asrWrong: j.asrWrong,
+    dspWrong: j.dspWrong,
+  });
+}
+
+async function switchStage(stageId: CurriculumStageId): Promise<void> {
+  curStageId = stageId;
+  settings.curriculumStage = stageId;
+  saveSettings(settings);
+  resetMelFilterbank();
+  $('netTxt').textContent = 'Loading TensorFlow model…';
+  await ensureDspEngine(stageId);
+  $('netTxt').textContent = `TensorFlow.js WASM · ${getStage(stageId).label}`;
+  nextItem();
 }
 
 async function toggleRec(): Promise<void> {
@@ -236,7 +262,7 @@ async function toggleRec(): Promise<void> {
       recognition.onresult = (e: SpeechRecognitionEvent) => {
         const heard = e.results[0][0].transcript.trim().toLowerCase();
         pendingHeard = heard;
-        pendingAsrPass = transcriptMatchesTarget(heard, curWord);
+        pendingAsrPass = transcriptMatchesItem(curStageId, heard, curItem);
         stopRec();
       };
       recognition.onerror = () => {
@@ -278,44 +304,49 @@ function stopRec(): void {
   $('btnLbl').textContent = 'tap to speak';
 }
 
-function initPills(): void {
+function initStagePills(): void {
   const container = $('pillGroup');
-  GROUP_KEYS.forEach((g, idx) => {
+  container.innerHTML = '';
+  for (const stageId of STAGE_ORDER) {
+    if (stageId === 'legacy-cvc') continue;
+    const stage = getStage(stageId);
+    if (!stage.items.length) continue;
     const btn = document.createElement('button');
     btn.type = 'button';
-    btn.className = 'pill' + (idx === 0 ? ' on' : '');
-    btn.textContent = g;
+    btn.className = 'pill' + (stageId === curStageId ? ' on' : '');
+    btn.textContent = stage.label.replace('Stage ', 'S');
+    btn.title = stage.subtitle;
     btn.addEventListener('click', () => {
       document.querySelectorAll('.pill').forEach((p) => p.classList.remove('on'));
       btn.classList.add('on');
-      curGroup = g;
-      resetMelFilterbank();
-      nextWord();
+      void switchStage(stageId);
     });
     container.appendChild(btn);
-  });
+  }
 }
 
 function applySettingsUi(): void {
   applySettingsToDocument(settings);
-  const nonsenseToggle = $('nonsenseMode') as HTMLInputElement;
-  nonsenseToggle.checked = settings.useNonsenseWords;
   const debugToggle = $('debugMode') as HTMLInputElement;
   debugToggle.checked = settings.showMlDebug;
+  const legacyToggles = $('legacyToggles');
+  if (curStageId === 'legacy-cvc') show('legacyToggles');
+  else hide('legacyToggles');
 
-  const collectorPanel = $('collectorPanel');
   if (settings.collectorMode) show('collectorPanel');
   else hide('collectorPanel');
+  show('netBadge');
 }
 
 function init(): void {
   settings = loadSettings();
+  curStageId = settings.curriculumStage;
   applySettingsUi();
-  initPills();
+  initStagePills();
   if (settings.collectorMode) {
     initCollectorPanel();
     setJudgmentCompleteHandler((j) => {
-      void onTeacherJudgment(j.agrees, j.asrWrong, j.dspWrong);
+      void onTeacherJudgment(j);
     });
     const meta = getSessionMeta();
     syncStudentIdField(meta.studentId);
@@ -324,13 +355,7 @@ function init(): void {
   $('btnRec').addEventListener('click', () => {
     void toggleRec();
   });
-  $('btnNext').addEventListener('click', nextWord);
-
-  $('nonsenseMode').addEventListener('change', (e) => {
-    settings.useNonsenseWords = (e.target as HTMLInputElement).checked;
-    saveSettings(settings);
-    nextWord();
-  });
+  $('btnNext').addEventListener('click', nextItem);
 
   $('debugMode').addEventListener('change', (e) => {
     settings.showMlDebug = (e.target as HTMLInputElement).checked;
@@ -342,16 +367,10 @@ function init(): void {
     showErr('Microphone needs HTTPS or localhost — use Safari on iPad after deploying to Vercel.');
   }
 
-  void ensureDspEngine().then(() => {
-    $('netTxt').textContent = 'TensorFlow.js WASM · word classifier ready';
-    show('netBadge');
+  void ensureDspEngine(curStageId).then(() => {
+    $('netTxt').textContent = `TensorFlow.js WASM · ${getStage(curStageId).label}`;
+    setTargetItem(pickRandomItem(curStageId));
   });
-
-  nextWord();
-
-  if (REFERENCE_AUDIO_PATHS.length > 0) {
-    void analyzeReferenceCatalog(REFERENCE_AUDIO_PATHS);
-  }
 }
 
 init();

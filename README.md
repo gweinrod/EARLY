@@ -30,10 +30,12 @@ Local LAN dev (optional): `npm run dev:lan` — use Vercel HTTPS for real mic te
 
 ## Classroom session workflow
 
-1. Enter an **anonymous student ID** (e.g. `S12`).
-2. Choose a phoneme group; tap **tap to speak** (large button, thumb-friendly).
-3. After each attempt, tap **agree with app** or **disagree** — disagreements are valuable training labels.
-4. End of session: **export session log** (JSON). Use these files for offline model training in Phase 2.
+**Unit 1 starts with letter-name calibration** — see [`docs/CURRICULUM_CALIBRATION.md`](docs/CURRICULUM_CALIBRATION.md).
+
+1. Enter an **anonymous student ID** (e.g. `S12` or `CALIB-Greg`).
+2. Pick stage pill **S1 — letter names** (default); tap **tap to speak**.
+3. Type **what you heard**, mark **speech-to-text wrong** / **DSP guess wrong** if needed, then **agree** or **disagree**.
+4. Export session log (JSON) — trains TensorFlow.js in-browser and archives labels for Python training later.
 
 ## Modes
 

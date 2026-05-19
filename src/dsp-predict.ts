@@ -46,22 +46,22 @@ function heuristicSummary(items: FeedbackItem[]): string {
   return `Heuristics: pass — ${judged[0].s.slice(0, 80)}`;
 }
 
-export async function ensureDspEngine(): Promise<void> {
-  await initTfPhonemeModel();
+export async function ensureDspEngine(stageId: import('./curriculum').CurriculumStageId): Promise<void> {
+  await initTfPhonemeModel(stageId);
 }
 
 export function runDspPrediction(
   frames: Frame[],
-  targetWord: string,
+  targetKey: string,
   groupKey: string,
 ): DspPrediction {
   const embedding = extractNucleusMfcc(frames);
-  const heuristicItems = heuristicFeedback(frames, targetWord, groupKey);
+  const heuristicItems = heuristicFeedback(frames, targetKey, groupKey);
   const heuristicPass = heuristicVerdict(heuristicItems);
 
   let tf: TfWordPrediction | null = null;
   if (embedding && isTfReady()) {
-    tf = predictWordForTarget(embedding, targetWord);
+    tf = predictWordForTarget(embedding, targetKey);
   }
 
   const guessedWord = tf?.guessedWord ?? null;
@@ -70,11 +70,11 @@ export function runDspPrediction(
 
   const tfSaysTarget =
     tf !== null &&
-    tf.guessedWord === targetWord.toLowerCase() &&
+    tf.guessedKey === targetKey.toLowerCase() &&
     tf.confidence >= TF_CONFIDENCE_MIN;
 
   const tfSaysOther =
-    tf !== null && tf.guessedWord !== targetWord.toLowerCase() && tf.confidence >= TF_CONFIDENCE_MIN;
+    tf !== null && tf.guessedKey !== targetKey.toLowerCase() && tf.confidence >= TF_CONFIDENCE_MIN;
 
   let dspPass: boolean;
   if (tfSaysTarget) {
@@ -88,12 +88,12 @@ export function runDspPrediction(
   }
 
   const parts = [heuristicSummary(heuristicItems)];
-  if (tf) parts.unshift(formatTfLine(tf, targetWord));
+  if (tf) parts.unshift(formatTfLine(tf, targetKey));
   else if (embedding) parts.unshift('DSP neural net: still loading…');
   else parts.unshift('DSP: no clear vowel nucleus in recording');
 
-  if (W2C[targetWord] !== undefined) {
-    const ci = W2C[targetWord];
+  if (W2C[targetKey] !== undefined) {
+    const ci = W2C[targetKey];
     parts.push(`Vowel class label: ${VC[ci].label}`);
   }
 

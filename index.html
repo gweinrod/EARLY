@@ -17,7 +17,8 @@
 
   <header class="app-header">
     <h1 class="app-title">EARLY</h1>
-    <p class="app-sub">say the word out loud</p>
+    <p class="app-sub">voice calibration &amp; phoneme practice</p>
+    <p id="stageSubtitle" class="stage-subtitle"></p>
   </header>
 
   <div id="errBox"></div>
@@ -40,7 +41,11 @@
         <button type="button" class="btn-asr-wrong" id="btnAsrWrong" aria-pressed="false">speech-to-text wrong</button>
         <button type="button" class="btn-dsp-wrong" id="btnDspWrong" aria-pressed="false">DSP guess wrong</button>
       </div>
-      <p id="judgmentHint" class="judgment-hint">Agree/disagree = app pass or fail. Mark speech-to-text or DSP wrong when that label does not match what the student said.</p>
+      <label class="field-label teacher-heard-label">
+        what you heard (for training)
+        <input type="text" id="teacherHeard" class="text-input" placeholder="e.g. dee, dit, bee" autocomplete="off" />
+      </label>
+      <p id="judgmentHint" class="judgment-hint">Agree/disagree = app pass/fail. Mark ASR or DSP wrong when needed. Type what you heard so the model learns your voice.</p>
       <div id="dspVerdict" class="dsp-verdict" style="display:none">
         <p class="sec-label">DSP analysis</p>
         <p id="dspGuessWord" class="dsp-guess-word"></p>
@@ -50,7 +55,10 @@
     </div>
     <div class="teacher-toggles">
       <label class="mode-toggle"><input type="checkbox" id="debugMode" /> show ML debug</label>
-      <label class="mode-toggle"><input type="checkbox" id="nonsenseMode" /> nonsense words</label>
+
+    </div>
+    <div id="legacyToggles" class="teacher-toggles" style="display:none">
+      <label class="mode-toggle"><input type="checkbox" id="nonsenseMode" /> nonsense words (legacy)</label>
     </div>
   </div>
 

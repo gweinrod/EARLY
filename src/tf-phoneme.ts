@@ -1,35 +1,55 @@
 import * as tf from '@tensorflow/tfjs';
 import '@tensorflow/tfjs-backend-wasm';
+import type { CurriculumStageId } from './curriculum';
 import { buildBootstrapDataset } from './bootstrap-embeddings';
 import { NMCC } from './dsp';
-import { VOCAB_WORDS, wordIndex } from './word-vocabulary';
+import { getVocabWords, setVocabularyStage, wordIndex } from './word-vocabulary';
 
-const MODEL_STORAGE_URL = 'localstorage://early-tf-word-model';
 const INPUT_DIM = NMCC;
 
 let model: tf.LayersModel | null = null;
 let ready = false;
+let activeStage: CurriculumStageId = 'alphabet';
+
+function modelStorageUrl(stageId: CurriculumStageId): string {
+  return `localstorage://early-tf-${stageId}`;
+}
 
 export function isTfReady(): boolean {
   return ready && model !== null;
 }
 
-export async function initTfPhonemeModel(): Promise<void> {
-  if (ready) return;
+export function getActiveTfStage(): CurriculumStageId {
+  return activeStage;
+}
+
+export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<void> {
+  if (ready && activeStage === stageId && model) return;
+
+  model?.dispose();
+  model = null;
+  ready = false;
+  activeStage = stageId;
+
+  setVocabularyStage(stageId);
+  const vocabSize = getVocabWords().length;
+  if (vocabSize === 0) return;
+
   await tf.setBackend('wasm');
   await tf.ready();
 
+  const url = modelStorageUrl(stageId);
   try {
-    model = await tf.loadLayersModel(MODEL_STORAGE_URL);
+    model = await tf.loadLayersModel(url);
     ready = true;
     return;
   } catch {
-    /* first run */
+    /* first run for this stage */
   }
 
-  model = createModel(VOCAB_WORDS.length);
+  model = createModel(vocabSize);
   ready = true;
-  await runBootstrapTraining();
+  await runBootstrapTraining(stageId);
 }
 
 function createModel(numClasses: number): tf.LayersModel {
@@ -54,17 +74,18 @@ function createModel(numClasses: number): tf.LayersModel {
   return m;
 }
 
-async function runBootstrapTraining(): Promise<void> {
+async function runBootstrapTraining(stageId: CurriculumStageId): Promise<void> {
   if (!model) return;
-  const { x, y } = buildBootstrapDataset(12);
+  const { x, y } = buildBootstrapDataset(stageId, 12);
   await fitBatch(x, y, 40, 16);
-  await model.save(MODEL_STORAGE_URL);
+  await model.save(modelStorageUrl(stageId));
 }
 
 async function fitBatch(x: number[][], y: number[], epochs: number, batchSize: number): Promise<void> {
   if (!model || x.length === 0) return;
+  const vocabSize = getVocabWords().length;
   const xs = tf.tensor2d(x);
-  const ys = tf.oneHot(tf.tensor1d(y, 'int32'), VOCAB_WORDS.length);
+  const ys = tf.oneHot(tf.tensor1d(y, 'int32'), vocabSize);
   try {
     await model.fit(xs, ys, { epochs, batchSize, shuffle: true, verbose: 0 });
   } finally {
@@ -75,14 +96,16 @@ async function fitBatch(x: number[][], y: number[], epochs: number, batchSize: n
 
 export interface TfWordPrediction {
   guessedWord: string;
+  guessedKey: string;
   confidence: number;
   targetProbability: number;
-  top3: { word: string; probability: number }[];
+  top3: { word: string; key: string; probability: number }[];
 }
 
-export function predictWordForTarget(embedding: number[], targetWord: string): TfWordPrediction | null {
+export function predictWordForTarget(embedding: number[], targetKey: string): TfWordPrediction | null {
   if (!model || !ready || embedding.length !== INPUT_DIM) return null;
 
+  const words = getVocabWords();
   const probs = tf.tidy(() => {
     const input = tf.tensor2d([embedding]);
     const out = model!.predict(input) as tf.Tensor;
@@ -93,24 +116,48 @@ export function predictWordForTarget(embedding: number[], targetWord: string): T
   for (let i = 1; i < probs.length; i++) if (probs[i] > probs[topIdx]) topIdx = i;
 
   const sorted = probs
-    .map((p, i) => ({ word: VOCAB_WORDS[i], probability: p }))
+    .map((p, i) => ({ word: words[i], key: words[i], probability: p }))
     .sort((a, b) => b.probability - a.probability);
 
-  const ti = wordIndex(targetWord);
+  const ti = wordIndex(targetKey);
 
   return {
-    guessedWord: VOCAB_WORDS[topIdx],
+    guessedWord: words[topIdx],
+    guessedKey: words[topIdx],
     confidence: probs[topIdx],
     targetProbability: ti !== undefined ? probs[ti] : 0,
     top3: sorted.slice(0, 3),
   };
 }
 
-/** Online calibration when teacher agrees and marks neither ASR nor DSP wrong. */
-export async function trainOnCalibrationSample(embedding: number[], targetWord: string): Promise<void> {
+export interface CalibrationTrainInput {
+  embedding: number[];
+  targetKey: string;
+  teacherHeard: string;
+  teacherHeardKey: string | null;
+  agrees: boolean;
+  asrWrong: boolean;
+  dspWrong: boolean;
+}
+
+/** Train on teacher ground truth and/or confirmed correct target. */
+export async function trainCalibrationSample(input: CalibrationTrainInput): Promise<void> {
   if (!model) return;
-  const idx = wordIndex(targetWord);
-  if (idx === undefined) return;
-  await fitBatch([embedding], [idx], 8, 1);
-  await model.save(MODEL_STORAGE_URL);
+  const { embedding, targetKey, teacherHeardKey, agrees, asrWrong, dspWrong } = input;
+
+  if (teacherHeardKey) {
+    const heardIdx = wordIndex(teacherHeardKey);
+    if (heardIdx !== undefined) {
+      await fitBatch([embedding], [heardIdx], 10, 1);
+    }
+  }
+
+  if (agrees && !asrWrong && !dspWrong) {
+    const targetIdx = wordIndex(targetKey);
+    if (targetIdx !== undefined) {
+      await fitBatch([embedding], [targetIdx], 10, 1);
+    }
+  }
+
+  await model.save(modelStorageUrl(activeStage));
 }

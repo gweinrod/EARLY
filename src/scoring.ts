@@ -16,12 +16,13 @@ export function heuristicVerdict(items: FeedbackItem[]): boolean | null {
  */
 export function deriveAppPass(
   asrPass: boolean,
-  dsp: Pick<DspPrediction, 'dspPass' | 'heuristicPass' | 'tf' | 'guessedWord'>,
-  targetWord: string,
+  dsp: Pick<DspPrediction, 'dspPass' | 'heuristicPass' | 'tf'> & { guessedKey?: string | null },
+  targetKey: string,
 ): { appPass: boolean; basis: ScoringBasis } {
-  const t = targetWord.toLowerCase();
+  const t = targetKey.toLowerCase();
+  const guess = dsp.tf?.guessedKey ?? dsp.guessedKey ?? null;
   if (dsp.tf && dsp.tf.confidence >= 0.22) {
-    return { appPass: dsp.guessedWord === t, basis: 'dsp_tf' };
+    return { appPass: guess === t, basis: 'dsp_tf' };
   }
   if (dsp.heuristicPass !== null) {
     return { appPass: dsp.dspPass, basis: 'heuristic' };

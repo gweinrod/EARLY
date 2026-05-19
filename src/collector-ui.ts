@@ -1,3 +1,5 @@
+import type { CurriculumStageId } from './curriculum';
+import { resolveItemKey } from './curriculum';
 import {
   downloadSessionLog,
   setStudentId,
@@ -9,8 +11,15 @@ import { $, hide, show } from './ui';
 let pendingAttemptId: string | null = null;
 let pendingAsrWrong = false;
 let pendingDspWrong = false;
+let pendingStageId: CurriculumStageId = 'alphabet';
 
-export type JudgmentResult = { agrees: boolean; asrWrong: boolean; dspWrong: boolean };
+export type JudgmentResult = {
+  agrees: boolean;
+  asrWrong: boolean;
+  dspWrong: boolean;
+  teacherHeard: string;
+  teacherHeardKey: string | null;
+};
 
 let judgmentHandler: ((j: JudgmentResult) => void) | null = null;
 
@@ -55,14 +64,18 @@ function basisLabel(basis: AttemptLog['scoringBasis']): string {
   return 'legacy';
 }
 
-export function showDspVerdict(summary: string, guessedWord: string | null, targetWord: string): void {
-  const box = $('dspVerdict');
+export function showDspVerdict(
+  summary: string,
+  guessedKey: string | null,
+  targetDisplay: string,
+  targetKey: string,
+): void {
   const guessEl = $('dspGuessWord');
-  if (guessedWord && guessedWord !== targetWord) {
-    guessEl.textContent = `DSP guess: “${guessedWord}” (target “${targetWord}”)`;
+  if (guessedKey && guessedKey !== targetKey) {
+    guessEl.textContent = `DSP guess: “${guessedKey}” (target ${targetDisplay})`;
     guessEl.classList.add('mismatch');
-  } else if (guessedWord) {
-    guessEl.textContent = `DSP guess: “${guessedWord}” ✓`;
+  } else if (guessedKey) {
+    guessEl.textContent = `DSP guess: “${guessedKey}” matches ${targetDisplay}`;
     guessEl.classList.remove('mismatch');
   } else {
     guessEl.textContent = 'DSP guess: —';
@@ -72,14 +85,18 @@ export function showDspVerdict(summary: string, guessedWord: string | null, targ
   show('dspVerdict');
 }
 
-export function promptTeacherJudgment(attempt: AttemptLog): void {
+export function promptTeacherJudgment(attempt: AttemptLog, stageId: CurriculumStageId): void {
   pendingAttemptId = attempt.id;
+  pendingStageId = stageId;
   pendingAsrWrong = false;
   pendingDspWrong = false;
   $('btnAsrWrong').classList.remove('is-active');
   $('btnDspWrong').classList.remove('is-active');
   $('btnAsrWrong').setAttribute('aria-pressed', 'false');
   $('btnDspWrong').setAttribute('aria-pressed', 'false');
+
+  const heardInput = $('teacherHeard') as HTMLInputElement;
+  heardInput.value = '';
 
   const summary = $('judgmentSummary');
   const flags = attempt.heuristicFlags.map((f) => f.message).join(' · ') || 'none';
@@ -88,10 +105,17 @@ export function promptTeacherJudgment(attempt: AttemptLog): void {
     ? `DSP “${attempt.dspGuessWord}” (${Math.round((attempt.dspGuessConfidence ?? 0) * 100)}%)`
     : 'DSP —';
   summary.textContent =
-    `Target “${attempt.word}” · app ${appVerdict} (${basisLabel(attempt.scoringBasis)}) · ` +
+    `Target ${attempt.word} · app ${appVerdict} (${basisLabel(attempt.scoringBasis)}) · ` +
     `${dspLine} · ASR “${attempt.heard ?? '—'}” · flagged: ${flags}`;
 
-  if (attempt.dspSummary) showDspVerdict(attempt.dspSummary, attempt.dspGuessWord, attempt.word);
+  if (attempt.dspSummary) {
+    showDspVerdict(
+      attempt.dspSummary,
+      attempt.dspGuessWord,
+      attempt.word,
+      attempt.targetKey ?? attempt.word,
+    );
+  }
   show('judgmentBlock');
 }
 
@@ -99,27 +123,33 @@ function submitJudgment(agrees: boolean): void {
   if (!pendingAttemptId) return;
   const asrWrong = pendingAsrWrong;
   const dspWrong = pendingDspWrong;
+  const teacherHeard = (($('teacherHeard') as HTMLInputElement).value || '').trim();
+  const teacherHeardKey = teacherHeard ? resolveItemKey(pendingStageId, teacherHeard) : null;
+
   updateTeacherJudgment(pendingAttemptId, {
     teacherAgrees: agrees,
     asrTranscriptWrong: asrWrong,
     dspGuessWrong: dspWrong,
+    teacherHeard,
+    teacherHeardKey,
   });
   pendingAttemptId = null;
   pendingAsrWrong = false;
   pendingDspWrong = false;
   hide('judgmentBlock');
 
-  judgmentHandler?.({ agrees, asrWrong, dspWrong });
+  judgmentHandler?.({ agrees, asrWrong, dspWrong, teacherHeard, teacherHeardKey });
 
   const status = $('judgmentStatus');
   const parts = [
     agrees ? 'Logged: you agreed with the app.' : 'Logged: disagreement (valuable training label).',
   ];
+  if (teacherHeard) parts.push(`Heard “${teacherHeard}” logged for training.`);
   if (asrWrong) parts.push('ASR marked wrong.');
   if (dspWrong) parts.push('DSP marked wrong.');
   status.textContent = parts.join(' ');
   status.style.display = 'block';
   setTimeout(() => {
     status.style.display = 'none';
-  }, 3200);
+  }, 3500);
 }

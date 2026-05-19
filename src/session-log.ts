@@ -11,7 +11,9 @@ export interface AttemptLog {
   studentId: string;
   timestamp: string;
   group: string;
+  /** Display form (e.g. "B"). */
   word: string;
+  targetKey: string;
   heard: string | null;
   asrPass: boolean;
   /** Pass/fail shown to student (heuristics first, ASR fallback). */
@@ -30,6 +32,11 @@ export interface AttemptLog {
   asrTranscriptWrong: boolean | null;
   /** Teacher says DSP / neural word guess did not match what the student said. */
   dspGuessWrong: boolean | null;
+  /** Teacher typed what they actually heard (ground truth for training). */
+  teacherHeard: string | null;
+  /** Resolved curriculum key for teacherHeard, if in vocabulary. */
+  teacherHeardKey: string | null;
+  curriculumStage: string;
 }
 
 export interface SessionMeta {
@@ -76,6 +83,10 @@ function normalizeAttempt(row: AttemptLog): AttemptLog {
     asrTranscriptWrong: row.asrTranscriptWrong ?? null,
     dspGuessWrong: row.dspGuessWrong ?? null,
     teacherAgrees: row.teacherAgrees ?? null,
+    teacherHeard: row.teacherHeard ?? null,
+    teacherHeardKey: row.teacherHeardKey ?? null,
+    curriculumStage: row.curriculumStage ?? 'alphabet',
+    targetKey: row.targetKey ?? row.word?.toLowerCase() ?? '',
   };
   return base;
 }
@@ -112,6 +123,8 @@ export interface TeacherJudgment {
   teacherAgrees: boolean;
   asrTranscriptWrong: boolean;
   dspGuessWrong: boolean;
+  teacherHeard: string;
+  teacherHeardKey: string | null;
 }
 
 export function updateTeacherJudgment(attemptId: string, judgment: TeacherJudgment): void {
@@ -121,6 +134,8 @@ export function updateTeacherJudgment(attemptId: string, judgment: TeacherJudgme
   row.teacherAgrees = judgment.teacherAgrees;
   row.asrTranscriptWrong = judgment.asrTranscriptWrong;
   row.dspGuessWrong = judgment.dspGuessWrong;
+  row.teacherHeard = judgment.teacherHeard || null;
+  row.teacherHeardKey = judgment.teacherHeardKey;
   saveAttempts(attempts);
 }
 
