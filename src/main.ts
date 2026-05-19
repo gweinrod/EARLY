@@ -411,7 +411,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
         true,
       );
       void onTeacherJudgment(judgment);
-    } else if (!dsp.dspPass) {
+    } else {
       promptTeacherJudgment(attempt, curStageId);
     }
   }

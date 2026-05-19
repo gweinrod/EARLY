@@ -94,8 +94,12 @@ function submitHeSaidTarget(): void {
   const item = targetItemForAttempt(pendingAttempt, pendingStageId);
   const teacherHeard = item?.spokenName ?? pendingAttempt.targetKey ?? '';
 
-  commitJudgment(pendingAttempt.appPass, false, false, teacherHeard, {
-    statusMessage: `Accepted “${teacherHeard}” — training updated.`,
+  const heard = (pendingAttempt.heard ?? '').trim();
+  const asrWrong = heard.length > 0 && !pendingAttempt.asrPass;
+  const dspWrong = !pendingAttempt.dspPass;
+
+  commitJudgment(true, asrWrong, dspWrong, teacherHeard, {
+    statusMessage: `Judgment saved — “${teacherHeard}” accepted.`,
   });
 }
 
