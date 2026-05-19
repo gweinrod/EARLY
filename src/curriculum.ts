@@ -115,6 +115,13 @@ export function normalizeHeardLabel(text: string): string {
   return text.trim().toLowerCase().replace(/[^a-z0-9'\s-]/g, '').replace(/\s+/g, ' ');
 }
 
+/** Letter name is the key repeated (e.g. E → "ee"). ASR often finalizes as lone "e". */
+export function spokenNameIsDoubledLetter(item: CurriculumItem): boolean {
+  const { key, spokenName } = item;
+  if (key.length !== 1 || spokenName.length < 2) return false;
+  return [...spokenName].every((c) => c === key);
+}
+
 export function resolveItemKey(stageId: CurriculumStageId, heard: string): string | null {
   const label = normalizeHeardLabel(heard);
   if (!label) return null;
@@ -160,7 +167,23 @@ export function transcriptMatchesItemForAutoStop(
     tokens[0].length === 1 &&
     tokens[0] === item.key
   ) {
+    // E → "ee" often transcribes as final-quality "e" before the session ends.
+    if (spokenNameIsDoubledLetter(item)) return true;
     return false;
+  }
+  return true;
+}
+
+/** Chrome ended the mic session — safe to stop without a second utterance? */
+export function transcriptMatchesItemForSessionEnd(
+  stageId: CurriculumStageId,
+  heard: string,
+  item: CurriculumItem,
+): boolean {
+  if (!transcriptMatchesItem(stageId, heard, item)) return false;
+  const tokens = normalizeHeardLabel(heard).split(/\s+/).filter(Boolean);
+  if (tokens.length === 1 && tokens[0].length === 1 && tokens[0] === item.key) {
+    return spokenNameIsDoubledLetter(item);
   }
   return true;
 }

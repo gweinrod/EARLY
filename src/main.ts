@@ -20,6 +20,7 @@ import {
   STAGE_ORDER,
   transcriptMatchesItem,
   transcriptMatchesItemForAutoStop,
+  transcriptMatchesItemForSessionEnd,
 } from './curriculum';
 import { ensureDspEngine, runDspPrediction, type DspPrediction } from './dsp-predict';
 import { extractFrames, resetMelFilterbank } from './dsp';
@@ -629,6 +630,16 @@ async function toggleRec(): Promise<void> {
           return;
         }
         if (!listening) return;
+        const heardOnEnd = pendingHeard ?? '';
+        if (
+          heardOnEnd &&
+          Date.now() - takeStartedAt >= MIN_TAKE_MS &&
+          transcriptMatchesItemForSessionEnd(curStageId, heardOnEnd, curItem)
+        ) {
+          clearAsrPauseTimer();
+          endTake();
+          return;
+        }
         // Chrome stops continuous sessions constantly; restart in the SAME take (user does not tap again).
         if (asrRestartsThisTake < ASR_MAX_RESTARTS_PER_TAKE) {
           asrRestartsThisTake++;
