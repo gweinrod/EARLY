@@ -291,8 +291,8 @@ function scheduleMediaStop(): void {
   const hasTranscript = pendingHeard !== null && pendingHeard.length > 0;
   if (!hasTranscript) setAsrWaitStatus('checking speech…');
 
-  const ms = lockedEeTailAsr ? 400 : hasTranscript ? 650 : 2800;
-  takeLog('scheduleMediaStop', { delayMs: ms, hasTranscript });
+  const ms = lockedEeTailAsr ? 0 : hasTranscript ? 650 : 2800;
+  takeLog('scheduleMediaStop', { delayMs: ms, hasTranscript, immediate: !!lockedEeTailAsr });
   asrWaitTimer = setTimeout(() => {
     asrWaitTimer = null;
     takeLog('scheduleMediaStop fire');
@@ -320,12 +320,29 @@ function markAsrEnded(): void {
   scheduleMediaStop();
 }
 
+function tearDownRecognition(): void {
+  const rec = activeRecognition;
+  activeRecognition = null;
+  if (!rec) return;
+  try {
+    takeLog('recognition.abort()');
+    rec.abort();
+  } catch (err) {
+    takeLog('recognition.abort() threw', { err: String(err) });
+    try {
+      rec.stop();
+    } catch {
+      /* already dead */
+    }
+  }
+}
+
 function releaseMic(): void {
+  tearDownRecognition();
   if (recStream) {
     recStream.getTracks().forEach((t) => t.stop());
     recStream = null;
   }
-  activeRecognition = null;
   endingTake = false;
 }
 
@@ -385,18 +402,14 @@ function endTake(caller = 'unknown'): void {
   }
 
   endingTake = true;
+  takeSessionId++;
   resetListenUi();
-
-  if (activeRecognition) {
-    try {
-      takeLog('recognition.stop()');
-      activeRecognition.stop();
-    } catch (err) {
-      takeLog('recognition.stop() threw', { err: String(err) });
-    }
+  if (lockedEeTailAsr) {
+    setAsrWaitStatus('got it!');
   } else {
-    takeLog('endTake no activeRecognition');
+    setAsrWaitStatus('checking…');
   }
+  tearDownRecognition();
   markAsrEnded();
 }
 
@@ -408,7 +421,6 @@ function finalizeAttempt(): void {
   }
   attemptFinalized = true;
   dspProcessed = false;
-  asrEnded = false;
   clearAsrWait();
   resetListenUi();
   releaseMic();
@@ -461,6 +473,7 @@ function applyAsrTranscript(heard: string): void {
     takeLog('ee-tail autofill → endTake');
     lockedEeTailAsr = { heard: resolved, pass: true };
     clearAsrPauseTimer();
+    $('btnLbl').textContent = 'got it!';
     endTake('ee-tail-autofill');
     return;
   }
@@ -833,7 +846,6 @@ async function toggleRec(): Promise<void> {
             asrEnded,
             locked: lockedEeTailAsr?.heard,
           });
-          if (endingTake) markAsrEnded();
           return;
         }
         if (!listening) {
@@ -852,11 +864,19 @@ async function toggleRec(): Promise<void> {
           return;
         }
         if (isIncompleteEeNamePrefix(heardOnEnd, curItem)) {
-          takeLog('onend incomplete → keep going');
+          takeLog('onend incomplete');
           sawIncompleteEeOnEnd = true;
           clearAsrPauseTimer();
           applyAsrTranscript(heardOnEnd);
+          if (endingTake || !listening || lockedEeTailAsr) {
+            takeLog('onend incomplete → take ended (no restart)');
+            return;
+          }
           $('btnLbl').textContent = `heard "${heardOnEnd}" — keep going…`;
+        }
+        if (!listening || endingTake || lockedEeTailAsr) {
+          takeLog('onend bail before restart');
+          return;
         }
         if (asrRestartsThisTake < ASR_MAX_RESTARTS_PER_TAKE) {
           asrRestartsThisTake++;
