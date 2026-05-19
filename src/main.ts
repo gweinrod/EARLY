@@ -1,4 +1,5 @@
 import { createSpeechRecognition, transcriptFromEvent } from './asr';
+import { APP_VERSION } from './version';
 import {
   autoConfirmAsrPass,
   initCollectorPanel,
@@ -448,6 +449,9 @@ function applySettingsUi(): void {
 }
 
 function init(): void {
+  $('appTitle').textContent = 'EARLY';
+  $('appVersion').textContent = `v${APP_VERSION}`;
+
   settings = loadSettings();
   curStageId = settings.curriculumStage;
   applySettingsUi();
