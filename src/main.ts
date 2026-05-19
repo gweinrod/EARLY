@@ -914,7 +914,10 @@ async function toggleRec(): Promise<void> {
           }
           const h = pendingHeard ?? '';
           if (isIncompleteEeNamePrefix(h, curItem) && !sawIncompleteEeOnEnd) {
-            scheduleAsrPauseEnd('still-incomplete');
+            // Chrome Win often never fires onend after lone "b"; don't reschedule forever.
+            takeLog('pauseTimer force ee-tail autofill (no onend)');
+            sawIncompleteEeOnEnd = true;
+            applyAsrTranscript(h);
             return;
           }
           if (pendingAsrPass && sawIncompleteEeOnEnd && letterNameIsKeyPlusEe(curItem)) {
