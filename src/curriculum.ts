@@ -130,7 +130,29 @@ export function isIncompleteEeNamePrefix(heard: string, item: CurriculumItem): b
   const sn = normalizeHeardLabel(item.spokenName).replace(/\s+/g, '');
   const h = normalizeHeardLabel(heard).replace(/\s+/g, '');
   if (!h || h.length >= sn.length) return false;
+  // "bee"/"dee" = key + "ee"; "see" starts with "s" not "c" — avoid treating "c" as a prefix.
+  if (sn[0] !== item.key) return false;
   return sn.startsWith(h);
+}
+
+/**
+ * ASR often says the letter then the name: "c see", "b bee". Keep the name token for matching.
+ */
+export function canonicalizeHeardForItem(heard: string, item: CurriculumItem): string {
+  const tokens = normalizeHeardLabel(heard).split(/\s+/).filter(Boolean);
+  if (tokens.length < 2) return normalizeHeardLabel(heard);
+
+  const sn = normalizeHeardLabel(item.spokenName);
+  const aliases = new Set(item.aliases.map((a) => normalizeHeardLabel(a)));
+  const hasNameToken = tokens.some((t) => t === sn || aliases.has(t));
+  const hasKeyToken = tokens.some((t) => t === item.key);
+
+  if (hasNameToken && hasKeyToken) {
+    const nameTok = tokens.find((t) => t === sn || aliases.has(t));
+    return nameTok ?? sn;
+  }
+
+  return normalizeHeardLabel(heard);
 }
 
 /** Letter name is the key repeated (e.g. E → "ee"). ASR often finalizes as lone "e". */
@@ -145,8 +167,12 @@ export function resolveItemKey(stageId: CurriculumStageId, heard: string): strin
   if (!label) return null;
   const stage = getStage(stageId);
   for (const item of stage.items) {
-    if (item.key === label || item.spokenName === label) return item.key;
-    if (item.aliases.some((a) => normalizeHeardLabel(a) === label)) return item.key;
+    const canon = canonicalizeHeardForItem(heard, item);
+    if (item.key === label || item.key === canon || item.spokenName === label) return item.key;
+    if (canon === normalizeHeardLabel(item.spokenName)) return item.key;
+    if (item.aliases.some((a) => normalizeHeardLabel(a) === label || normalizeHeardLabel(a) === canon)) {
+      return item.key;
+    }
   }
   return null;
 }
@@ -158,7 +184,7 @@ export function transcriptMatchesItem(
 ): boolean {
   const key = resolveItemKey(stageId, heard);
   if (key === item.key) return true;
-  const label = normalizeHeardLabel(heard);
+  const label = canonicalizeHeardForItem(heard, item);
   return (
     label === item.key ||
     label === normalizeHeardLabel(item.spokenName) ||

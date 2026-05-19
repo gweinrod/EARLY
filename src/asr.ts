@@ -123,7 +123,20 @@ export function mergeTakeTranscript(
     return item.spokenName.toLowerCase();
   }
 
-  return collapseRepeatedTokens(`${a} ${e}`);
+  const merged = collapseRepeatedTokens(`${a} ${e}`);
+  const tokens = merged.split(/\s+/).filter(Boolean);
+  const spoken = normalizeHeardLabel(item.spokenName);
+  if (
+    tokens.length >= 2 &&
+    tokens.some((t) => t === item.key) &&
+    tokens.some((t) => t === spoken || item.aliases.some((al) => normalizeHeardLabel(al) === t))
+  ) {
+    return (
+      tokens.find((t) => t === spoken || item.aliases.some((al) => normalizeHeardLabel(al) === t)) ??
+      spoken
+    );
+  }
+  return merged;
 }
 
 export function collapseRepeatedTokens(heard: string): string {
