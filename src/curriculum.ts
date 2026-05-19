@@ -193,6 +193,23 @@ export function transcriptMatchesItem(
 }
 
 /**
+ * Like transcriptMatchesItem but requires the full letter name for ee-sound letters
+ * in the alphabet stage. "b" alone is not a pass for B — student must say "bee".
+ */
+export function transcriptMatchesItemForScoring(
+  stageId: CurriculumStageId,
+  heard: string,
+  item: CurriculumItem,
+): boolean {
+  if (!transcriptMatchesItem(stageId, heard, item)) return false;
+  if (stageId === 'alphabet' && spokenNameEndsWithEeSound(item)) {
+    const tokens = normalizeHeardLabel(heard).split(/\s+/).filter(Boolean);
+    if (tokens.length === 1 && tokens[0] === item.key) return false;
+  }
+  return true;
+}
+
+/**
  * Stricter than transcriptMatchesItem for mic auto-stop: ignore a lone interim letter
  * (e.g. "b" while the user is still saying "bee").
  */
@@ -224,7 +241,7 @@ export function transcriptMatchesItemForSessionEnd(
   heard: string,
   item: CurriculumItem,
 ): boolean {
-  if (!transcriptMatchesItem(stageId, heard, item)) return false;
+  if (!transcriptMatchesItemForScoring(stageId, heard, item)) return false;
   if (isIncompleteEeNamePrefix(heard, item)) return false;
   return true;
 }

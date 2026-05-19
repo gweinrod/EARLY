@@ -19,8 +19,8 @@ import {
   getStage,
   pickNextItemInOrder,
   STAGE_ORDER,
-  transcriptMatchesItem,
   transcriptMatchesItemForAutoStop,
+  transcriptMatchesItemForScoring,
   transcriptMatchesItemForSessionEnd,
   isIncompleteEeNamePrefix,
 } from './curriculum';
@@ -344,7 +344,7 @@ function finalizeAttempt(): void {
 function applyAsrTranscript(heard: string): void {
   if (!heard.trim()) return;
   pendingHeard = heard;
-  pendingAsrPass = transcriptMatchesItem(curStageId, heard, curItem);
+  pendingAsrPass = transcriptMatchesItemForScoring(curStageId, heard, curItem);
   if (listening) $('btnLbl').textContent = `heard: ${heard}`;
   if (endingTake) scheduleMediaStop();
   else if (!listening) scheduleAttemptFinalize();
@@ -677,6 +677,9 @@ async function toggleRec(): Promise<void> {
         // Chrome stops continuous sessions constantly; restart in the SAME take (user does not tap again).
         if (asrRestartsThisTake < ASR_MAX_RESTARTS_PER_TAKE) {
           asrRestartsThisTake++;
+          if (isIncompleteEeNamePrefix(heardOnEnd, curItem)) {
+            $('btnLbl').textContent = `heard "${heardOnEnd}" — keep going…`;
+          }
           try {
             recognition.start();
             return;
