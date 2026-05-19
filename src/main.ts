@@ -1,5 +1,6 @@
 import { createSpeechRecognition, transcriptFromEvent } from './asr';
 import {
+  autoConfirmAsrPass,
   initCollectorPanel,
   promptTeacherJudgment,
   setJudgmentCompleteHandler,
@@ -268,7 +269,19 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       teacherHeardKey: null,
       curriculumStage: curStageId,
     });
-    promptTeacherJudgment(attempt, curStageId);
+    if (asrPass && heard.trim()) {
+      const judgment = autoConfirmAsrPass(attempt, curStageId, heard);
+      addFB(
+        {
+          t: 'pass',
+          s: `ASR heard “${heard}” — student correct; saved for training.`,
+        },
+        true,
+      );
+      void onTeacherJudgment(judgment);
+    } else {
+      promptTeacherJudgment(attempt, curStageId);
+    }
   }
 
   stopRec();

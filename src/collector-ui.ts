@@ -158,6 +158,33 @@ function flagsWhenStudentCorrect(attempt: AttemptLog): { asrWrong: boolean; dspW
   return { asrWrong, dspWrong };
 }
 
+/** ASR matched target — auto-log student correct and return judgment for TF training. */
+export function autoConfirmAsrPass(
+  attempt: AttemptLog,
+  stageId: CurriculumStageId,
+  heard: string,
+): JudgmentResult {
+  pendingAttemptId = attempt.id;
+  pendingAttempt = attempt;
+  pendingStageId = stageId;
+  pendingAsrWrong = false;
+  pendingDspWrong = false;
+
+  const item = targetItemForAttempt(attempt, stageId);
+  const teacherHeard = heard.trim() || item?.spokenName || attempt.targetKey || '';
+  const teacherHeardKey =
+    resolveItemKey(stageId, teacherHeard) ?? attempt.targetKey ?? null;
+  const agrees = attempt.appPass;
+  const asrWrong = false;
+  const dspWrong = false;
+
+  commitJudgment(agrees, asrWrong, dspWrong, teacherHeard, {
+    statusMessage: `ASR matched — student correct, training updated (heard “${teacherHeard}”).`,
+  });
+
+  return { agrees, asrWrong, dspWrong, teacherHeard, teacherHeardKey };
+}
+
 function submitStudentCorrect(): void {
   if (!pendingAttempt) return;
   const { asrWrong, dspWrong } = flagsWhenStudentCorrect(pendingAttempt);
@@ -193,6 +220,7 @@ function commitJudgment(
   asrWrong: boolean,
   dspWrong: boolean,
   teacherHeard: string,
+  opts?: { statusMessage?: string },
 ): void {
   if (!pendingAttemptId) return;
 
@@ -221,7 +249,7 @@ function commitJudgment(
   if (teacherHeard) parts.push(`Heard “${teacherHeard}” saved for training.`);
   if (asrWrong) parts.push('ASR marked wrong.');
   if (dspWrong) parts.push('DSP marked wrong.');
-  status.textContent = parts.join(' ');
+  status.textContent = opts?.statusMessage ?? parts.join(' ');
   status.style.display = 'block';
   setTimeout(() => {
     status.style.display = 'none';
