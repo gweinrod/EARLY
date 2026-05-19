@@ -44,6 +44,7 @@ import {
 import {
   applyPublishedModelUpdate,
   checkForPublishedModelUpdate,
+  isTfReady,
   trainCalibrationSample,
 } from './tf-phoneme';
 import { isVoiceBankComplete } from './voice-bank';
@@ -454,34 +455,55 @@ async function onTeacherJudgment(j: {
   });
 }
 
-async function switchStage(stageId: CurriculumStageId): Promise<void> {
-  curStageId = stageId;
-  settings.curriculumStage = stageId;
-  saveSettings(settings);
+async function prepareStage(stageId: CurriculumStageId): Promise<void> {
   resetMelFilterbank();
-  $('netTxt').textContent = 'Loading TensorFlow model…';
+  $('netTxt').textContent = 'Loading classroom model…';
   await ensureDspEngine(stageId);
-  if (!isVoiceBankComplete(stageId)) {
-    await startVoiceBootstrap(stageId);
-    return;
+
+  if (!isTfReady()) {
+    const published = await checkForPublishedModelUpdate(stageId);
+    if (published) {
+      await applyPublishedModelUpdate(stageId);
+      addFB(
+        { t: 'info', s: `Loaded shared classroom model (v${published.version}).` },
+        true,
+      );
+    }
   }
-  const published = await checkForPublishedModelUpdate(stageId);
-  if (published) {
-    await applyPublishedModelUpdate(stageId);
+
+  if (isTfReady()) {
+    $('netTxt').textContent = `TensorFlow.js WASM · ${getStage(stageId).label}`;
+  } else {
+    $('netTxt').textContent = 'Heuristics only — publish or record teacher voice seed';
     addFB(
-      { t: 'info', s: `Loaded shared classroom model (v${published.version}).` },
+      {
+        t: 'warn',
+        s: 'Neural model not loaded. Teacher: use “record teacher voice (seed)” once, then publish — or students can still practice with heuristics.',
+      },
       true,
     );
   }
-  $('netTxt').textContent = `TensorFlow.js WASM · ${getStage(stageId).label}`;
+
   void refreshCloudStats(stageId, getVoiceBankQueueLength());
   refreshLocalTrainingStatus(stageId);
   nextItem();
 }
 
+async function switchStage(stageId: CurriculumStageId): Promise<void> {
+  curStageId = stageId;
+  settings.curriculumStage = stageId;
+  saveSettings(settings);
+  await prepareStage(stageId);
+}
+
 function onVoiceBootstrapComplete(): void {
-  $('netTxt').textContent = `TensorFlow.js WASM · ${getStage(curStageId).label}`;
-  setTargetItem(pickRandomItem(curStageId));
+  void (async () => {
+    await ensureDspEngine(curStageId);
+    if (settings.collectorMode) {
+      await syncLocalVoiceBankToCloud(curStageId);
+    }
+    await prepareStage(curStageId);
+  })();
 }
 
 async function toggleRec(): Promise<void> {
@@ -669,7 +691,7 @@ function init(): void {
     void flushCloudQueue()
       .then(() => flushVoiceBankQueue())
       .then(async () => {
-        if (isVoiceBankComplete(curStageId)) {
+        if (settings.collectorMode && isVoiceBankComplete(curStageId)) {
           await syncLocalVoiceBankToCloud(curStageId);
         }
         await refreshCloudStats(curStageId, getVoiceBankQueueLength());
@@ -700,15 +722,7 @@ function init(): void {
     showErr('Microphone needs HTTPS or localhost (e.g. https://early-sigma.vercel.app or npm run dev).');
   }
 
-  void ensureDspEngine(curStageId).then(async () => {
-    if (!isVoiceBankComplete(curStageId)) {
-      $('netTxt').textContent = 'Voice setup required';
-      await startVoiceBootstrap(curStageId);
-      return;
-    }
-    $('netTxt').textContent = `TensorFlow.js WASM · ${getStage(curStageId).label}`;
-    setTargetItem(pickRandomItem(curStageId));
-  });
+  void prepareStage(curStageId);
 }
 
 init();

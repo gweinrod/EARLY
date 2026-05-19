@@ -35,7 +35,7 @@
     <p id="dataClearStatus" class="data-clear-status" style="display:none"></p>
     <div class="collector-actions">
       <button type="button" class="btn-secondary" id="btnExportLog">export session log</button>
-      <button type="button" class="btn-secondary" id="btnRedoVoiceBank">re-record voice model</button>
+      <button type="button" class="btn-secondary" id="btnRedoVoiceBank">record teacher voice (seed)</button>
       <button type="button" class="btn-secondary btn-danger" id="btnClearServer">clear server data</button>
       <button type="button" class="btn-secondary btn-danger" id="btnClearLocal">clear this device</button>
     </div>
@@ -49,8 +49,8 @@
   </div>
 
   <div id="voiceBootstrap" class="voice-bootstrap" style="display:none">
-    <h2 class="voice-bootstrap-title">Train EARLY on your voice</h2>
-    <p class="voice-bootstrap-lead">Say each letter name once. The neural net learns from your recordings — not synthetic templates.</p>
+    <h2 class="voice-bootstrap-title">Teacher voice seed (one time)</h2>
+    <p class="voice-bootstrap-lead">Record each letter name once in <strong>your</strong> voice. Students do not do this — the classroom model improves from their practice judgments only.</p>
     <p id="bootstrapProgress" class="bootstrap-progress">0 / 26 recorded</p>
     <div id="bootstrapTarget" class="bootstrap-target">A — say: ay</div>
     <button type="button" class="btn-rec btn-bootstrap-rec" id="btnBootstrapRec">

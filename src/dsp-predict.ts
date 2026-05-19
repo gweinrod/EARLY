@@ -10,7 +10,6 @@ import {
   type TfWordPrediction,
 } from './tf-phoneme';
 import type { CurriculumStageId } from './curriculum';
-import { isVoiceBankComplete } from './voice-bank';
 
 export interface DspPrediction {
   embedding: number[] | null;
@@ -95,12 +94,9 @@ export function runDspPrediction(
   } else if (isTfPredictBusy()) {
     parts.unshift('DSP neural net: updating from your last judgment — wait a moment');
   } else if (!isTfReady()) {
-    const stageId = groupKey as CurriculumStageId;
-    if (!isVoiceBankComplete(stageId)) {
-      parts.unshift('DSP: finish voice setup — record each letter in your voice first');
-    } else {
-      parts.unshift('DSP neural net: still loading…');
-    }
+    parts.unshift(
+      'DSP neural net: classroom model not loaded — teacher publishes shared model or records one-time voice seed',
+    );
   } else if (!embedding) {
     parts.unshift('DSP: recording too quiet or too short — try again, speak a bit longer');
   } else {

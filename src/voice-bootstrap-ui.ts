@@ -40,6 +40,13 @@ export function initVoiceBootstrapUi(deps: {
     void toggleBootstrapRec();
   });
   $('btnRedoVoiceBank').addEventListener('click', () => {
+    if (
+      !confirm(
+        'Record the teacher voice seed again? This replaces your local seed for this stage (students use judgments only).',
+      )
+    ) {
+      return;
+    }
     void startVoiceBootstrap(stageId, true);
   });
 }

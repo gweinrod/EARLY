@@ -1,6 +1,8 @@
 # Cloud training — one model for all teachers
 
-Every **voice-bank letter recording** and every teacher **accept** (or ASR auto-confirm when DSP missed) uploads to Vercel Blob. You periodically **train and deploy** a shared model; every device loads it on the next visit.
+**Teacher (once):** use **record teacher voice (seed)** in the teacher panel — uploads to Blob when done.
+
+**Each student session:** teacher **accept** (and ASR when DSP missed) uploads **judgments** only — students never record the 26-letter voice bootstrap. You periodically **train and deploy** a shared model; every device loads it on the next visit.
 
 ## 1. Enable storage (once)
 

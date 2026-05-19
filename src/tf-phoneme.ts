@@ -51,12 +51,6 @@ export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<vo
   await tf.setBackend('wasm');
   await tf.ready();
 
-  if (!isVoiceBankComplete(stageId)) {
-    model = null;
-    ready = false;
-    return;
-  }
-
   if (await tryLoadPublishedModel(stageId)) {
     return;
   }
@@ -70,11 +64,17 @@ export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<vo
     /* no saved model for this stage */
   }
 
-  const bootstrapped = await runBootstrapTraining(stageId);
-  if (!bootstrapped) {
-    model = null;
-    ready = false;
+  if (isVoiceBankComplete(stageId)) {
+    const bootstrapped = await runBootstrapTraining(stageId);
+    if (!bootstrapped) {
+      model = null;
+      ready = false;
+    }
+    return;
   }
+
+  model = null;
+  ready = false;
 }
 
 function createModel(numClasses: number): tf.LayersModel {
