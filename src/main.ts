@@ -419,7 +419,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       addFB(
         {
           t: 'pass',
-          s: `ASR heard “${heard}” — DSP missed it; saved for training.`,
+          s: `ASR correct, DSP missed — pass; saved for training.`,
         },
         true,
       );

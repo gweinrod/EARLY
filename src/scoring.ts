@@ -13,7 +13,7 @@ export function heuristicVerdict(items: FeedbackItem[]): boolean | null {
 }
 
 /**
- * Student pass/fail: trust DSP when it matches the target; ASR only when DSP has no signal.
+ * Student pass/fail: DSP match wins; if DSP fails but ASR heard the target, count as pass and train from that.
  */
 export function deriveAppPass(
   asrPass: boolean,
@@ -23,11 +23,23 @@ export function deriveAppPass(
 ): { appPass: boolean; basis: ScoringBasis } {
   const t = targetKey.toLowerCase();
   const guess = dsp.tf?.guessedKey ?? dsp.guessedKey ?? null;
+
+  if (dsp.dspPass) {
+    if (dsp.tf && dsp.tf.confidence >= 0.22 && guess === t) {
+      return { appPass: true, basis: 'dsp_tf' };
+    }
+    return { appPass: true, basis: 'heuristic' };
+  }
+
+  if (asrPass) {
+    return { appPass: true, basis: 'asr' };
+  }
+
   if (dsp.tf && dsp.tf.confidence >= 0.22) {
     return { appPass: guess === t, basis: 'dsp_tf' };
   }
   if (dsp.heuristicPass !== null) {
     return { appPass: dsp.dspPass, basis: 'heuristic' };
   }
-  return { appPass: asrPass, basis: 'asr' };
+  return { appPass: false, basis: 'asr' };
 }
