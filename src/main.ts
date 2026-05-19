@@ -679,8 +679,28 @@ async function toggleRec(): Promise<void> {
         takeAsrAccum = heard;
         const isFinal = eventHasFinalTranscript(e);
 
+        // Chrome often marks "b" isFinal before "ee" — treat as missed tail, not end of word.
+        if (
+          isFinal &&
+          letterNameIsKeyPlusEe(curItem) &&
+          isIncompleteEeNamePrefix(heard, curItem)
+        ) {
+          sawIncompleteEeOnEnd = true;
+        }
+
         applyAsrTranscript(heard);
         if (!listening) return;
+
+        if (
+          sawIncompleteEeOnEnd &&
+          letterNameIsKeyPlusEe(curItem) &&
+          pendingAsrPass &&
+          Date.now() - takeStartedAt >= MIN_TAKE_MS
+        ) {
+          clearAsrPauseTimer();
+          endTake();
+          return;
+        }
 
         if (
           Date.now() - takeStartedAt >= MIN_TAKE_MS &&

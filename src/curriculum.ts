@@ -240,16 +240,12 @@ export function transcriptMatchesItemForAutoStop(
 ): boolean {
   if (!transcriptMatchesItem(stageId, heard, item)) return false;
   const tokens = normalizeHeardLabel(heard).split(/\s+/).filter(Boolean);
-  // Interim lone letter (e.g. "b" while saying "bee") — wait for more audio or a final result.
-  if (
-    !isFinal &&
-    tokens.length === 1 &&
-    tokens[0].length === 1 &&
-    tokens[0] === item.key
-  ) {
+  if (tokens.length === 1 && tokens[0].length === 1 && tokens[0] === item.key) {
     // E → "ee" often transcribes as final-quality "e" before the session ends.
-    if (spokenNameIsDoubledLetter(item)) return true;
-    return false;
+    if (spokenNameIsDoubledLetter(item)) return isFinal;
+    // Chrome marks "b" final mid-word for "bee" — never auto-stop on consonant alone.
+    if (stageId === 'alphabet' && letterNameIsKeyPlusEe(item)) return false;
+    if (!isFinal) return false;
   }
   return true;
 }
