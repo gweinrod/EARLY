@@ -45,6 +45,15 @@ echo EARLY publish shared model  stage=%STAGE%
 echo ========================================
 echo.
 
+echo Checking cloud sample count...
+powershell -NoProfile -Command "try { $r = Invoke-RestMethod -Uri 'https://early-sigma.vercel.app/api/calibration?stage=%STAGE%' -TimeoutSec 20; Write-Host ('  Server reports ' + $r.total + ' samples for %STAGE%'); if ($r.total -lt 5) { exit 2 } } catch { Write-Host '  (could not reach API — continuing anyway)' }"
+if errorlevel 2 (
+  echo.
+  echo Need at least 5 teacher accepts on the live app ^(v0.11+^) with cloud sync working.
+  echo Then run this script again.
+  exit /b 1
+)
+
 echo [1/4] Pull samples from Vercel Blob...
 call npm run calibration:pull
 if errorlevel 1 (
