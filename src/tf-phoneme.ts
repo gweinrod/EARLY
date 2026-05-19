@@ -55,6 +55,9 @@ export type TfModelLoadSource =
 export interface TfInitResult {
   source: TfModelLoadSource;
   publishedVersion: number | null;
+  /** Published manifest is newer than this device loaded, but fetch/load failed. */
+  publishLoadFailed?: boolean;
+  availablePublishVersion?: number;
 }
 
 const noneResult = (): TfInitResult => ({ source: 'none', publishedVersion: null });
@@ -92,10 +95,23 @@ export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<Tf
   }
 
   const url = modelStorageUrl(stageId);
+  const manifestAfterPublish = await fetchPublishedManifest(stageId);
   try {
     model = await tf.loadLayersModel(url);
     ready = true;
-    return publishedCachedResult(stageId);
+    const cached = await publishedCachedResult(stageId);
+    if (
+      cached.source === 'local' &&
+      manifestAfterPublish &&
+      getStoredPublishedVersion(stageId) < manifestAfterPublish.version
+    ) {
+      return {
+        ...cached,
+        publishLoadFailed: true,
+        availablePublishVersion: manifestAfterPublish.version,
+      };
+    }
+    return cached;
   } catch {
     /* no saved model for this stage */
   }

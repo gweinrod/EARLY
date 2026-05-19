@@ -46,6 +46,15 @@ export function clearFB(): void {
   $('fbList').innerHTML = '';
 }
 
+export function setModelLoadStatus(
+  text: string,
+  tone: 'ok' | 'warn' | 'neutral' = 'neutral',
+): void {
+  const el = $('modelStatus');
+  el.textContent = text;
+  el.className = 'model-status' + (tone === 'ok' ? ' ok' : tone === 'warn' ? ' warn' : '');
+}
+
 export function updateScores(correct: number, total: number): void {
   $('sC').textContent = String(correct);
   $('sT').textContent = String(total);

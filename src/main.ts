@@ -41,7 +41,7 @@ import {
   getVoiceBankQueueLength,
   syncLocalVoiceBankToCloud,
 } from './cloud-voice-bank';
-import { isTfReady, trainCalibrationSample } from './tf-phoneme';
+import { isTfReady, trainCalibrationSample, type TfInitResult } from './tf-phoneme';
 import { isVoiceBankComplete } from './voice-bank';
 import {
   initVoiceBootstrapUi,
@@ -60,6 +60,7 @@ import {
   showErr,
   showTfWordBars,
   showResultBanner,
+  setModelLoadStatus,
   updateScores,
 } from './ui';
 
@@ -460,28 +461,41 @@ async function onTeacherJudgment(j: {
   });
 }
 
+function applyModelLoadStatus(load: TfInitResult): void {
+  if (load.publishLoadFailed && load.availablePublishVersion != null) {
+    setModelLoadStatus(
+      `Could not load shared model v${load.availablePublishVersion} — using local`,
+      'warn',
+    );
+    return;
+  }
+  if (!isTfReady()) {
+    setModelLoadStatus('Neural model not loaded (heuristics only)', 'warn');
+    return;
+  }
+  if (load.source === 'published_fresh' && load.publishedVersion != null) {
+    setModelLoadStatus(`Shared classroom model loaded (v${load.publishedVersion})`, 'ok');
+    return;
+  }
+  if (load.source === 'published_cached' && load.publishedVersion != null) {
+    setModelLoadStatus(`Shared classroom model (v${load.publishedVersion})`, 'ok');
+    return;
+  }
+  if (load.source === 'bootstrap') {
+    setModelLoadStatus('Local model (teacher voice seed)', 'neutral');
+    return;
+  }
+  setModelLoadStatus('Local neural model', 'neutral');
+}
+
 async function prepareStage(stageId: CurriculumStageId): Promise<void> {
   resetMelFilterbank();
+  setModelLoadStatus('Loading classroom model…', 'neutral');
   $('netTxt').textContent = 'Loading classroom model…';
   const load = await ensureDspEngine(stageId);
 
-  if (load.source === 'published_fresh') {
-    addFB(
-      {
-        t: 'info',
-        s: `Loaded shared classroom model (v${load.publishedVersion}).`,
-      },
-      true,
-    );
-  } else if (load.source === 'published_cached' && load.publishedVersion != null) {
-    addFB(
-      {
-        t: 'info',
-        s: `Using shared classroom model (v${load.publishedVersion}).`,
-      },
-      true,
-    );
-  }
+  nextItem();
+  applyModelLoadStatus(load);
 
   if (isTfReady()) {
     const shared =
@@ -491,18 +505,10 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
     $('netTxt').textContent = `TensorFlow.js WASM · ${getStage(stageId).label}${sharedTag}`;
   } else {
     $('netTxt').textContent = 'Heuristics only — publish or record teacher voice seed';
-    addFB(
-      {
-        t: 'warn',
-        s: 'Neural model not loaded. Teacher: use “record teacher voice (seed)” once, then publish — or students can still practice with heuristics.',
-      },
-      true,
-    );
   }
 
   void refreshCloudStats(stageId, getVoiceBankQueueLength());
   refreshLocalTrainingStatus(stageId);
-  nextItem();
 }
 
 async function switchStage(stageId: CurriculumStageId): Promise<void> {
