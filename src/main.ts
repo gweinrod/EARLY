@@ -35,6 +35,7 @@ import { applySettingsToDocument, loadSettings, saveSettings, type AppSettings }
 import {
   flagsFromFeedback,
   getSessionMeta,
+  loadAttempts,
   logAttempt,
   setStudentId,
 } from './session-log';
@@ -100,9 +101,9 @@ let takeAsrAccum = '';
 let sawIncompleteEeOnEnd = false;
 /** ASR result locked when ee-tail autofill ends take (survives short-recording clear). */
 let lockedEeTailAsr: { heard: string; pass: boolean } | null = null;
-/** Provisional pass UI shown before MediaRecorder onstop (Chrome may delay onstop). */
-let eeTailUiShown = false;
 let mediaProcessInFlight = false;
+/** Heard/asrPass after immediate ee-tail finalize; DSP backfill may add collector training lines. */
+let eeTailBackfill: { heard: string; asrPass: boolean } | null = null;
 /** End take after speech pauses (post-speech tail). */
 const ASR_PAUSE_MS = 1400;
 /** Extra wait when Chrome only heard the consonant of bee/dee before onend. */
@@ -185,13 +186,30 @@ function displayFeedback(items: DspPrediction['heuristicItems']): void {
   for (const fb of shown) addFB(fb);
 }
 
-async function processAudio(): Promise<void> {
-  if (attemptFinalized || mediaProcessInFlight) {
-    takeLog('processAudio skip', { attemptFinalized, mediaProcessInFlight });
+async function processAudio(dspBackfill = false): Promise<void> {
+  if (mediaProcessInFlight) {
+    takeLog('processAudio skip in flight', { dspBackfill });
+    return;
+  }
+  if (dspBackfill) {
+    if (!attemptFinalized) {
+      takeLog('processAudio backfill skip (not finalized yet)');
+      return;
+    }
+  } else if (attemptFinalized) {
+    takeLog('processAudio skip (already finalized)');
     return;
   }
   mediaProcessInFlight = true;
-  takeLog('processAudio start');
+  takeLog('processAudio start', { dspBackfill });
+  const ctx = getAudioContext();
+  if (ctx.state === 'suspended') {
+    try {
+      await ctx.resume();
+    } catch {
+      /* continue */
+    }
+  }
   if (!recChunks.length || !audioCtx) {
     takeLog('processAudio abort empty', { chunks: recChunks.length });
     mediaProcessInFlight = false;
@@ -245,8 +263,12 @@ async function processAudio(): Promise<void> {
   }
 
   dspProcessed = true;
-  takeLog('processAudio done', { frames: lastDsp ? 'ok' : 'no-dsp' });
+  takeLog('processAudio done', { frames: lastDsp ? 'ok' : 'no-dsp', dspBackfill });
   mediaProcessInFlight = false;
+  if (dspBackfill) {
+    backfillEeTailCollector();
+    return;
+  }
   scheduleAttemptFinalize();
 }
 
@@ -275,7 +297,7 @@ function resetTakeState(): void {
   takeAsrAccum = '';
   sawIncompleteEeOnEnd = false;
   lockedEeTailAsr = null;
-  eeTailUiShown = false;
+  eeTailBackfill = null;
   clearAsrWait();
   pendingHeard = null;
   pendingAsrPass = null;
@@ -321,48 +343,63 @@ function stopMicTracksNow(): void {
   recStream.getTracks().forEach((t) => t.stop());
 }
 
-function showEeTailImmediateFeedback(heard: string): void {
-  eeTailUiShown = true;
-  showResultBanner(true);
-  const msg =
-    settings.collectorMode && !settings.showMlDebug
-      ? acousticStudentMessage(true)
-      : { t: 'pass' as const, s: `Heard “${heard}”` };
-  addFB(msg, true);
-}
-
-/** Chrome may not fire mediaRec.onstop until more audio; do not wait for a second sound. */
-async function eeTailProcessAndFinalize(): Promise<void> {
-  takeLog('eeTailProcessAndFinalize start');
-  for (const delay of [0, 40, 120, 280]) {
-    if (attemptFinalized) return;
-    if (delay) await new Promise((r) => setTimeout(r, delay));
-    if (mediaRec?.state === 'recording') stopMediaRecorderNow();
-    if (recChunks.length && !dspProcessed) await processAudio();
-    if (dspProcessed || attemptFinalized) return;
-  }
-  if (!attemptFinalized && recStream) {
-    stopMicTracksNow();
-    if (recChunks.length && !dspProcessed) await processAudio();
-  }
-  if (attemptFinalized) return;
-  if (!lockedEeTailAsr) return;
-  takeLog('eeTailProcessAndFinalize → finalize (ASR lock)');
-  pendingHeard = lockedEeTailAsr.heard;
-  pendingAsrPass = lockedEeTailAsr.pass;
-  if (!dspProcessed) dspProcessed = true;
+/** End take from locked ASR now; do not wait for MediaRecorder onstop / decodeAudioData. */
+function finalizeEeTailImmediately(): void {
+  if (attemptFinalized || !lockedEeTailAsr) return;
+  eeTailBackfill = { heard: lockedEeTailAsr.heard, asrPass: lockedEeTailAsr.pass };
+  pendingHeard = eeTailBackfill.heard;
+  pendingAsrPass = eeTailBackfill.asrPass;
+  dspProcessed = true;
+  takeLog('finalizeEeTailImmediately');
   finalizeAttempt();
 }
 
+function backfillEeTailCollector(): void {
+  if (!eeTailBackfill || !settings.collectorMode || !lastDsp?.embedding) return;
+  const { heard, asrPass } = eeTailBackfill;
+  const attempt = loadAttempts().find((a) => a.id === lastLoggedAttemptId);
+  if (!attempt) return;
+  takeLog('backfillEeTailCollector', { dspPass: lastDsp.dspPass });
+  if (asrPass && heard.trim() && lastDsp.dspPass) {
+    const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: false });
+    addFB(
+      { t: 'pass', s: `DSP and ASR agree on “${heard}” — saved for training.` },
+      true,
+    );
+    void onTeacherJudgment(judgment);
+  } else if (asrPass && heard.trim() && !lastDsp.dspPass) {
+    const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: true });
+    addFB(
+      { t: 'pass', s: `ASR correct, DSP missed — pass; saved for training.` },
+      true,
+    );
+    void onTeacherJudgment(judgment);
+  } else {
+    promptTeacherJudgment(attempt, curStageId);
+  }
+  eeTailBackfill = null;
+}
+
+/** Run DSP after immediate finalize (mic already released). */
+async function runEeTailDspBackfill(): Promise<void> {
+  takeLog('eeTailDspBackfill start');
+  for (const delay of [0, 60, 200, 500, 1000]) {
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+    if (mediaRec?.state === 'recording') stopMediaRecorderNow();
+    if (recChunks.length) {
+      await processAudio(true);
+      return;
+    }
+  }
+  takeLog('eeTailDspBackfill gave up (no chunks)');
+}
+
 function endEeTailCapture(): void {
-  const heard = lockedEeTailAsr?.heard ?? '';
   setAsrWaitStatus('got it!');
-  if (heard) showEeTailImmediateFeedback(heard);
   stopMediaRecorderNow();
-  void eeTailProcessAndFinalize();
-  setTimeout(() => {
-    if (!attemptFinalized) stopMicTracksNow();
-  }, 80);
+  stopMicTracksNow();
+  finalizeEeTailImmediately();
+  void runEeTailDspBackfill();
 }
 
 /** Stop recorder after ASR has time to deliver late transcripts. */
@@ -566,10 +603,6 @@ function applyAsrTranscript(heard: string): void {
 }
 
 function finishAttempt(heard: string, asrPass: boolean): void {
-  if (eeTailUiShown) {
-    clearFB();
-    eeTailUiShown = false;
-  }
   const dsp =
     lastDsp ??
     ({
@@ -636,6 +669,10 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       curriculumStage: curStageId,
     });
     lastLoggedAttemptId = attempt.id;
+    if (eeTailBackfill && !dsp.embedding) {
+      takeLog('finishAttempt defer collector until ee-tail DSP backfill');
+      return;
+    }
     if (asrPass && heard.trim() && dsp.dspPass) {
       const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: false });
       addFB(
