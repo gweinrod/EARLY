@@ -64,6 +64,7 @@ let takeSessionId = 0;
 let takeStartedAt = 0;
 let maxTakeTimer: ReturnType<typeof setTimeout> | null = null;
 let asrPauseTimer: ReturnType<typeof setTimeout> | null = null;
+let asrRetryDone = false;
 let listening = false;
 let stopWave: (() => void) | null = null;
 let lastDsp: DspPrediction | null = null;
@@ -185,6 +186,11 @@ function resetTakeState(): void {
     clearTimeout(asrPauseTimer);
     asrPauseTimer = null;
   }
+  asrRetryDone = false;
+}
+
+function setAsrWaitStatus(msg: string): void {
+  $('btnLbl').textContent = msg;
 }
 
 function clearAsrPauseTimer(): void {
@@ -197,9 +203,16 @@ function clearAsrPauseTimer(): void {
 /** Stop recorder after ASR has time to deliver late transcripts. */
 function scheduleMediaStop(): void {
   clearAsrWait();
-  const ms = pendingHeard && pendingHeard.length > 0 ? 120 : 3500;
+  const hasTranscript = pendingHeard !== null && pendingHeard.length > 0;
+  if (!hasTranscript) setAsrWaitStatus('checking speech…');
+
+  const ms = hasTranscript ? 120 : 1400;
   asrWaitTimer = setTimeout(() => {
     asrWaitTimer = null;
+    if (pendingHeard === null) {
+      pendingHeard = '';
+      pendingAsrPass = false;
+    }
     if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
     else if (dspProcessed) scheduleAttemptFinalize();
   }, ms);
@@ -237,15 +250,16 @@ function scheduleAttemptFinalize(): void {
       asrWaitTimer = null;
       asrEnded = true;
       scheduleAttemptFinalize();
-    }, 5000);
+    }, 2500);
     return;
   }
 
-  const graceMs = pendingHeard && pendingHeard.length > 0 ? 50 : 800;
-  asrWaitTimer = setTimeout(() => {
-    asrWaitTimer = null;
-    finalizeAttempt();
-  }, graceMs);
+  if (pendingHeard === null) {
+    pendingHeard = '';
+    pendingAsrPass = false;
+  }
+
+  finalizeAttempt();
 }
 
 /** End speech recognition; keep recorder running until ASR transcript is collected. */
@@ -511,6 +525,21 @@ async function toggleRec(): Promise<void> {
       recognition.onend = () => {
         if (session !== takeSessionId) return;
         if (Date.now() - takeStartedAt < 250) return;
+
+        if (
+          pendingHeard === null &&
+          !asrRetryDone &&
+          Date.now() - takeStartedAt > 400
+        ) {
+          asrRetryDone = true;
+          try {
+            recognition.start();
+            return;
+          } catch {
+            /* fall through to end take */
+          }
+        }
+
         if (!endingTake) {
           endingTake = true;
           resetListenUi();
