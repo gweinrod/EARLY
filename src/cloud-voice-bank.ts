@@ -4,6 +4,7 @@ import { APP_VERSION } from './version';
 import { notifyCloudSyncActivity } from './cloud-calibration';
 
 const QUEUE_KEY = 'early.cloudVoiceQueue.v1';
+const SYNCED_KEY = 'early.voiceBank.synced.v1';
 
 export interface VoiceBankUpload {
   stageId: CurriculumStageId;
@@ -19,6 +20,47 @@ interface QueuedVoicePayload {
   embedding: number[];
   createdAt: string;
   appVersion: string;
+}
+
+function embeddingFingerprint(embedding: number[]): string {
+  return embedding.map((n) => n.toFixed(4)).join(',');
+}
+
+function syncedSampleId(stageId: CurriculumStageId, targetKey: string, embedding: number[]): string {
+  return `${stageId}|${targetKey}|${embeddingFingerprint(embedding)}`;
+}
+
+function loadSyncedIds(): Set<string> {
+  try {
+    const raw = localStorage.getItem(SYNCED_KEY);
+    return new Set(raw ? (JSON.parse(raw) as string[]) : []);
+  } catch {
+    return new Set();
+  }
+}
+
+function saveSyncedIds(ids: Set<string>): void {
+  localStorage.setItem(SYNCED_KEY, JSON.stringify([...ids]));
+}
+
+function isAlreadySynced(upload: VoiceBankUpload): boolean {
+  return loadSyncedIds().has(syncedSampleId(upload.stageId, upload.targetKey, upload.embedding));
+}
+
+function markSynced(upload: VoiceBankUpload): void {
+  const ids = loadSyncedIds();
+  ids.add(syncedSampleId(upload.stageId, upload.targetKey, upload.embedding));
+  saveSyncedIds(ids);
+}
+
+/** Call when re-recording voice bank so new takes upload again. */
+export function clearSyncedVoiceBank(stageId: CurriculumStageId): void {
+  const prefix = `${stageId}|`;
+  const ids = loadSyncedIds();
+  for (const id of ids) {
+    if (id.startsWith(prefix)) ids.delete(id);
+  }
+  saveSyncedIds(ids);
 }
 
 function loadQueue(): QueuedVoicePayload[] {
@@ -56,11 +98,14 @@ async function postSample(payload: QueuedVoicePayload): Promise<boolean> {
   return res.ok;
 }
 
-/** Upload one voice-bank letter recording (13-D embedding). */
+/** Upload one voice-bank letter recording (13-D embedding); skips if already sent. */
 export async function uploadVoiceBankSample(upload: VoiceBankUpload): Promise<void> {
+  if (isAlreadySynced(upload)) return;
+
   const payload = toPayload(upload);
   try {
     if (await postSample(payload)) {
+      markSynced(upload);
       notifyCloudSyncActivity();
       return;
     }
@@ -72,7 +117,7 @@ export async function uploadVoiceBankSample(upload: VoiceBankUpload): Promise<vo
   saveQueue(q);
 }
 
-/** Upload every sample in the local voice bank (e.g. after setup or re-record). */
+/** Upload local voice bank samples that have not been sent to the server yet. */
 export async function syncLocalVoiceBankToCloud(stageId: CurriculumStageId): Promise<void> {
   const bank = loadVoiceBank(stageId);
   for (const [key, embeddings] of Object.entries(bank.samples)) {
@@ -93,8 +138,16 @@ export async function flushVoiceBankQueue(): Promise<void> {
 
   const kept: QueuedVoicePayload[] = [];
   for (const payload of q) {
+    const upload: VoiceBankUpload = {
+      stageId: payload.stageId,
+      targetKey: payload.targetKey,
+      embedding: payload.embedding,
+    };
+    if (isAlreadySynced(upload)) continue;
+
     try {
       if (await postSample(payload)) {
+        markSynced(upload);
         notifyCloudSyncActivity();
       } else {
         kept.push(payload);

@@ -8,7 +8,7 @@ import {
   isVoiceBankComplete,
   loadVoiceBank,
 } from './voice-bank';
-import { uploadVoiceBankSample } from './cloud-voice-bank';
+import { clearSyncedVoiceBank, uploadVoiceBankSample } from './cloud-voice-bank';
 import { deleteStoredModel, retrainFromVoiceBank } from './tf-phoneme';
 import { createMediaRecorder } from './recorder';
 import { $, hide, show } from './ui';
@@ -50,6 +50,7 @@ export async function startVoiceBootstrap(
   stageId = forStage;
   if (forceReset) {
     clearVoiceBank(stageId);
+    clearSyncedVoiceBank(stageId);
     await deleteStoredModel(stageId);
   }
 
