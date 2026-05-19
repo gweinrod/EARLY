@@ -5,7 +5,6 @@ import {
   initCollectorPanel,
   promptTeacherJudgment,
   setJudgmentCompleteHandler,
-  showDspVerdict,
   syncStudentIdField,
 } from './collector-ui';
 import {
@@ -134,16 +133,6 @@ async function processAudio(): Promise<void> {
       showTfWordBars(lastDsp.tf.top3, lastDsp.tf.confidence);
     }
 
-    if (settings.collectorMode) {
-      showDspVerdict(
-        lastDsp.summary,
-        lastDsp.tf?.guessedKey ?? null,
-        curItem.display,
-        curItem.key,
-        lastDsp.guessConfidence,
-        lastDsp.targetProbability,
-      );
-    }
   } catch {
     displayFeedback([{ t: 'warn', s: 'Could not decode audio' }]);
     pendingHeard = null;

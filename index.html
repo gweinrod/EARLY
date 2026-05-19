@@ -90,31 +90,7 @@
   </div>
 
   <div id="judgmentBlock" class="judgment-block" style="display:none">
-    <p class="sec-label">your judgment</p>
-    <p id="judgmentSummary" class="judgment-summary"></p>
-    <div id="dspVerdict" class="dsp-verdict" style="display:none">
-      <p id="dspGuessWord" class="dsp-guess-word"></p>
-      <p id="dspVerdictDetail" class="dsp-verdict-detail"></p>
-    </div>
-    <div class="judgment-primary-btns">
-      <button type="button" class="btn-student-correct" id="btnStudentCorrect">Student got it right</button>
-      <button type="button" class="btn-student-wrong" id="btnStudentWrong">Student was wrong</button>
-    </div>
     <button type="button" class="btn-he-said-target" id="btnHeSaidTarget">He said the target — accept</button>
-    <details class="judgment-advanced">
-      <summary>App verdict &amp; ASR/DSP flags</summary>
-      <div class="judgment-btns">
-        <button type="button" class="btn-agree" id="btnAgree">app pass/fail was correct</button>
-        <button type="button" class="btn-disagree" id="btnDisagree">app pass/fail was wrong</button>
-        <button type="button" class="btn-asr-wrong" id="btnAsrWrong" aria-pressed="false">speech-to-text wrong</button>
-        <button type="button" class="btn-dsp-wrong" id="btnDspWrong" aria-pressed="false">DSP guess wrong</button>
-      </div>
-      <label class="field-label teacher-heard-label">
-        what you heard (for training)
-        <input type="text" id="teacherHeard" class="text-input" placeholder="e.g. oh, bee, dee" autocomplete="off" />
-      </label>
-    </details>
-    <p id="judgmentHint" class="judgment-hint">Tap a button after each recording. “He said the target” logs the letter name for training.</p>
     <p id="judgmentStatus" class="judgment-status"></p>
   </div>
 
