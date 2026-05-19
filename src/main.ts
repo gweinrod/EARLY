@@ -404,7 +404,17 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       curriculumStage: curStageId,
     });
     lastLoggedAttemptId = attempt.id;
-    if (asrPass && heard.trim() && !dsp.dspPass) {
+    if (asrPass && heard.trim() && dsp.dspPass) {
+      const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: false });
+      addFB(
+        {
+          t: 'pass',
+          s: `DSP and ASR agree on “${heard}” — saved for training.`,
+        },
+        true,
+      );
+      void onTeacherJudgment(judgment);
+    } else if (asrPass && heard.trim() && !dsp.dspPass) {
       const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: true });
       addFB(
         {

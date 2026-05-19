@@ -108,12 +108,12 @@ export function promptTeacherJudgment(attempt: AttemptLog, stageId: CurriculumSt
   $('judgmentBlock').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-/** ASR matched target while DSP did not — same as teacher tapping accept. */
+/** DSP/ASR pass — same as teacher tapping accept (logs judgment + trains). */
 export function autoConfirmAsrPass(
   attempt: AttemptLog,
   stageId: CurriculumStageId,
   heard: string,
-  opts?: { dspFailed?: boolean },
+  opts?: { dspFailed?: boolean; statusMessage?: string },
 ): JudgmentResult {
   pendingAttemptId = attempt.id;
   pendingAttempt = attempt;
@@ -125,8 +125,11 @@ export function autoConfirmAsrPass(
     resolveItemKey(stageId, teacherHeard) ?? attempt.targetKey ?? null;
 
   const dspFailed = opts?.dspFailed ?? false;
+  const defaultMsg = dspFailed
+    ? `Accepted “${teacherHeard}” — DSP missed; training updated.`
+    : `Accepted “${teacherHeard}” — DSP and ASR agree; training updated.`;
   commitJudgment(true, false, dspFailed, teacherHeard, {
-    statusMessage: `Accepted “${teacherHeard}” — training updated.`,
+    statusMessage: opts?.statusMessage ?? defaultMsg,
   });
 
   return {
