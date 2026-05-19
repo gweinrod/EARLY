@@ -176,7 +176,7 @@ function scheduleAttemptFinalize(): void {
   }
 
   clearAsrWait();
-  const waitMs = activeRecognition ? 2800 : 0;
+  const waitMs = activeRecognition ? 1200 : 0;
   asrWaitTimer = setTimeout(() => {
     asrWaitTimer = null;
     finalizeAttempt();
@@ -283,8 +283,6 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       promptTeacherJudgment(attempt, curStageId);
     }
   }
-
-  stopRec();
 }
 
 async function onTeacherJudgment(j: {
@@ -361,10 +359,11 @@ async function toggleRec(): Promise<void> {
     if (activeRecognition) {
       const recognition = activeRecognition;
       recognition.onresult = (e: SpeechRecognitionEvent) => {
-        const heard = transcriptFromEvent(e);
+        const { text: heard, isFinal } = transcriptFromEvent(e);
         if (!heard) return;
         applyAsrTranscript(heard);
-        if (listening) stopRec();
+        const matched = transcriptMatchesItem(curStageId, heard, curItem);
+        if (listening && (isFinal || matched)) stopRec();
       };
       recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
         if (e.error !== 'aborted' && pendingHeard === null) {
