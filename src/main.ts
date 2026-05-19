@@ -61,7 +61,8 @@ let dspProcessed = false;
 let asrEnded = false;
 let endingTake = false;
 let takeSessionId = 0;
-let asrHadResult = false;
+let takeStartedAt = 0;
+let maxTakeTimer: ReturnType<typeof setTimeout> | null = null;
 let listening = false;
 let stopWave: (() => void) | null = null;
 let lastDsp: DspPrediction | null = null;
@@ -175,7 +176,10 @@ function resetTakeState(): void {
   clearAsrWait();
   pendingHeard = null;
   pendingAsrPass = null;
-  asrHadResult = false;
+  if (maxTakeTimer) {
+    clearTimeout(maxTakeTimer);
+    maxTakeTimer = null;
+  }
 }
 
 function releaseMic(): void {
@@ -217,7 +221,18 @@ function scheduleAttemptFinalize(): void {
 
 /** Stop listening UI, speech recognition, and recorder together. */
 function endTake(): void {
-  if (endingTake) return;
+  if (maxTakeTimer) {
+    clearTimeout(maxTakeTimer);
+    maxTakeTimer = null;
+  }
+
+  if (endingTake) {
+    if (listening) resetListenUi();
+    if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
+    else if (dspProcessed) scheduleAttemptFinalize();
+    return;
+  }
+
   endingTake = true;
   resetListenUi();
 
@@ -420,6 +435,7 @@ async function toggleRec(): Promise<void> {
     };
 
     listening = true;
+    takeStartedAt = Date.now();
     $('btnRec').classList.add('on');
     $('btnLbl').textContent = 'listening...';
     clearFB();
@@ -427,6 +443,11 @@ async function toggleRec(): Promise<void> {
     hide('pbWrap');
     hide('resultBanner');
     stopWave = drawWave(an, () => listening && session === takeSessionId);
+
+    maxTakeTimer = setTimeout(() => {
+      maxTakeTimer = null;
+      if (listening && session === takeSessionId) endTake();
+    }, 12000);
 
     activeRecognition = createSpeechRecognition();
     if (activeRecognition) {
@@ -436,10 +457,7 @@ async function toggleRec(): Promise<void> {
         const heard = fullTranscriptFromEvent(e);
         const last = e.results.length > 0 ? e.results[e.results.length - 1] : null;
         const isFinal = last?.isFinal ?? false;
-        if (heard) {
-          asrHadResult = true;
-          applyAsrTranscript(heard);
-        }
+        if (heard) applyAsrTranscript(heard);
         const matched = heard ? transcriptMatchesItem(curStageId, heard, curItem) : false;
         if (listening && (isFinal || matched)) endTake();
       };
@@ -456,11 +474,12 @@ async function toggleRec(): Promise<void> {
       recognition.onend = () => {
         if (session !== takeSessionId) return;
         asrEnded = true;
-        if (endingTake) {
-          scheduleAttemptFinalize();
+        if (Date.now() - takeStartedAt < 250) return;
+        if (listening) {
+          endTake();
           return;
         }
-        if (asrHadResult) endTake();
+        if (endingTake) scheduleAttemptFinalize();
       };
       try {
         recognition.start();
