@@ -100,6 +100,9 @@ let takeAsrAccum = '';
 let sawIncompleteEeOnEnd = false;
 /** ASR result locked when ee-tail autofill ends take (survives short-recording clear). */
 let lockedEeTailAsr: { heard: string; pass: boolean } | null = null;
+/** Provisional pass UI shown before MediaRecorder onstop (Chrome may delay onstop). */
+let eeTailUiShown = false;
+let mediaProcessInFlight = false;
 /** End take after speech pauses (post-speech tail). */
 const ASR_PAUSE_MS = 1400;
 /** Extra wait when Chrome only heard the consonant of bee/dee before onend. */
@@ -183,9 +186,15 @@ function displayFeedback(items: DspPrediction['heuristicItems']): void {
 }
 
 async function processAudio(): Promise<void> {
+  if (attemptFinalized || mediaProcessInFlight) {
+    takeLog('processAudio skip', { attemptFinalized, mediaProcessInFlight });
+    return;
+  }
+  mediaProcessInFlight = true;
   takeLog('processAudio start');
   if (!recChunks.length || !audioCtx) {
     takeLog('processAudio abort empty', { chunks: recChunks.length });
+    mediaProcessInFlight = false;
     return;
   }
   const blob = buildRecordingBlob(recChunks);
@@ -198,15 +207,16 @@ async function processAudio(): Promise<void> {
 
     if (frames.length < 4) {
       takeLog('processAudio too short', { frames: frames.length, locked: !!lockedEeTailAsr });
-      displayFeedback([{ t: 'warn', s: 'Recording too short — try again' }]);
       if (!lockedEeTailAsr) {
+        displayFeedback([{ t: 'warn', s: 'Recording too short — try again' }]);
         pendingHeard = null;
         pendingAsrPass = null;
+        attemptFinalized = true;
+        clearAsrWait();
+        releaseMic();
       }
-      attemptFinalized = true;
       dspProcessed = false;
-      clearAsrWait();
-      releaseMic();
+      mediaProcessInFlight = false;
       return;
     }
 
@@ -220,19 +230,23 @@ async function processAudio(): Promise<void> {
     }
 
   } catch {
-    displayFeedback([{ t: 'warn', s: 'Could not decode audio' }]);
-    pendingHeard = null;
-    pendingAsrPass = null;
+    if (!lockedEeTailAsr) {
+      displayFeedback([{ t: 'warn', s: 'Could not decode audio' }]);
+      pendingHeard = null;
+      pendingAsrPass = null;
+      attemptFinalized = true;
+      clearAsrWait();
+      releaseMic();
+    }
     lastDsp = null;
-    attemptFinalized = true;
     dspProcessed = false;
-    clearAsrWait();
-    releaseMic();
+    mediaProcessInFlight = false;
     return;
   }
 
   dspProcessed = true;
   takeLog('processAudio done', { frames: lastDsp ? 'ok' : 'no-dsp' });
+  mediaProcessInFlight = false;
   scheduleAttemptFinalize();
 }
 
@@ -261,6 +275,7 @@ function resetTakeState(): void {
   takeAsrAccum = '';
   sawIncompleteEeOnEnd = false;
   lockedEeTailAsr = null;
+  eeTailUiShown = false;
   clearAsrWait();
   pendingHeard = null;
   pendingAsrPass = null;
@@ -283,6 +298,71 @@ function clearAsrPauseTimer(): void {
     clearTimeout(asrPauseTimer);
     asrPauseTimer = null;
   }
+}
+
+function stopMediaRecorderNow(): void {
+  if (!mediaRec || mediaRec.state === 'inactive') return;
+  takeLog('stopMediaRecorderNow', { state: mediaRec.state });
+  try {
+    if (mediaRec.state === 'recording') mediaRec.requestData();
+  } catch {
+    /* requestData optional */
+  }
+  try {
+    mediaRec.stop();
+  } catch (err) {
+    takeLog('stopMediaRecorderNow threw', { err: String(err) });
+  }
+}
+
+function stopMicTracksNow(): void {
+  if (!recStream) return;
+  takeLog('stopMicTracksNow');
+  recStream.getTracks().forEach((t) => t.stop());
+}
+
+function showEeTailImmediateFeedback(heard: string): void {
+  eeTailUiShown = true;
+  showResultBanner(true);
+  const msg =
+    settings.collectorMode && !settings.showMlDebug
+      ? acousticStudentMessage(true)
+      : { t: 'pass' as const, s: `Heard “${heard}”` };
+  addFB(msg, true);
+}
+
+/** Chrome may not fire mediaRec.onstop until more audio; do not wait for a second sound. */
+async function eeTailProcessAndFinalize(): Promise<void> {
+  takeLog('eeTailProcessAndFinalize start');
+  for (const delay of [0, 40, 120, 280]) {
+    if (attemptFinalized) return;
+    if (delay) await new Promise((r) => setTimeout(r, delay));
+    if (mediaRec?.state === 'recording') stopMediaRecorderNow();
+    if (recChunks.length && !dspProcessed) await processAudio();
+    if (dspProcessed || attemptFinalized) return;
+  }
+  if (!attemptFinalized && recStream) {
+    stopMicTracksNow();
+    if (recChunks.length && !dspProcessed) await processAudio();
+  }
+  if (attemptFinalized) return;
+  if (!lockedEeTailAsr) return;
+  takeLog('eeTailProcessAndFinalize → finalize (ASR lock)');
+  pendingHeard = lockedEeTailAsr.heard;
+  pendingAsrPass = lockedEeTailAsr.pass;
+  if (!dspProcessed) dspProcessed = true;
+  finalizeAttempt();
+}
+
+function endEeTailCapture(): void {
+  const heard = lockedEeTailAsr?.heard ?? '';
+  setAsrWaitStatus('got it!');
+  if (heard) showEeTailImmediateFeedback(heard);
+  stopMediaRecorderNow();
+  void eeTailProcessAndFinalize();
+  setTimeout(() => {
+    if (!attemptFinalized) stopMicTracksNow();
+  }, 80);
 }
 
 /** Stop recorder after ASR has time to deliver late transcripts. */
@@ -317,6 +397,10 @@ function markAsrEnded(): void {
   }
   asrEnded = true;
   takeLog('markAsrEnded');
+  if (lockedEeTailAsr) {
+    takeLog('markAsrEnded ee-tail (recorder stop already requested)');
+    return;
+  }
   scheduleMediaStop();
 }
 
@@ -405,7 +489,7 @@ function endTake(caller = 'unknown'): void {
   takeSessionId++;
   resetListenUi();
   if (lockedEeTailAsr) {
-    setAsrWaitStatus('got it!');
+    endEeTailCapture();
   } else {
     setAsrWaitStatus('checking…');
   }
@@ -473,7 +557,6 @@ function applyAsrTranscript(heard: string): void {
     takeLog('ee-tail autofill → endTake');
     lockedEeTailAsr = { heard: resolved, pass: true };
     clearAsrPauseTimer();
-    $('btnLbl').textContent = 'got it!';
     endTake('ee-tail-autofill');
     return;
   }
@@ -483,6 +566,10 @@ function applyAsrTranscript(heard: string): void {
 }
 
 function finishAttempt(heard: string, asrPass: boolean): void {
+  if (eeTailUiShown) {
+    clearFB();
+    eeTailUiShown = false;
+  }
   const dsp =
     lastDsp ??
     ({
