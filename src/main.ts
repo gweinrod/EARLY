@@ -139,6 +139,15 @@ async function processAudio(): Promise<void> {
     return;
   }
 
+  if (settings.collectorMode) {
+    const heard = pendingHeard ?? '';
+    const asrPass = pendingAsrPass ?? false;
+    finishAttempt(heard, asrPass);
+    pendingHeard = null;
+    pendingAsrPass = null;
+    return;
+  }
+
   if (pendingHeard !== null && pendingAsrPass !== null) {
     finishAttempt(pendingHeard, pendingAsrPass);
     pendingHeard = null;
@@ -304,6 +313,9 @@ async function toggleRec(): Promise<void> {
       } catch {
         /* already started */
       }
+    } else if (settings.collectorMode) {
+      pendingHeard = '';
+      pendingAsrPass = false;
     }
 
     listening = true;

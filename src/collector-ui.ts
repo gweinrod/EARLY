@@ -1,5 +1,5 @@
 import type { CurriculumStageId } from './curriculum';
-import { resolveItemKey } from './curriculum';
+import { getStage, resolveItemKey } from './curriculum';
 import {
   downloadSessionLog,
   setStudentId,
@@ -9,6 +9,7 @@ import {
 import { $, hide, show } from './ui';
 
 let pendingAttemptId: string | null = null;
+let pendingAttempt: AttemptLog | null = null;
 let pendingAsrWrong = false;
 let pendingDspWrong = false;
 let pendingStageId: CurriculumStageId = 'alphabet';
@@ -37,6 +38,9 @@ export function initCollectorPanel(): void {
   $('btnDisagree').addEventListener('click', () => submitJudgment(false));
   $('btnAsrWrong').addEventListener('click', () => toggleFlag('asr'));
   $('btnDspWrong').addEventListener('click', () => toggleFlag('dsp'));
+  $('btnStudentCorrect').addEventListener('click', () => submitStudentCorrect());
+  $('btnStudentWrong').addEventListener('click', () => submitStudentWrong());
+  $('btnHeSaidTarget').addEventListener('click', () => submitHeSaidTarget());
   hide('judgmentBlock');
 }
 
@@ -62,6 +66,11 @@ function basisLabel(basis: AttemptLog['scoringBasis']): string {
   if (basis === 'heuristic') return 'acoustic heuristics';
   if (basis === 'asr') return 'speech-to-text fallback';
   return 'legacy';
+}
+
+function targetItemForAttempt(attempt: AttemptLog, stageId: CurriculumStageId) {
+  const key = attempt.targetKey ?? attempt.word.toLowerCase();
+  return getStage(stageId).items.find((i) => i.key === key);
 }
 
 export function showDspVerdict(
@@ -96,6 +105,7 @@ export function showDspVerdict(
 
 export function promptTeacherJudgment(attempt: AttemptLog, stageId: CurriculumStageId): void {
   pendingAttemptId = attempt.id;
+  pendingAttempt = attempt;
   pendingStageId = stageId;
   pendingAsrWrong = false;
   pendingDspWrong = false;
@@ -104,8 +114,14 @@ export function promptTeacherJudgment(attempt: AttemptLog, stageId: CurriculumSt
   $('btnAsrWrong').setAttribute('aria-pressed', 'false');
   $('btnDspWrong').setAttribute('aria-pressed', 'false');
 
+  const item = targetItemForAttempt(attempt, stageId);
   const heardInput = $('teacherHeard') as HTMLInputElement;
-  heardInput.value = '';
+  heardInput.value = attempt.heard?.trim() ? attempt.heard : (item?.spokenName ?? '');
+
+  const acceptBtn = $('btnHeSaidTarget');
+  acceptBtn.textContent = item
+    ? `He said “${item.spokenName}” — accept`
+    : 'He said the target — accept';
 
   const summary = $('judgmentSummary');
   const flags = attempt.heuristicFlags.map((f) => f.message).join(' · ') || 'none';
@@ -113,9 +129,10 @@ export function promptTeacherJudgment(attempt: AttemptLog, stageId: CurriculumSt
   const dspLine = attempt.dspGuessWord
     ? `DSP “${attempt.dspGuessWord}” (${Math.round((attempt.dspGuessConfidence ?? 0) * 100)}%)`
     : 'DSP —';
+  const asrLine = attempt.heard?.trim() ? `ASR “${attempt.heard}”` : 'ASR — (no transcript)';
   summary.textContent =
     `Target ${attempt.word} · app ${appVerdict} (${basisLabel(attempt.scoringBasis)}) · ` +
-    `${dspLine} · ASR “${attempt.heard ?? '—'}” · flagged: ${flags}`;
+    `${dspLine} · ${asrLine} · flagged: ${flags}`;
 
   if (attempt.dspSummary) {
     showDspVerdict(
@@ -127,14 +144,58 @@ export function promptTeacherJudgment(attempt: AttemptLog, stageId: CurriculumSt
       attempt.dspTargetProbability,
     );
   }
+
   show('judgmentBlock');
+  $('judgmentBlock').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+}
+
+function flagsWhenStudentCorrect(attempt: AttemptLog): { asrWrong: boolean; dspWrong: boolean } {
+  const targetKey = (attempt.targetKey ?? attempt.word).toLowerCase();
+  const asrWrong = !attempt.asrPass;
+  const dspWrong =
+    attempt.dspGuessWord != null &&
+    attempt.dspGuessWord.toLowerCase() !== targetKey;
+  return { asrWrong, dspWrong };
+}
+
+function submitStudentCorrect(): void {
+  if (!pendingAttempt) return;
+  const { asrWrong, dspWrong } = flagsWhenStudentCorrect(pendingAttempt);
+  const item = targetItemForAttempt(pendingAttempt, pendingStageId);
+  const teacherHeard = item?.spokenName ?? pendingAttempt.targetKey ?? '';
+  const agrees = pendingAttempt.appPass;
+  commitJudgment(agrees, asrWrong, dspWrong, teacherHeard);
+}
+
+function submitStudentWrong(): void {
+  if (!pendingAttempt) return;
+  const agrees = !pendingAttempt.appPass;
+  commitJudgment(agrees, pendingAsrWrong, pendingDspWrong, '');
+}
+
+function submitHeSaidTarget(): void {
+  if (!pendingAttempt) return;
+  const item = targetItemForAttempt(pendingAttempt, pendingStageId);
+  const teacherHeard = item?.spokenName ?? pendingAttempt.targetKey ?? '';
+  const { asrWrong, dspWrong } = flagsWhenStudentCorrect(pendingAttempt);
+  const agrees = pendingAttempt.appPass;
+  commitJudgment(agrees, asrWrong, dspWrong, teacherHeard);
 }
 
 function submitJudgment(agrees: boolean): void {
   if (!pendingAttemptId) return;
-  const asrWrong = pendingAsrWrong;
-  const dspWrong = pendingDspWrong;
   const teacherHeard = (($('teacherHeard') as HTMLInputElement).value || '').trim();
+  commitJudgment(agrees, pendingAsrWrong, pendingDspWrong, teacherHeard);
+}
+
+function commitJudgment(
+  agrees: boolean,
+  asrWrong: boolean,
+  dspWrong: boolean,
+  teacherHeard: string,
+): void {
+  if (!pendingAttemptId) return;
+
   const teacherHeardKey = teacherHeard ? resolveItemKey(pendingStageId, teacherHeard) : null;
 
   updateTeacherJudgment(pendingAttemptId, {
@@ -144,7 +205,9 @@ function submitJudgment(agrees: boolean): void {
     teacherHeard,
     teacherHeardKey,
   });
+
   pendingAttemptId = null;
+  pendingAttempt = null;
   pendingAsrWrong = false;
   pendingDspWrong = false;
   hide('judgmentBlock');
@@ -153,9 +216,9 @@ function submitJudgment(agrees: boolean): void {
 
   const status = $('judgmentStatus');
   const parts = [
-    agrees ? 'Logged: you agreed with the app.' : 'Logged: disagreement (valuable training label).',
+    agrees ? 'Logged: app verdict matched your view.' : 'Logged: app verdict was wrong.',
   ];
-  if (teacherHeard) parts.push(`Heard “${teacherHeard}” logged for training.`);
+  if (teacherHeard) parts.push(`Heard “${teacherHeard}” saved for training.`);
   if (asrWrong) parts.push('ASR marked wrong.');
   if (dspWrong) parts.push('DSP marked wrong.');
   status.textContent = parts.join(' ');

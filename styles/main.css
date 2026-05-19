@@ -102,9 +102,48 @@ body.student-face .student-hide { display: none !important; }
   cursor: pointer;
   min-height: 44px;
 }
-.judgment-block { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #e2e8f0; }
-.judgment-summary { font-size: 13px; color: #475569; margin-bottom: 8px; line-height: 1.4; }
-.judgment-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.judgment-block {
+  margin-top: 1rem;
+  padding: 1rem;
+  border-radius: 12px;
+  border: 2px solid #93c5fd;
+  background: #eff6ff;
+}
+.judgment-summary { font-size: 13px; color: #475569; margin-bottom: 10px; line-height: 1.4; }
+.judgment-primary-btns {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.btn-student-correct,
+.btn-student-wrong,
+.btn-he-said-target {
+  width: 100%;
+  padding: 14px 16px;
+  font-size: 16px;
+  font-weight: 600;
+  border-radius: 10px;
+  border: none;
+  cursor: pointer;
+}
+.btn-student-correct {
+  background: #16a34a;
+  color: #fff;
+}
+.btn-student-wrong {
+  background: #fef2f2;
+  color: #b91c1c;
+  border: 1px solid #fca5a5;
+}
+.btn-he-said-target {
+  background: #1d4ed8;
+  color: #fff;
+  margin-bottom: 10px;
+}
+.judgment-advanced { margin-top: 8px; font-size: 13px; color: #64748b; }
+.judgment-advanced summary { cursor: pointer; padding: 6px 0; }
+.judgment-btns { display: flex; gap: 8px; flex-wrap: wrap; margin-top: 8px; }
 .btn-agree, .btn-disagree {
   flex: 1;
   min-height: 48px;
