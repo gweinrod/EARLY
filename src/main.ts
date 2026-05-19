@@ -63,6 +63,7 @@ let endingTake = false;
 let takeSessionId = 0;
 let takeStartedAt = 0;
 let maxTakeTimer: ReturnType<typeof setTimeout> | null = null;
+let asrPauseTimer: ReturnType<typeof setTimeout> | null = null;
 let listening = false;
 let stopWave: (() => void) | null = null;
 let lastDsp: DspPrediction | null = null;
@@ -180,6 +181,34 @@ function resetTakeState(): void {
     clearTimeout(maxTakeTimer);
     maxTakeTimer = null;
   }
+  if (asrPauseTimer) {
+    clearTimeout(asrPauseTimer);
+    asrPauseTimer = null;
+  }
+}
+
+function clearAsrPauseTimer(): void {
+  if (asrPauseTimer) {
+    clearTimeout(asrPauseTimer);
+    asrPauseTimer = null;
+  }
+}
+
+/** Stop recorder after ASR has time to deliver late transcripts. */
+function scheduleMediaStop(): void {
+  clearAsrWait();
+  const ms = pendingHeard && pendingHeard.length > 0 ? 120 : 3500;
+  asrWaitTimer = setTimeout(() => {
+    asrWaitTimer = null;
+    if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
+    else if (dspProcessed) scheduleAttemptFinalize();
+  }, ms);
+}
+
+function markAsrEnded(): void {
+  if (asrEnded) return;
+  asrEnded = true;
+  scheduleMediaStop();
 }
 
 function releaseMic(): void {
@@ -219,17 +248,17 @@ function scheduleAttemptFinalize(): void {
   }, graceMs);
 }
 
-/** Stop listening UI, speech recognition, and recorder together. */
+/** End speech recognition; keep recorder running until ASR transcript is collected. */
 function endTake(): void {
   if (maxTakeTimer) {
     clearTimeout(maxTakeTimer);
     maxTakeTimer = null;
   }
+  clearAsrPauseTimer();
 
   if (endingTake) {
     if (listening) resetListenUi();
-    if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
-    else if (dspProcessed) scheduleAttemptFinalize();
+    markAsrEnded();
     return;
   }
 
@@ -240,16 +269,10 @@ function endTake(): void {
     try {
       activeRecognition.stop();
     } catch {
-      asrEnded = true;
+      markAsrEnded();
     }
   } else {
-    asrEnded = true;
-  }
-
-  if (mediaRec && mediaRec.state !== 'inactive') {
-    mediaRec.stop();
-  } else if (dspProcessed) {
-    scheduleAttemptFinalize();
+    markAsrEnded();
   }
 }
 
@@ -273,7 +296,8 @@ function finalizeAttempt(): void {
 function applyAsrTranscript(heard: string): void {
   pendingHeard = heard;
   pendingAsrPass = transcriptMatchesItem(curStageId, heard, curItem);
-  if (!listening) scheduleAttemptFinalize();
+  if (endingTake) scheduleMediaStop();
+  else if (!listening) scheduleAttemptFinalize();
 }
 
 function finishAttempt(heard: string, asrPass: boolean): void {
@@ -457,29 +481,42 @@ async function toggleRec(): Promise<void> {
         const heard = fullTranscriptFromEvent(e);
         const last = e.results.length > 0 ? e.results[e.results.length - 1] : null;
         const isFinal = last?.isFinal ?? false;
-        if (heard) applyAsrTranscript(heard);
-        const matched = heard ? transcriptMatchesItem(curStageId, heard, curItem) : false;
-        if (listening && (isFinal || matched)) endTake();
+        if (!heard) return;
+
+        applyAsrTranscript(heard);
+
+        if (listening) {
+          const matched = transcriptMatchesItem(curStageId, heard, curItem);
+          if (isFinal || matched) {
+            clearAsrPauseTimer();
+            endTake();
+            return;
+          }
+          clearAsrPauseTimer();
+          asrPauseTimer = setTimeout(() => {
+            asrPauseTimer = null;
+            if (listening && session === takeSessionId) endTake();
+          }, 900);
+        }
       };
       recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
         if (session !== takeSessionId) return;
-        asrEnded = true;
         if (e.error !== 'aborted' && pendingHeard === null) {
           pendingHeard = '';
           pendingAsrPass = false;
         }
         if (listening) endTake();
-        else scheduleAttemptFinalize();
+        else markAsrEnded();
       };
       recognition.onend = () => {
         if (session !== takeSessionId) return;
-        asrEnded = true;
         if (Date.now() - takeStartedAt < 250) return;
-        if (listening) {
-          endTake();
-          return;
+        if (!endingTake) {
+          endingTake = true;
+          resetListenUi();
+          clearAsrPauseTimer();
         }
-        if (endingTake) scheduleAttemptFinalize();
+        markAsrEnded();
       };
       try {
         recognition.start();
