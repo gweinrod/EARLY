@@ -1,4 +1,4 @@
-import { createSpeechRecognition, fullTranscriptFromEvent } from './asr';
+import { createSpeechRecognition, transcriptFromEvent } from './asr';
 import { APP_VERSION } from './version';
 import {
   autoConfirmAsrPass,
@@ -80,15 +80,8 @@ let takeSessionId = 0;
 let takeStartedAt = 0;
 let maxTakeTimer: ReturnType<typeof setTimeout> | null = null;
 let asrPauseTimer: ReturnType<typeof setTimeout> | null = null;
-let vadTimer: ReturnType<typeof setInterval> | null = null;
-let vadSawSpeech = false;
-let vadLastLoudAt = 0;
-let takeTranscript = '';
 let listening = false;
-/** RMS threshold (time-domain) to count as speech. */
-const VAD_RMS_THRESHOLD = 0.018;
-/** Silence after speech before auto-stop. */
-const VAD_SILENCE_MS = 1500;
+const ASR_PAUSE_MS = 900;
 let stopWave: (() => void) | null = null;
 let lastDsp: DspPrediction | null = null;
 let pendingHeard: string | null = null;
@@ -210,8 +203,6 @@ function resetTakeState(): void {
     clearTimeout(asrPauseTimer);
     asrPauseTimer = null;
   }
-  takeTranscript = '';
-  clearVad();
 }
 
 function setAsrWaitStatus(msg: string): void {
@@ -222,60 +213,6 @@ function clearAsrPauseTimer(): void {
   if (asrPauseTimer) {
     clearTimeout(asrPauseTimer);
     asrPauseTimer = null;
-  }
-}
-
-function clearVad(): void {
-  if (vadTimer) {
-    clearInterval(vadTimer);
-    vadTimer = null;
-  }
-  vadSawSpeech = false;
-  vadLastLoudAt = 0;
-}
-
-/** End take when the mic goes quiet after the user has spoken (not ASR segment end). */
-function startVad(analyser: AnalyserNode, session: number): void {
-  clearVad();
-  const buf = new Uint8Array(analyser.fftSize);
-  vadTimer = setInterval(() => {
-    if (!listening || session !== takeSessionId) {
-      clearVad();
-      return;
-    }
-    analyser.getByteTimeDomainData(buf);
-    let sum = 0;
-    for (let i = 0; i < buf.length; i++) {
-      const n = (buf[i] - 128) / 128;
-      sum += n * n;
-    }
-    const rms = Math.sqrt(sum / buf.length);
-    if (rms >= VAD_RMS_THRESHOLD) {
-      vadSawSpeech = true;
-      vadLastLoudAt = Date.now();
-    } else if (vadSawSpeech && Date.now() - vadLastLoudAt >= VAD_SILENCE_MS) {
-      clearVad();
-      endTake();
-    }
-  }, 80);
-}
-
-function mergeTakeTranscript(incoming: string): string {
-  const t = incoming.trim().toLowerCase();
-  if (!t) return takeTranscript;
-  if (!takeTranscript) return t;
-  if (t.includes(takeTranscript) || takeTranscript.includes(t)) {
-    return t.length >= takeTranscript.length ? t : takeTranscript;
-  }
-  return `${takeTranscript} ${t}`.trim();
-}
-
-function startRecognition(recognition: SpeechRecognition): void {
-  try {
-    recognition.start();
-  } catch {
-    activeRecognition = null;
-    asrEnded = true;
   }
 }
 
@@ -348,7 +285,6 @@ function endTake(): void {
     maxTakeTimer = null;
   }
   clearAsrPauseTimer();
-  clearVad();
 
   if (endingTake) {
     if (listening) resetListenUi();
@@ -601,18 +537,30 @@ async function toggleRec(): Promise<void> {
       const recognition = activeRecognition;
       recognition.onresult = (e: SpeechRecognitionEvent) => {
         if (session !== takeSessionId) return;
-        const chunk = fullTranscriptFromEvent(e);
-        if (!chunk) return;
+        const { text: heard, isFinal } = transcriptFromEvent(e);
+        if (!heard) return;
 
-        takeTranscript = mergeTakeTranscript(chunk);
-        applyAsrTranscript(takeTranscript);
-
+        applyAsrTranscript(heard);
         if (!listening) return;
 
-        if (transcriptMatchesItem(curStageId, takeTranscript, curItem)) {
-          clearVad();
+        const matched = transcriptMatchesItem(curStageId, heard, curItem);
+        if (matched) {
+          clearAsrPauseTimer();
           endTake();
+          return;
         }
+
+        if (isFinal) {
+          clearAsrPauseTimer();
+          endTake();
+          return;
+        }
+
+        clearAsrPauseTimer();
+        asrPauseTimer = setTimeout(() => {
+          asrPauseTimer = null;
+          if (listening && session === takeSessionId && pendingHeard) endTake();
+        }, ASR_PAUSE_MS);
       };
       recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
         if (session !== takeSessionId) return;
@@ -628,22 +576,22 @@ async function toggleRec(): Promise<void> {
           markAsrEnded();
           return;
         }
-        if (!listening) return;
-        setTimeout(() => {
-          if (session !== takeSessionId || !listening || endingTake) return;
-          startRecognition(recognition);
-        }, 60);
+        if (listening && pendingHeard) {
+          clearAsrPauseTimer();
+          endTake();
+        }
       };
+      try {
+        recognition.start();
+      } catch {
+        activeRecognition = null;
+        asrEnded = true;
+      }
     } else {
       asrEnded = true;
     }
 
     mediaRec.start(100);
-    startVad(an, session);
-
-    if (activeRecognition) {
-      startRecognition(activeRecognition);
-    }
   } catch (e) {
     resetListenUi();
     showErr(`Mic denied — ${e instanceof Error ? e.message : String(e)}`);

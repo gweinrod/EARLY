@@ -67,8 +67,7 @@ export function createSpeechRecognition(): SpeechRecognition | null {
   const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition;
   if (!SR) return null;
   const recognition = new SR();
-  /** Keep listening for the whole take (false stops after one phrase → double-speak). */
-  recognition.continuous = true;
+  recognition.continuous = false;
   recognition.interimResults = true;
   recognition.lang = 'en-US';
   recognition.maxAlternatives = 1;
@@ -80,19 +79,34 @@ export interface TranscriptSlice {
   isFinal: boolean;
 }
 
-/** Full cumulative transcript (Chrome builds results across events). */
+/** Collapse ASR stutter like "p p" or "tee tee" → "p" / "tee". */
+export function collapseRepeatedTokens(heard: string): string {
+  const tokens = heard.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  if (tokens.length <= 1) return tokens[0] ?? '';
+  const out: string[] = [];
+  for (const t of tokens) {
+    if (out[out.length - 1] !== t) out.push(t);
+  }
+  return out.join(' ');
+}
+
+/** Full cumulative transcript (all result segments in this event). */
 export function fullTranscriptFromEvent(e: SpeechRecognitionEvent): string {
   let text = '';
   for (let i = 0; i < e.results.length; i++) {
     text += e.results[i][0].transcript;
   }
-  return text.trim().toLowerCase();
+  return collapseRepeatedTokens(text);
 }
 
-/** Latest transcript chunk from a recognition result event. */
+/** Prefer the latest segment only (avoids duplicated letters across segments). */
 export function transcriptFromEvent(e: SpeechRecognitionEvent): TranscriptSlice {
-  const text = fullTranscriptFromEvent(e);
   const last = e.results.length > 0 ? e.results[e.results.length - 1] : null;
+  let text = '';
+  if (last) {
+    for (let i = 0; i < last.length; i++) text += last[i].transcript;
+  }
+  text = collapseRepeatedTokens(text);
   const isFinal = last?.isFinal ?? false;
   return { text, isFinal };
 }
