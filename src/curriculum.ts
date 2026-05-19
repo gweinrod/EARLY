@@ -180,12 +180,7 @@ export function transcriptMatchesItemForSessionEnd(
   heard: string,
   item: CurriculumItem,
 ): boolean {
-  if (!transcriptMatchesItem(stageId, heard, item)) return false;
-  const tokens = normalizeHeardLabel(heard).split(/\s+/).filter(Boolean);
-  if (tokens.length === 1 && tokens[0].length === 1 && tokens[0] === item.key) {
-    return spokenNameIsDoubledLetter(item);
-  }
-  return true;
+  return transcriptMatchesItem(stageId, heard, item);
 }
 
 /** Next item in curriculum order; wraps A→…→Z→A for alphabet. */

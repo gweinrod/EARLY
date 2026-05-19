@@ -80,9 +80,22 @@ export interface TranscriptSlice {
   isFinal: boolean;
 }
 
-/** Collapse ASR stutter like "p p" or "tee tee" → "p" / "tee". */
+/** "cc", "bbb" (no space) → single letter; leaves "see", "bee" unchanged. */
+export function collapseRepeatedLetterRun(token: string): string {
+  if (token.length < 2) return token;
+  const ch = token[0];
+  if ([...token].every((c) => c === ch)) return ch;
+  return token;
+}
+
+/** Collapse ASR stutter like "p p", "cc", or "tee tee" → "p" / "tee". */
 export function collapseRepeatedTokens(heard: string): string {
-  const tokens = heard.trim().toLowerCase().split(/\s+/).filter(Boolean);
+  const tokens = heard
+    .trim()
+    .toLowerCase()
+    .split(/\s+/)
+    .filter(Boolean)
+    .map(collapseRepeatedLetterRun);
   if (tokens.length <= 1) return tokens[0] ?? '';
   const out: string[] = [];
   for (const t of tokens) {
