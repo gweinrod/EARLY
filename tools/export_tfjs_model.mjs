@@ -43,6 +43,12 @@ async function main() {
     b.dispose();
   }
 
+  model.compile({
+    optimizer: tf.train.adamax(0.002),
+    loss: 'categoricalCrossentropy',
+    metrics: ['accuracy'],
+  });
+
   await model.save(
     tf.io.withSaveHandler(async (artifacts) => {
       const weightData = artifacts.weightData;

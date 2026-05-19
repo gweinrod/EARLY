@@ -98,6 +98,7 @@ export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<Tf
   const manifestAfterPublish = await fetchPublishedManifest(stageId);
   try {
     model = await tf.loadLayersModel(url);
+    ensureModelCompiled();
     ready = true;
     const cached = await publishedCachedResult(stageId);
     if (
@@ -151,6 +152,16 @@ function createModel(numClasses: number): tf.LayersModel {
     metrics: ['accuracy'],
   });
   return m;
+}
+
+/** Published / imported models load without compile args; required before fit(). */
+function ensureModelCompiled(): void {
+  if (!model || model.optimizer != null) return;
+  model.compile({
+    optimizer: tf.train.adamax(0.002),
+    loss: 'categoricalCrossentropy',
+    metrics: ['accuracy'],
+  });
 }
 
 async function runBootstrapTraining(stageId: CurriculumStageId): Promise<boolean> {
@@ -214,6 +225,7 @@ export async function retrainFromVoiceBank(stageId: CurriculumStageId): Promise<
 
 async function fitBatch(x: number[][], y: number[], epochs: number, batchSize: number): Promise<void> {
   if (!model || x.length === 0) return;
+  ensureModelCompiled();
   const vocabSize = getVocabWords().length;
   const xs = tf.tensor2d(x);
   const ys = tf.oneHot(tf.tensor1d(y, 'int32'), vocabSize);
@@ -242,6 +254,7 @@ async function tryLoadPublishedModel(
     model?.dispose();
     model = loaded;
     activeStage = stageId;
+    ensureModelCompiled();
     await model.save(modelStorageUrl(stageId));
     setStoredPublishedVersion(stageId, manifest.version);
     ready = true;
