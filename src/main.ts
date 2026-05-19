@@ -25,6 +25,7 @@ import {
   transcriptMatchesItemForSessionEnd,
   isIncompleteEeNamePrefix,
   letterNameIsKeyPlusEe,
+  normalizeHeardLabel,
   resolveHeardForEeChromeTail,
 } from './curriculum';
 import { ensureDspEngine, runDspPrediction, type DspPrediction } from './dsp-predict';
@@ -349,16 +350,26 @@ function finalizeAttempt(): void {
   finishAttempt(heard, asrPass);
 }
 
+function shouldEndTakeFromEeTailAutofill(resolved: string): boolean {
+  return (
+    sawIncompleteEeOnEnd &&
+    letterNameIsKeyPlusEe(curItem) &&
+    pendingAsrPass === true &&
+    normalizeHeardLabel(resolved) === normalizeHeardLabel(curItem.spokenName)
+  );
+}
+
 function applyAsrTranscript(heard: string): void {
   if (!heard.trim()) return;
   const resolved = resolveHeardForEeChromeTail(heard, curItem, sawIncompleteEeOnEnd);
+  pendingAsrPass = transcriptMatchesItemForScoring(curStageId, resolved, curItem);
   console.log(
     '[ASR]',
     heard,
     '| match:',
     transcriptMatchesItem(curStageId, heard, curItem),
     '| score:',
-    transcriptMatchesItemForScoring(curStageId, resolved, curItem),
+    pendingAsrPass,
     '| incomplete:',
     isIncompleteEeNamePrefix(heard, curItem),
     '| chromeAteTail:',
@@ -368,11 +379,18 @@ function applyAsrTranscript(heard: string): void {
   );
   pendingHeard = resolved;
   takeAsrAccum = resolved;
-  pendingAsrPass = transcriptMatchesItemForScoring(curStageId, resolved, curItem);
   if (listening) {
     $('btnLbl').textContent =
       resolved !== heard ? `heard: ${resolved}` : `heard: ${heard}`;
   }
+
+  if (listening && !endingTake && shouldEndTakeFromEeTailAutofill(resolved)) {
+    console.log('[ASR] endTake ee-tail autofill');
+    clearAsrPauseTimer();
+    endTake();
+    return;
+  }
+
   if (endingTake) scheduleMediaStop();
   else if (!listening) scheduleAttemptFinalize();
 }
@@ -660,12 +678,9 @@ async function toggleRec(): Promise<void> {
             scheduleAsrPauseEnd();
             return;
           }
-          if (
-            sawIncompleteEeOnEnd &&
-            letterNameIsKeyPlusEe(curItem) &&
-            isIncompleteEeNamePrefix(h, curItem)
-          ) {
-            applyAsrTranscript(resolveHeardForEeChromeTail(h, curItem, true));
+          if (pendingAsrPass && sawIncompleteEeOnEnd && letterNameIsKeyPlusEe(curItem)) {
+            endTake();
+            return;
           }
           endTake();
         }, ms);
@@ -679,28 +694,17 @@ async function toggleRec(): Promise<void> {
         takeAsrAccum = heard;
         const isFinal = eventHasFinalTranscript(e);
 
-        // Chrome often marks "b" isFinal before "ee" — treat as missed tail, not end of word.
+        // Chrome marks "b" before "ee"; after MIN_TAKE_MS treat as missed tail (not only isFinal).
         if (
-          isFinal &&
           letterNameIsKeyPlusEe(curItem) &&
-          isIncompleteEeNamePrefix(heard, curItem)
+          isIncompleteEeNamePrefix(heard, curItem) &&
+          Date.now() - takeStartedAt >= MIN_TAKE_MS
         ) {
           sawIncompleteEeOnEnd = true;
         }
 
         applyAsrTranscript(heard);
-        if (!listening) return;
-
-        if (
-          sawIncompleteEeOnEnd &&
-          letterNameIsKeyPlusEe(curItem) &&
-          pendingAsrPass &&
-          Date.now() - takeStartedAt >= MIN_TAKE_MS
-        ) {
-          clearAsrPauseTimer();
-          endTake();
-          return;
-        }
+        if (!listening || endingTake) return;
 
         if (
           Date.now() - takeStartedAt >= MIN_TAKE_MS &&
