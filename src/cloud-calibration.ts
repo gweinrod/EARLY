@@ -148,15 +148,7 @@ async function postSample(payload: QueuedPayload): Promise<boolean> {
     emit();
     return false;
   }
-  if (res.ok) {
-    try {
-      const data = (await res.json()) as { stageTotal?: number };
-      if (typeof data.stageTotal === 'number') state.serverTotal = data.stageTotal;
-      else bumpServerJudgmentCount();
-    } catch {
-      bumpServerJudgmentCount();
-    }
-  }
+  if (res.ok) bumpServerJudgmentCount();
   return res.ok;
 }
 
