@@ -28,7 +28,7 @@ The teacher panel shows **Cloud training: N samples on server** when uploads wor
 
 ## 3. Publish the shared model (your machine)
 
-**One-time:** `pip install tensorflow tensorflowjs`
+**One-time:** `pip install -r tools/requirements-train.txt`
 
 Put your token in repo-root `.env`:
 

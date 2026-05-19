@@ -6,19 +6,20 @@ Train the shared EARLY phoneme classifier from downloaded cloud samples.
   python tools/train_global_model.py --stage alphabet
 
 Writes TensorFlow.js weights to public/models/<stage>/ and updates manifest.json.
-Requires: pip install tensorflow tensorflowjs
+Requires: pip install -r tools/requirements-train.txt
+  Node: npm install (uses @tensorflow/tfjs via tools/export_tfjs_model.mjs)
 """
 
 from __future__ import annotations
 
 import argparse
 import json
-import re
+import subprocess
+import sys
 from datetime import datetime, timezone
 from pathlib import Path
 
 import tensorflow as tf
-import tensorflowjs as tfjs
 
 ROOT = Path(__file__).resolve().parents[1]
 CALIBRATION_DIR = ROOT / "data" / "calibration"
@@ -129,7 +130,40 @@ def main() -> None:
 
     stage_dir = MODELS_DIR / args.stage
     stage_dir.mkdir(parents=True, exist_ok=True)
-    tfjs.converters.save_keras_model(model, str(stage_dir))
+
+    dense_export: list[dict] = []
+    for layer in model.layers:
+        if not layer.weights:
+            continue
+        kernel, bias = layer.get_weights()
+        dense_export.append(
+            {
+                "kernel": kernel.tolist(),
+                "bias": bias.ravel().tolist(),
+            }
+        )
+
+    weights_path = stage_dir / "train-weights.json"
+    weights_path.write_text(
+        json.dumps(
+            {
+                "inputDim": EMBEDDING_LEN,
+                "numClasses": num_classes,
+                "dense": dense_export,
+            },
+            indent=2,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
+
+    export_script = ROOT / "tools" / "export_tfjs_model.mjs"
+    subprocess.run(
+        ["node", str(export_script), args.stage],
+        cwd=ROOT,
+        check=True,
+    )
+    weights_path.unlink(missing_ok=True)
 
     next_version = read_manifest_version(stage_dir) + 1
     manifest = {

@@ -66,7 +66,7 @@ echo [2/4] Train TensorFlow.js model...
 python tools\train_global_model.py --stage %STAGE%
 if errorlevel 1 (
   echo FAILED at train_global_model.py
-  echo If Python packages are missing: pip install tensorflow tensorflowjs
+  echo If Python packages are missing: pip install -r tools\requirements-train.txt
   exit /b 1
 )
 

@@ -1,0 +1,3 @@
+# Training script only (tools/train_global_model.py) — TF.js export uses Node.
+#   pip install -r tools/requirements-train.txt
+tensorflow>=2.15
