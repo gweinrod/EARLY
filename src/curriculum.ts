@@ -149,10 +149,19 @@ export function transcriptMatchesItemForAutoStop(
   stageId: CurriculumStageId,
   heard: string,
   item: CurriculumItem,
+  isFinal: boolean,
 ): boolean {
   if (!transcriptMatchesItem(stageId, heard, item)) return false;
   const tokens = normalizeHeardLabel(heard).split(/\s+/).filter(Boolean);
-  if (tokens.length === 1 && tokens[0].length === 1 && tokens[0] === item.key) return false;
+  // Interim lone letter (e.g. "b" while saying "bee") — wait for more audio or a final result.
+  if (
+    !isFinal &&
+    tokens.length === 1 &&
+    tokens[0].length === 1 &&
+    tokens[0] === item.key
+  ) {
+    return false;
+  }
   return true;
 }
 

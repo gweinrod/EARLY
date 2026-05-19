@@ -1,4 +1,8 @@
-import { createSpeechRecognition, fullTranscriptFromEvent } from './asr';
+import {
+  createSpeechRecognition,
+  eventHasFinalTranscript,
+  fullTranscriptFromEvent,
+} from './asr';
 import { APP_VERSION } from './version';
 import {
   autoConfirmAsrPass,
@@ -81,10 +85,13 @@ let takeStartedAt = 0;
 let maxTakeTimer: ReturnType<typeof setTimeout> | null = null;
 let asrPauseTimer: ReturnType<typeof setTimeout> | null = null;
 let listening = false;
-/** End take after this pause once we have any transcript (post-speech tail). */
-const ASR_PAUSE_MS = 1100;
+let asrRestartsThisTake = 0;
+/** End take after speech pauses (post-speech tail). */
+const ASR_PAUSE_MS = 1400;
 /** Brief floor so auto-stop does not fire on the first syllable. */
-const MIN_TAKE_MS = 280;
+const MIN_TAKE_MS = 350;
+/** Chrome ends continuous ASR often; restart in the same take (not a second tap). */
+const ASR_MAX_RESTARTS_PER_TAKE = 24;
 let stopWave: (() => void) | null = null;
 let lastDsp: DspPrediction | null = null;
 let pendingHeard: string | null = null;
@@ -195,6 +202,7 @@ function resetTakeState(): void {
   dspProcessed = false;
   asrEnded = false;
   endingTake = false;
+  asrRestartsThisTake = 0;
   clearAsrWait();
   pendingHeard = null;
   pendingAsrPass = null;
@@ -225,7 +233,7 @@ function scheduleMediaStop(): void {
   const hasTranscript = pendingHeard !== null && pendingHeard.length > 0;
   if (!hasTranscript) setAsrWaitStatus('checking speech…');
 
-  const ms = hasTranscript ? 450 : 2800;
+  const ms = hasTranscript ? 650 : 2800;
   asrWaitTimer = setTimeout(() => {
     asrWaitTimer = null;
     if (pendingHeard === null) {
@@ -588,13 +596,14 @@ async function toggleRec(): Promise<void> {
         if (session !== takeSessionId || endingTake) return;
         const heard = fullTranscriptFromEvent(e);
         if (!heard) return;
+        const isFinal = eventHasFinalTranscript(e);
 
         applyAsrTranscript(heard);
         if (!listening) return;
 
         if (
           Date.now() - takeStartedAt >= MIN_TAKE_MS &&
-          transcriptMatchesItemForAutoStop(curStageId, heard, curItem)
+          transcriptMatchesItemForAutoStop(curStageId, heard, curItem, isFinal)
         ) {
           clearAsrPauseTimer();
           endTake();
@@ -620,13 +629,21 @@ async function toggleRec(): Promise<void> {
           return;
         }
         if (!listening) return;
-        // Do not call recognition.start() again — that forces a second utterance.
-        // Pause timer or max-take timer will end the session.
+        // Chrome stops continuous sessions constantly; restart in the SAME take (user does not tap again).
+        if (asrRestartsThisTake < ASR_MAX_RESTARTS_PER_TAKE) {
+          asrRestartsThisTake++;
+          try {
+            recognition.start();
+            return;
+          } catch {
+            /* fall through */
+          }
+        }
         if (pendingHeard && !asrPauseTimer) {
           asrPauseTimer = setTimeout(() => {
             asrPauseTimer = null;
             if (listening && session === takeSessionId && !endingTake) endTake();
-          }, 500);
+          }, 400);
         }
       };
       try {
@@ -639,10 +656,9 @@ async function toggleRec(): Promise<void> {
       asrEnded = true;
     }
 
-    setTimeout(() => {
-      if (session !== takeSessionId || !mediaRec) return;
+    if (mediaRec && mediaRec.state === 'inactive') {
       mediaRec.start(100);
-    }, 120);
+    }
   } catch (e) {
     resetListenUi();
     showErr(`Mic denied — ${e instanceof Error ? e.message : String(e)}`);
