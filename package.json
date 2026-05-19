@@ -1,21 +1,25 @@
 {
   "name": "early",
   "private": true,
-  "version": "0.10.0",
+  "version": "0.11.0",
   "type": "module",
   "scripts": {
     "version:bump": "node scripts/bump-version.mjs",
     "dev": "vite",
     "dev:lan": "vite --host",
     "build": "tsc && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "calibration:pull": "node tools/pull_calibration_samples.mjs",
+    "calibration:train": "python tools/train_global_model.py"
   },
   "devDependencies": {
+    "@vercel/node": "^5.0.2",
     "typescript": "^5.7.2",
     "vite": "^6.0.3"
   },
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",
-    "@tensorflow/tfjs-backend-wasm": "^4.22.0"
+    "@tensorflow/tfjs-backend-wasm": "^4.22.0",
+    "@vercel/blob": "^0.27.3"
   }
 }

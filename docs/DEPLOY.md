@@ -18,7 +18,11 @@ git push -u origin main
 2. Framework: **Vite** (auto-detected). Build: `npm run build`, output: `dist`.
 3. Deploy. Copy the `https://….vercel.app` URL.
 
-No env vars required for month one.
+### Cloud training (recommended)
+
+1. Vercel → **Storage** → **Blob** → connect to the project (sets `BLOB_READ_WRITE_TOKEN`).
+2. Redeploy. Teacher panel shows **Cloud training: N samples on server** after accepts.
+3. Periodically publish a shared model: see [`docs/CLOUD_TRAINING.md`](CLOUD_TRAINING.md).
 
 ## 3. iPad (Safari only)
 

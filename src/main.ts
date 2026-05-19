@@ -27,7 +27,18 @@ import {
 } from './session-log';
 import { deriveAppPass } from './scoring';
 import { acousticStudentMessage, toStudentFeedback } from './student-feedback';
-import { trainCalibrationSample } from './tf-phoneme';
+import {
+  flushCloudQueue,
+  formatCloudSyncLine,
+  refreshCloudStats,
+  subscribeCloudSync,
+  uploadCalibrationSample,
+} from './cloud-calibration';
+import {
+  applyPublishedModelUpdate,
+  checkForPublishedModelUpdate,
+  trainCalibrationSample,
+} from './tf-phoneme';
 import { isVoiceBankComplete } from './voice-bank';
 import {
   initVoiceBootstrapUi,
@@ -70,6 +81,7 @@ let stopWave: (() => void) | null = null;
 let lastDsp: DspPrediction | null = null;
 let pendingHeard: string | null = null;
 let pendingAsrPass: boolean | null = null;
+let lastLoggedAttemptId: string | null = null;
 
 let correct = 0;
 let total = 0;
@@ -380,6 +392,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       teacherHeardKey: null,
       curriculumStage: curStageId,
     });
+    lastLoggedAttemptId = attempt.id;
     if (asrPass && heard.trim() && !dsp.dspPass) {
       const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: true });
       addFB(
@@ -412,6 +425,21 @@ async function onTeacherJudgment(j: {
     asrWrong: j.asrWrong,
     dspWrong: j.dspWrong,
   });
+
+  const meta = getSessionMeta();
+  void uploadCalibrationSample({
+    stageId: curStageId,
+    targetKey: curItem.key,
+    teacherHeardKey: j.teacherHeardKey,
+    embedding: lastDsp.embedding,
+    agrees: j.agrees,
+    asrWrong: j.asrWrong,
+    dspWrong: j.dspWrong,
+    studentId: meta.studentId || undefined,
+    attemptId: lastLoggedAttemptId ?? undefined,
+  }).then(() => {
+    void flushCloudQueue().then(() => refreshCloudStats(curStageId));
+  });
 }
 
 async function switchStage(stageId: CurriculumStageId): Promise<void> {
@@ -425,7 +453,16 @@ async function switchStage(stageId: CurriculumStageId): Promise<void> {
     await startVoiceBootstrap(stageId);
     return;
   }
+  const published = await checkForPublishedModelUpdate(stageId);
+  if (published) {
+    await applyPublishedModelUpdate(stageId);
+    addFB(
+      { t: 'info', s: `Loaded shared classroom model (v${published.version}).` },
+      true,
+    );
+  }
   $('netTxt').textContent = `TensorFlow.js WASM · ${getStage(stageId).label}`;
+  void refreshCloudStats(stageId);
   nextItem();
 }
 
@@ -613,6 +650,10 @@ function init(): void {
     });
     const meta = getSessionMeta();
     syncStudentIdField(meta.studentId);
+    subscribeCloudSync((s) => {
+      $('cloudSyncStatus').textContent = formatCloudSyncLine(s);
+    });
+    void flushCloudQueue().then(() => refreshCloudStats(curStageId));
   }
 
   initVoiceBootstrapUi({

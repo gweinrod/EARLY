@@ -5,6 +5,12 @@ import { buildBootstrapDataset } from './bootstrap-embeddings';
 import { NMCC } from './dsp';
 import { getVocabWords, setVocabularyStage, wordIndex } from './word-vocabulary';
 import { isVoiceBankComplete } from './voice-bank';
+import {
+  fetchPublishedManifest,
+  getStoredPublishedVersion,
+  setStoredPublishedVersion,
+  type PublishedModelManifest,
+} from './published-model';
 
 const INPUT_DIM = NMCC;
 
@@ -48,6 +54,10 @@ export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<vo
   if (!isVoiceBankComplete(stageId)) {
     model = null;
     ready = false;
+    return;
+  }
+
+  if (await tryLoadPublishedModel(stageId)) {
     return;
   }
 
@@ -163,6 +173,41 @@ async function fitBatch(x: number[][], y: number[], epochs: number, batchSize: n
 async function persistModel(): Promise<void> {
   if (!model) return;
   await model.save(modelStorageUrl(activeStage));
+}
+
+/** Shared model shipped with the app (trained from all teachers' cloud samples). */
+async function tryLoadPublishedModel(stageId: CurriculumStageId): Promise<boolean> {
+  const manifest = await fetchPublishedManifest(stageId);
+  if (!manifest || manifest.version <= getStoredPublishedVersion(stageId)) return false;
+
+  try {
+    const loaded = await tf.loadLayersModel(manifest.modelUrl);
+    model?.dispose();
+    model = loaded;
+    activeStage = stageId;
+    await model.save(modelStorageUrl(stageId));
+    setStoredPublishedVersion(stageId, manifest.version);
+    ready = true;
+    return true;
+  } catch {
+    return false;
+  }
+}
+
+export async function checkForPublishedModelUpdate(
+  stageId: CurriculumStageId,
+): Promise<PublishedModelManifest | null> {
+  const manifest = await fetchPublishedManifest(stageId);
+  if (!manifest) return null;
+  if (manifest.version <= getStoredPublishedVersion(stageId)) return null;
+  return manifest;
+}
+
+export async function applyPublishedModelUpdate(stageId: CurriculumStageId): Promise<boolean> {
+  model?.dispose();
+  model = null;
+  ready = false;
+  return tryLoadPublishedModel(stageId);
 }
 
 function schedulePersist(): void {
