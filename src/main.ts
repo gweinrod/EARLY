@@ -80,10 +80,15 @@ let takeSessionId = 0;
 let takeStartedAt = 0;
 let maxTakeTimer: ReturnType<typeof setTimeout> | null = null;
 let asrPauseTimer: ReturnType<typeof setTimeout> | null = null;
+let vadTimer: ReturnType<typeof setInterval> | null = null;
+let vadSawSpeech = false;
+let vadLastLoudAt = 0;
+let takeTranscript = '';
 let listening = false;
-/** Pause after last non-empty ASR text before auto stop (ms). */
-const ASR_PAUSE_MS = 1600;
-const ASR_START_DELAY_MS = 280;
+/** RMS threshold (time-domain) to count as speech. */
+const VAD_RMS_THRESHOLD = 0.018;
+/** Silence after speech before auto-stop. */
+const VAD_SILENCE_MS = 1500;
 let stopWave: (() => void) | null = null;
 let lastDsp: DspPrediction | null = null;
 let pendingHeard: string | null = null;
@@ -205,6 +210,8 @@ function resetTakeState(): void {
     clearTimeout(asrPauseTimer);
     asrPauseTimer = null;
   }
+  takeTranscript = '';
+  clearVad();
 }
 
 function setAsrWaitStatus(msg: string): void {
@@ -215,6 +222,60 @@ function clearAsrPauseTimer(): void {
   if (asrPauseTimer) {
     clearTimeout(asrPauseTimer);
     asrPauseTimer = null;
+  }
+}
+
+function clearVad(): void {
+  if (vadTimer) {
+    clearInterval(vadTimer);
+    vadTimer = null;
+  }
+  vadSawSpeech = false;
+  vadLastLoudAt = 0;
+}
+
+/** End take when the mic goes quiet after the user has spoken (not ASR segment end). */
+function startVad(analyser: AnalyserNode, session: number): void {
+  clearVad();
+  const buf = new Uint8Array(analyser.fftSize);
+  vadTimer = setInterval(() => {
+    if (!listening || session !== takeSessionId) {
+      clearVad();
+      return;
+    }
+    analyser.getByteTimeDomainData(buf);
+    let sum = 0;
+    for (let i = 0; i < buf.length; i++) {
+      const n = (buf[i] - 128) / 128;
+      sum += n * n;
+    }
+    const rms = Math.sqrt(sum / buf.length);
+    if (rms >= VAD_RMS_THRESHOLD) {
+      vadSawSpeech = true;
+      vadLastLoudAt = Date.now();
+    } else if (vadSawSpeech && Date.now() - vadLastLoudAt >= VAD_SILENCE_MS) {
+      clearVad();
+      endTake();
+    }
+  }, 80);
+}
+
+function mergeTakeTranscript(incoming: string): string {
+  const t = incoming.trim().toLowerCase();
+  if (!t) return takeTranscript;
+  if (!takeTranscript) return t;
+  if (t.includes(takeTranscript) || takeTranscript.includes(t)) {
+    return t.length >= takeTranscript.length ? t : takeTranscript;
+  }
+  return `${takeTranscript} ${t}`.trim();
+}
+
+function startRecognition(recognition: SpeechRecognition): void {
+  try {
+    recognition.start();
+  } catch {
+    activeRecognition = null;
+    asrEnded = true;
   }
 }
 
@@ -287,6 +348,7 @@ function endTake(): void {
     maxTakeTimer = null;
   }
   clearAsrPauseTimer();
+  clearVad();
 
   if (endingTake) {
     if (listening) resetListenUi();
@@ -539,66 +601,48 @@ async function toggleRec(): Promise<void> {
       const recognition = activeRecognition;
       recognition.onresult = (e: SpeechRecognitionEvent) => {
         if (session !== takeSessionId) return;
-        const heard = fullTranscriptFromEvent(e);
-        const last = e.results.length > 0 ? e.results[e.results.length - 1] : null;
-        const isFinal = last?.isFinal ?? false;
-        if (!heard) return;
+        const chunk = fullTranscriptFromEvent(e);
+        if (!chunk) return;
 
-        applyAsrTranscript(heard);
+        takeTranscript = mergeTakeTranscript(chunk);
+        applyAsrTranscript(takeTranscript);
 
         if (!listening) return;
 
-        const matched = transcriptMatchesItem(curStageId, heard, curItem);
-        if (matched) {
-          clearAsrPauseTimer();
+        if (transcriptMatchesItem(curStageId, takeTranscript, curItem)) {
+          clearVad();
           endTake();
-          return;
         }
-
-        clearAsrPauseTimer();
-        const pauseMs = isFinal ? 500 : ASR_PAUSE_MS;
-        asrPauseTimer = setTimeout(() => {
-          asrPauseTimer = null;
-          if (listening && session === takeSessionId && pendingHeard) endTake();
-        }, pauseMs);
       };
       recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
         if (session !== takeSessionId) return;
-        if (e.error === 'no-speech' && listening) return;
-        if (e.error === 'aborted') return;
+        if (e.error === 'no-speech' || e.error === 'aborted') return;
         if (pendingHeard === null) {
           pendingHeard = '';
           pendingAsrPass = false;
         }
-        if (listening) endTake();
-        else markAsrEnded();
       };
       recognition.onend = () => {
         if (session !== takeSessionId) return;
-        if (Date.now() - takeStartedAt < 200) return;
-        if (listening && !endingTake) {
-          endTake();
+        if (endingTake) {
+          markAsrEnded();
           return;
         }
-        markAsrEnded();
+        if (!listening) return;
+        setTimeout(() => {
+          if (session !== takeSessionId || !listening || endingTake) return;
+          startRecognition(recognition);
+        }, 60);
       };
     } else {
       asrEnded = true;
     }
 
     mediaRec.start(100);
+    startVad(an, session);
 
     if (activeRecognition) {
-      const recognition = activeRecognition;
-      setTimeout(() => {
-        if (session !== takeSessionId || !listening) return;
-        try {
-          recognition.start();
-        } catch {
-          activeRecognition = null;
-          asrEnded = true;
-        }
-      }, ASR_START_DELAY_MS);
+      startRecognition(activeRecognition);
     }
   } catch (e) {
     resetListenUi();
