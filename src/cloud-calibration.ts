@@ -75,6 +75,12 @@ function saveQueue(q: QueuedPayload[]): void {
   emit();
 }
 
+export function clearCloudQueue(): void {
+  localStorage.removeItem(QUEUE_KEY);
+  state.pending = 0;
+  emit();
+}
+
 function toPayload(upload: CloudCalibrationUpload): QueuedPayload {
   return {
     v: 1,

@@ -6,6 +6,11 @@ import {
   updateTeacherJudgment,
   type AttemptLog,
 } from './session-log';
+import {
+  clearLocalTrainingData,
+  clearServerTrainingData,
+  formatClearServerMessage,
+} from './clear-training-data';
 import { $, hide, show } from './ui';
 
 let pendingAttemptId: string | null = null;
@@ -21,9 +26,50 @@ export type JudgmentResult = {
 };
 
 let judgmentHandler: ((j: JudgmentResult) => void) | null = null;
+let refreshCloudHandler: (() => void) | null = null;
 
 export function setJudgmentCompleteHandler(handler: (j: JudgmentResult) => void): void {
   judgmentHandler = handler;
+}
+
+export function setCloudRefreshHandler(handler: () => void): void {
+  refreshCloudHandler = handler;
+}
+
+function showDataStatus(msg: string): void {
+  const el = $('dataClearStatus');
+  el.textContent = msg;
+  el.style.display = 'block';
+  setTimeout(() => {
+    el.style.display = 'none';
+  }, 6000);
+}
+
+async function onClearServer(): Promise<void> {
+  if (
+    !confirm(
+      'Delete ALL voice samples and teacher judgments from the server (Vercel Blob)?\n\nThis cannot be undone.',
+    )
+  ) {
+    return;
+  }
+  showDataStatus('Clearing server…');
+  const result = await clearServerTrainingData();
+  showDataStatus(formatClearServerMessage(result));
+  if (result.ok) refreshCloudHandler?.();
+}
+
+async function onClearLocal(): Promise<void> {
+  if (
+    !confirm(
+      'Clear on THIS device:\n• session log\n• voice bank\n• neural models\n• pending uploads\n\nYou will need to record your voice again. Continue?',
+    )
+  ) {
+    return;
+  }
+  showDataStatus('Clearing this device…');
+  await clearLocalTrainingData();
+  window.location.reload();
 }
 
 export function initCollectorPanel(): void {
@@ -33,6 +79,8 @@ export function initCollectorPanel(): void {
 
   $('btnExportLog').addEventListener('click', () => downloadSessionLog());
   $('btnHeSaidTarget').addEventListener('click', () => submitHeSaidTarget());
+  $('btnClearServer').addEventListener('click', () => void onClearServer());
+  $('btnClearLocal').addEventListener('click', () => void onClearLocal());
   hide('judgmentBlock');
 }
 

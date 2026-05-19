@@ -4,6 +4,7 @@ import {
   autoConfirmAsrPass,
   initCollectorPanel,
   promptTeacherJudgment,
+  setCloudRefreshHandler,
   setJudgmentCompleteHandler,
   syncStudentIdField,
 } from './collector-ui';
@@ -652,6 +653,9 @@ function init(): void {
     initCollectorPanel();
     setJudgmentCompleteHandler((j) => {
       void onTeacherJudgment(j);
+    });
+    setCloudRefreshHandler(() => {
+      void refreshCloudStats(curStageId, getVoiceBankQueueLength());
     });
     const meta = getSessionMeta();
     syncStudentIdField(meta.studentId);

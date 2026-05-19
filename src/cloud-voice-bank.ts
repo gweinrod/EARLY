@@ -77,6 +77,11 @@ function saveQueue(q: QueuedVoicePayload[]): void {
   notifyCloudSyncActivity();
 }
 
+export function clearVoiceBankQueue(): void {
+  localStorage.removeItem(QUEUE_KEY);
+  notifyCloudSyncActivity();
+}
+
 function toPayload(upload: VoiceBankUpload): QueuedVoicePayload {
   return {
     v: 1,

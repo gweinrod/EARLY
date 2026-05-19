@@ -10,6 +10,10 @@ Every **voice-bank letter recording** and every teacher **accept** (or ASR auto-
 
 The teacher panel shows **Cloud training: N samples on server** when uploads work.
 
+**Clear data (teacher panel):**
+- **clear server data** — deletes all `calibration/` and `voice-bank/` blobs on Vercel (confirm dialog).
+- **clear this device** — session log, voice bank, local TF models, upload queues; reloads the page.
+
 ## 2. What each device does
 
 | Event | Behavior |
