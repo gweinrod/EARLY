@@ -1,50 +1,48 @@
 import type { CurriculumStageId } from './curriculum';
 import { getStage } from './curriculum';
-import { NMCC } from './dsp';
-import { getVocabWords } from './word-vocabulary';
+import { isVoiceBankComplete, loadVoiceBank } from './voice-bank';
+import { wordIndex } from './word-vocabulary';
 
-const VOWEL_KEYS = new Set(['a', 'e', 'i', 'o', 'u']);
-
-const VOWEL_CLASS_CENTROIDS: number[][] = [
-  [12, -8, 2, 0, 1, -1, 0, 0.5, -0.5, 0, 0, 0, 0],
-  [8, -4, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  [6, 6, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-  [4, 8, 3, 1, 1, 0, 0, 0, 0, 0, 0, 0, 0],
-  [10, 6, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
-];
-
-const CONSONANT_TEMPLATE = [2, -2, 4, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-const CVC_TEMPLATE = [5, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0];
-
-function perturb(base: number[], scale = 0.35): number[] {
+/** Light jitter on real teacher recordings only (not synthetic templates). */
+function augmentReal(base: number[], scale = 0.12): number[] {
   return base.map((v) => v + (Math.random() * 2 - 1) * scale);
 }
 
-function templateForKey(key: string, stageId: CurriculumStageId): number[] {
-  if (stageId === 'alphabet') {
-    if (VOWEL_KEYS.has(key)) return VOWEL_CLASS_CENTROIDS['aeiou'.indexOf(key)].slice();
-    return CONSONANT_TEMPLATE.map((v, i) => v + (key.charCodeAt(0) % 7) * (i % 3 ? 0.2 : 0.1));
-  }
-  if (stageId === 'consonants') {
-    return CONSONANT_TEMPLATE.map((v, i) => v + (key.charCodeAt(0) % 5) * 0.15);
-  }
-  return CVC_TEMPLATE.slice();
-}
+/**
+ * Build TF training set from teacher voice bank. Returns null until every item is recorded.
+ */
+export function buildBootstrapDataset(
+  stageId: CurriculumStageId,
+  augmentsPerSample = 4,
+): { x: number[][]; y: number[] } | null {
+  if (!isVoiceBankComplete(stageId)) return null;
 
-export function buildBootstrapDataset(stageId: CurriculumStageId, samplesPerWord = 12): { x: number[][]; y: number[] } {
-  const words = getVocabWords();
+  const bank = loadVoiceBank(stageId);
+  const items = getStage(stageId).items;
   const x: number[][] = [];
   const y: number[] = [];
-  for (let i = 0; i < words.length; i++) {
-    const base = templateForKey(words[i], stageId);
-    for (let s = 0; s < samplesPerWord; s++) {
-      x.push(perturb(base, s === 0 ? 0.05 : 0.4));
-      y.push(i);
+
+  for (const item of items) {
+    const samples = bank.samples[item.key];
+    if (!samples?.length) return null;
+    const idx = wordIndex(item.key);
+    if (idx === undefined) continue;
+
+    for (const emb of samples) {
+      x.push(emb.slice());
+      y.push(idx);
+      for (let a = 0; a < augmentsPerSample; a++) {
+        x.push(augmentReal(emb));
+        y.push(idx);
+      }
     }
   }
+
+  if (!x.length) return null;
   return { x, y };
 }
 
-export function templateEmbeddingForWord(word: string, stageId: CurriculumStageId): number[] {
-  return templateForKey(word, stageId);
+/** @deprecated No synthetic templates — use voice bank. */
+export function templateEmbeddingForWord(_word: string, _stageId: CurriculumStageId): number[] {
+  return [];
 }

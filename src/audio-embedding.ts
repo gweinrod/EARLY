@@ -1,0 +1,18 @@
+import { buildRecordingBlob } from './recorder';
+import { extractEmbedding, extractFrames, type Frame } from './dsp';
+
+export async function embeddingFromRecording(
+  audioCtx: AudioContext,
+  recChunks: Blob[],
+): Promise<{ embedding: number[]; frames: Frame[] } | null> {
+  if (!recChunks.length) return null;
+  const blob = buildRecordingBlob(recChunks);
+  const ab = await blob.arrayBuffer();
+  const decoded = await audioCtx.decodeAudioData(ab.slice(0));
+  const audio = Array.from(decoded.getChannelData(0));
+  const frames = extractFrames(audio, decoded.sampleRate);
+  if (frames.length < 4) return null;
+  const embedding = extractEmbedding(frames);
+  if (!embedding) return null;
+  return { embedding, frames };
+}

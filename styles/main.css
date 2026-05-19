@@ -71,7 +71,28 @@ body.student-face .student-hide { display: none !important; }
   border-radius: 8px;
   border: 1px solid #cbd5e1;
 }
-.collector-actions { margin: 0.5rem 0; }
+.collector-actions { margin: 0.5rem 0; display: flex; flex-wrap: wrap; gap: 8px; }
+
+.voice-bootstrap {
+  background: #eff6ff;
+  border: 1px solid #bfdbfe;
+  border-radius: 12px;
+  padding: 1.25rem 1rem 1.5rem;
+  margin-bottom: 1rem;
+  text-align: center;
+}
+.voice-bootstrap-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem; }
+.voice-bootstrap-lead { font-size: 14px; color: #475569; line-height: 1.45; margin-bottom: 1rem; }
+.bootstrap-progress { font-size: 13px; color: #64748b; margin-bottom: 0.75rem; }
+.bootstrap-target {
+  font-size: 2.5rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  margin: 0.5rem 0 1.25rem;
+  color: #1d4ed8;
+}
+.btn-bootstrap-rec { margin: 0 auto; max-width: 280px; }
+.bootstrap-status { font-size: 13px; color: #64748b; margin-top: 1rem; min-height: 2.5em; }
 .btn-secondary {
   padding: 10px 16px;
   font-size: 14px;

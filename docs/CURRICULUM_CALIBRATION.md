@@ -11,6 +11,12 @@ Source: [`EARLY_CURRICULUM_SCOPE.md`](EARLY_CURRICULUM_SCOPE.md)
 | **3 ù short vowels** | S3 ù short vowels (CVC) | CVC words (bat, bit, ù) ù small set for now |
 | Legacy blend groups | Hidden | Original demo lists (`?stage=legacy-cvc`) |
 
+## Voice setup (first run per stage)
+
+On first use of a stage (or after **re-record voice model**), EARLY walks you through recording **each curriculum item once** in your voice. The neural net trains only from those MFCC embeddings (light jitter augmentation) ó **no synthetic templates**.
+
+After all items are recorded, the model trains automatically and practice begins.
+
 ## Teacher calibration workflow
 
 After each recording:

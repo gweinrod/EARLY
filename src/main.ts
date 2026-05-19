@@ -27,6 +27,12 @@ import {
 import { deriveAppPass } from './scoring';
 import { acousticStudentMessage, toStudentFeedback } from './student-feedback';
 import { trainCalibrationSample } from './tf-phoneme';
+import { isVoiceBankComplete } from './voice-bank';
+import {
+  initVoiceBootstrapUi,
+  isVoiceBootstrapActive,
+  startVoiceBootstrap,
+} from './voice-bootstrap-ui';
 import {
   $,
   addFB,
@@ -237,8 +243,17 @@ async function switchStage(stageId: CurriculumStageId): Promise<void> {
   resetMelFilterbank();
   $('netTxt').textContent = 'Loading TensorFlow model…';
   await ensureDspEngine(stageId);
+  if (!isVoiceBankComplete(stageId)) {
+    await startVoiceBootstrap(stageId);
+    return;
+  }
   $('netTxt').textContent = `TensorFlow.js WASM · ${getStage(stageId).label}`;
   nextItem();
+}
+
+function onVoiceBootstrapComplete(): void {
+  $('netTxt').textContent = `TensorFlow.js WASM · ${getStage(curStageId).label}`;
+  setTargetItem(pickRandomItem(curStageId));
 }
 
 async function toggleRec(): Promise<void> {
@@ -363,10 +378,19 @@ function init(): void {
     syncStudentIdField(meta.studentId);
   }
 
+  initVoiceBootstrapUi({
+    getAudioContext,
+    onComplete: onVoiceBootstrapComplete,
+  });
+
   $('btnRec').addEventListener('click', () => {
+    if (isVoiceBootstrapActive()) return;
     void toggleRec();
   });
-  $('btnNext').addEventListener('click', nextItem);
+  $('btnNext').addEventListener('click', () => {
+    if (isVoiceBootstrapActive()) return;
+    nextItem();
+  });
 
   $('debugMode').addEventListener('change', (e) => {
     settings.showMlDebug = (e.target as HTMLInputElement).checked;
@@ -378,7 +402,12 @@ function init(): void {
     showErr('Microphone needs HTTPS or localhost — use Safari on iPad after deploying to Vercel.');
   }
 
-  void ensureDspEngine(curStageId).then(() => {
+  void ensureDspEngine(curStageId).then(async () => {
+    if (!isVoiceBankComplete(curStageId)) {
+      $('netTxt').textContent = 'Voice setup required';
+      await startVoiceBootstrap(curStageId);
+      return;
+    }
     $('netTxt').textContent = `TensorFlow.js WASM · ${getStage(curStageId).label}`;
     setTargetItem(pickRandomItem(curStageId));
   });

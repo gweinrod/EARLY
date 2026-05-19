@@ -31,6 +31,7 @@
     </label>
     <div class="collector-actions">
       <button type="button" class="btn-secondary" id="btnExportLog">export session log</button>
+      <button type="button" class="btn-secondary" id="btnRedoVoiceBank">re-record voice model</button>
     </div>
     <div id="judgmentBlock" class="judgment-block">
       <p class="sec-label">your judgment</p>
@@ -62,6 +63,19 @@
     </div>
   </div>
 
+  <div id="voiceBootstrap" class="voice-bootstrap" style="display:none">
+    <h2 class="voice-bootstrap-title">Train EARLY on your voice</h2>
+    <p class="voice-bootstrap-lead">Say each letter name once. The neural net learns from your recordings — not synthetic templates.</p>
+    <p id="bootstrapProgress" class="bootstrap-progress">0 / 26 recorded</p>
+    <div id="bootstrapTarget" class="bootstrap-target">A — say: ay</div>
+    <button type="button" class="btn-rec btn-bootstrap-rec" id="btnBootstrapRec">
+      <span class="dot"></span>
+      <span id="btnBootstrapLbl">tap to record</span>
+    </button>
+    <p id="bootstrapStatus" class="bootstrap-status"></p>
+  </div>
+
+  <div id="practiceMain">
   <div id="netBadge" class="tech-only">
     &#x25CF;&nbsp;
     <span id="netTxt">collecting training data silently</span>
@@ -109,6 +123,8 @@
   <div id="histBlock" class="student-hide">
     <p class="sec-label">recent attempts</p>
     <div id="histRows"></div>
+  </div>
+
   </div>
 
 </div>

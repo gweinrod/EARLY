@@ -4,6 +4,7 @@ import type { CurriculumStageId } from './curriculum';
 import { buildBootstrapDataset } from './bootstrap-embeddings';
 import { NMCC } from './dsp';
 import { getVocabWords, setVocabularyStage, wordIndex } from './word-vocabulary';
+import { isVoiceBankComplete } from './voice-bank';
 
 const INPUT_DIM = NMCC;
 
@@ -44,18 +45,26 @@ export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<vo
   await tf.setBackend('wasm');
   await tf.ready();
 
+  if (!isVoiceBankComplete(stageId)) {
+    model = null;
+    ready = false;
+    return;
+  }
+
   const url = modelStorageUrl(stageId);
   try {
     model = await tf.loadLayersModel(url);
     ready = true;
     return;
   } catch {
-    /* first run for this stage */
+    /* no saved model for this stage */
   }
 
-  model = createModel(vocabSize);
-  ready = true;
-  await runBootstrapTraining(stageId);
+  const bootstrapped = await runBootstrapTraining(stageId);
+  if (!bootstrapped) {
+    model = null;
+    ready = false;
+  }
 }
 
 function createModel(numClasses: number): tf.LayersModel {
@@ -80,11 +89,62 @@ function createModel(numClasses: number): tf.LayersModel {
   return m;
 }
 
-async function runBootstrapTraining(stageId: CurriculumStageId): Promise<void> {
-  if (!model) return;
-  const { x, y } = buildBootstrapDataset(stageId, 12);
-  await fitBatch(x, y, 40, 16);
-  await persistModel();
+async function runBootstrapTraining(stageId: CurriculumStageId): Promise<boolean> {
+  const dataset = buildBootstrapDataset(stageId, 4);
+  if (!dataset) return false;
+
+  if (!model) {
+    model = createModel(getVocabWords().length);
+  }
+  trainingBusy = true;
+  try {
+    await fitBatch(dataset.x, dataset.y, 40, 16);
+    await persistModel();
+    ready = true;
+    return true;
+  } finally {
+    trainingBusy = false;
+  }
+}
+
+export async function deleteStoredModel(stageId: CurriculumStageId): Promise<void> {
+  try {
+    await tf.io.removeModel(modelStorageUrl(stageId));
+  } catch {
+    /* not saved yet */
+  }
+  if (activeStage === stageId) {
+    model?.dispose();
+    model = null;
+    ready = false;
+  }
+}
+
+/** Train from teacher voice bank and persist (after guided recording). */
+export async function retrainFromVoiceBank(stageId: CurriculumStageId): Promise<boolean> {
+  setVocabularyStage(stageId);
+  const vocabSize = getVocabWords().length;
+  if (vocabSize === 0) return false;
+
+  await tf.setBackend('wasm');
+  await tf.ready();
+
+  const dataset = buildBootstrapDataset(stageId, 4);
+  if (!dataset) return false;
+
+  model?.dispose();
+  model = createModel(vocabSize);
+  activeStage = stageId;
+  ready = false;
+  trainingBusy = true;
+  try {
+    await fitBatch(dataset.x, dataset.y, 40, 16);
+    await persistModel();
+    ready = true;
+    return true;
+  } finally {
+    trainingBusy = false;
+  }
 }
 
 async function fitBatch(x: number[][], y: number[], epochs: number, batchSize: number): Promise<void> {
