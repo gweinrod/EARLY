@@ -19,10 +19,14 @@ Open `http://localhost:5173` in Chrome or Safari.
 
 ## Deploy to iPad (recommended)
 
-1. Push this repo to a **private** GitHub repository.
-2. Import the repo in Vercel → deploy (HTTPS URL).
-3. On the classroom iPad: Safari → your URL → Share → **Add to Home Screen**.
-4. See [`docs/EARLY_MONTH_ONE.md`](docs/EARLY_MONTH_ONE.md) for the week-by-week checklist.
+Step-by-step: [`docs/DEPLOY.md`](docs/DEPLOY.md)
+
+1. Push to a **private** GitHub repo named `EARLY`.
+2. Import in Vercel → deploy (HTTPS URL).
+3. Classroom iPad: Safari → URL → Share → **Add to Home Screen**.
+4. Week-by-week plan: [`docs/EARLY_MONTH_ONE.md`](docs/EARLY_MONTH_ONE.md).
+
+Local LAN dev (optional): `npm run dev:lan` — use Vercel HTTPS for real mic tests on iPad.
 
 ## Classroom session workflow
 

@@ -47,6 +47,8 @@ Export: **Teacher session → export session log** (JSON download).
 
 ## iPad checklist before class
 
+See [`DEPLOY.md`](DEPLOY.md) for GitHub + Vercel commands.
+
 1. Deploy to Vercel (HTTPS required for mic)
 2. Open in **Safari** on the classroom iPad
 3. Share → Add to Home Screen
