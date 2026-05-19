@@ -19,6 +19,7 @@ import {
   getStage,
   pickNextItemInOrder,
   STAGE_ORDER,
+  transcriptMatchesItem,
   transcriptMatchesItemForAutoStop,
   transcriptMatchesItemForScoring,
   transcriptMatchesItemForSessionEnd,
@@ -343,6 +344,7 @@ function finalizeAttempt(): void {
 
 function applyAsrTranscript(heard: string): void {
   if (!heard.trim()) return;
+  console.log('[ASR]', heard, '| match:', transcriptMatchesItem(curStageId, heard, curItem));
   pendingHeard = heard;
   pendingAsrPass = transcriptMatchesItemForScoring(curStageId, heard, curItem);
   if (listening) $('btnLbl').textContent = `heard: ${heard}`;
