@@ -188,10 +188,14 @@ export function transcriptMatchesItemForSessionEnd(
   return true;
 }
 
-export function pickRandomItem(stageId: CurriculumStageId, excludeKey?: string): CurriculumItem {
+/** Next item in curriculum order; wraps A→…→Z→A for alphabet. */
+export function pickNextItemInOrder(
+  stageId: CurriculumStageId,
+  currentKey?: string,
+): CurriculumItem {
   const items = getStage(stageId).items;
   if (!items.length) throw new Error(`Stage ${stageId} has no items`);
-  const pool = excludeKey ? items.filter((i) => i.key !== excludeKey) : items;
-  const list = pool.length ? pool : items;
-  return list[Math.floor(Math.random() * list.length)];
+  if (!currentKey) return items[0];
+  const idx = items.findIndex((i) => i.key === currentKey);
+  return items[(idx < 0 ? 0 : idx + 1) % items.length];
 }

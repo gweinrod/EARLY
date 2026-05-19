@@ -16,7 +16,7 @@ import {
   type CurriculumItem,
   type CurriculumStageId,
   getStage,
-  pickRandomItem,
+  pickNextItemInOrder,
   STAGE_ORDER,
   transcriptMatchesItem,
   transcriptMatchesItemForAutoStop,
@@ -129,7 +129,7 @@ function setTargetItem(item: CurriculumItem): void {
 }
 
 function nextItem(): void {
-  setTargetItem(pickRandomItem(curStageId, curItem.key));
+  setTargetItem(pickNextItemInOrder(curStageId, curItem.key));
 }
 
 function displayFeedback(items: DspPrediction['heuristicItems']): void {
@@ -503,7 +503,7 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
   $('netTxt').textContent = 'Loading classroom model…';
   const load = await ensureDspEngine(stageId);
 
-  nextItem();
+  setTargetItem(getStage(stageId).items[0] ?? curItem);
   applyModelLoadStatus(load);
 
   if (isTfReady()) {
