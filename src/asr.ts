@@ -67,7 +67,8 @@ export function createSpeechRecognition(): SpeechRecognition | null {
   const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition;
   if (!SR) return null;
   const recognition = new SR();
-  recognition.continuous = false;
+  /** Keep listening for the whole take (false stops after one phrase → double-speak). */
+  recognition.continuous = true;
   recognition.interimResults = true;
   recognition.lang = 'en-US';
   recognition.maxAlternatives = 1;

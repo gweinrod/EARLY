@@ -80,8 +80,10 @@ let takeSessionId = 0;
 let takeStartedAt = 0;
 let maxTakeTimer: ReturnType<typeof setTimeout> | null = null;
 let asrPauseTimer: ReturnType<typeof setTimeout> | null = null;
-let asrRetryDone = false;
 let listening = false;
+/** Pause after last non-empty ASR text before auto stop (ms). */
+const ASR_PAUSE_MS = 1600;
+const ASR_START_DELAY_MS = 280;
 let stopWave: (() => void) | null = null;
 let lastDsp: DspPrediction | null = null;
 let pendingHeard: string | null = null;
@@ -203,7 +205,6 @@ function resetTakeState(): void {
     clearTimeout(asrPauseTimer);
     asrPauseTimer = null;
   }
-  asrRetryDone = false;
 }
 
 function setAsrWaitStatus(msg: string): void {
@@ -223,7 +224,7 @@ function scheduleMediaStop(): void {
   const hasTranscript = pendingHeard !== null && pendingHeard.length > 0;
   if (!hasTranscript) setAsrWaitStatus('checking speech…');
 
-  const ms = hasTranscript ? 120 : 1400;
+  const ms = hasTranscript ? 200 : 2800;
   asrWaitTimer = setTimeout(() => {
     asrWaitTimer = null;
     if (pendingHeard === null) {
@@ -325,8 +326,10 @@ function finalizeAttempt(): void {
 }
 
 function applyAsrTranscript(heard: string): void {
+  if (!heard.trim()) return;
   pendingHeard = heard;
   pendingAsrPass = transcriptMatchesItem(curStageId, heard, curItem);
+  if (listening) $('btnLbl').textContent = `heard: ${heard}`;
   if (endingTake) scheduleMediaStop();
   else if (!listening) scheduleAttemptFinalize();
 }
@@ -543,23 +546,27 @@ async function toggleRec(): Promise<void> {
 
         applyAsrTranscript(heard);
 
-        if (listening) {
-          const matched = transcriptMatchesItem(curStageId, heard, curItem);
-          if (isFinal || matched) {
-            clearAsrPauseTimer();
-            endTake();
-            return;
-          }
+        if (!listening) return;
+
+        const matched = transcriptMatchesItem(curStageId, heard, curItem);
+        if (matched) {
           clearAsrPauseTimer();
-          asrPauseTimer = setTimeout(() => {
-            asrPauseTimer = null;
-            if (listening && session === takeSessionId) endTake();
-          }, 900);
+          endTake();
+          return;
         }
+
+        clearAsrPauseTimer();
+        const pauseMs = isFinal ? 500 : ASR_PAUSE_MS;
+        asrPauseTimer = setTimeout(() => {
+          asrPauseTimer = null;
+          if (listening && session === takeSessionId && pendingHeard) endTake();
+        }, pauseMs);
       };
       recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
         if (session !== takeSessionId) return;
-        if (e.error !== 'aborted' && pendingHeard === null) {
+        if (e.error === 'no-speech' && listening) return;
+        if (e.error === 'aborted') return;
+        if (pendingHeard === null) {
           pendingHeard = '';
           pendingAsrPass = false;
         }
@@ -568,40 +575,31 @@ async function toggleRec(): Promise<void> {
       };
       recognition.onend = () => {
         if (session !== takeSessionId) return;
-        if (Date.now() - takeStartedAt < 250) return;
-
-        if (
-          pendingHeard === null &&
-          !asrRetryDone &&
-          Date.now() - takeStartedAt > 400
-        ) {
-          asrRetryDone = true;
-          try {
-            recognition.start();
-            return;
-          } catch {
-            /* fall through to end take */
-          }
-        }
-
-        if (!endingTake) {
-          endingTake = true;
-          resetListenUi();
-          clearAsrPauseTimer();
+        if (Date.now() - takeStartedAt < 200) return;
+        if (listening && !endingTake) {
+          endTake();
+          return;
         }
         markAsrEnded();
       };
-      try {
-        recognition.start();
-      } catch {
-        activeRecognition = null;
-        asrEnded = true;
-      }
     } else {
       asrEnded = true;
     }
 
     mediaRec.start(100);
+
+    if (activeRecognition) {
+      const recognition = activeRecognition;
+      setTimeout(() => {
+        if (session !== takeSessionId || !listening) return;
+        try {
+          recognition.start();
+        } catch {
+          activeRecognition = null;
+          asrEnded = true;
+        }
+      }, ASR_START_DELAY_MS);
+    }
   } catch (e) {
     resetListenUi();
     showErr(`Mic denied — ${e instanceof Error ? e.message : String(e)}`);
