@@ -1,12 +1,6 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { put } from '@vercel/blob';
-import {
-  blobToken,
-  incrementStageCount,
-  readStageCounts,
-  rebuildCountsFromList,
-  statsFromCounts,
-} from './blob-meta';
+import { blobToken, incrementStageCount, resolveStageStats } from './blob-meta';
 import { listSampleStats } from './list-sample-stats';
 
 const SAMPLE_VERSION = 1;
@@ -37,14 +31,9 @@ async function sampleStats(
   blobTok: string,
   stageId?: string,
 ): Promise<{ total: number; byStage: Record<string, number> }> {
-  let counts = await readStageCounts('voice-bank', blobTok);
-  const knownTotal = Object.values(counts).reduce((a, n) => a + n, 0);
-  if (knownTotal === 0) {
-    counts = await rebuildCountsFromList('voice-bank', blobTok, (sid) =>
-      listSampleStats('voice-bank', blobTok, sid),
-    );
-  }
-  return statsFromCounts(counts, stageId);
+  return resolveStageStats('voice-bank', blobTok, stageId, (sid) =>
+    listSampleStats('voice-bank', blobTok, sid),
+  );
 }
 
 export default async function handler(req: VercelRequest, res: VercelResponse): Promise<void> {

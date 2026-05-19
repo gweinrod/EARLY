@@ -1,4 +1,4 @@
-import { head, put } from '@vercel/blob';
+import { list, put } from '@vercel/blob';
 
 export type BlobStoreKind = 'calibration' | 'voice-bank';
 
@@ -12,9 +12,12 @@ export async function readStageCounts(
   kind: BlobStoreKind,
   token: string,
 ): Promise<Record<string, number>> {
+  const pathname = COUNTS_PATH(kind);
   try {
-    const meta = await head(COUNTS_PATH(kind), { token });
-    const res = await fetch(meta.downloadUrl, { cache: 'no-store' });
+    const page = await list({ prefix: `${kind}/_meta/`, limit: 10, token });
+    const blob = page.blobs.find((b) => b.pathname === pathname);
+    if (!blob) return {};
+    const res = await fetch(blob.url, { cache: 'no-store' });
     if (!res.ok) return {};
     const data = (await res.json()) as Record<string, number>;
     const out: Record<string, number> = {};
@@ -64,6 +67,10 @@ export function statsFromCounts(
   return { total, byStage: counts };
 }
 
+function countsTotal(counts: Record<string, number>): number {
+  return Object.values(counts).reduce((a, n) => a + n, 0);
+}
+
 /** One-time rebuild when counts.json is missing (e.g. after deploy). */
 export async function rebuildCountsFromList(
   kind: BlobStoreKind,
@@ -73,4 +80,24 @@ export async function rebuildCountsFromList(
   const stats = await listFn(undefined);
   await writeStageCounts(kind, stats.byStage, token);
   return stats.byStage;
+}
+
+export async function resolveStageStats(
+  kind: BlobStoreKind,
+  token: string,
+  stageId: string | undefined,
+  listFn: (stageId?: string) => Promise<{ total: number; byStage: Record<string, number> }>,
+): Promise<{ total: number; byStage: Record<string, number> }> {
+  let counts = await readStageCounts(kind, token);
+  if (countsTotal(counts) === 0) {
+    try {
+      counts = await rebuildCountsFromList(kind, token, listFn);
+    } catch {
+      if (stageId) {
+        return listFn(stageId);
+      }
+      return { total: 0, byStage: {} };
+    }
+  }
+  return statsFromCounts(counts, stageId);
 }
