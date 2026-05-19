@@ -60,6 +60,8 @@ let attemptFinalized = false;
 let dspProcessed = false;
 let asrEnded = false;
 let endingTake = false;
+let takeSessionId = 0;
+let asrHadResult = false;
 let listening = false;
 let stopWave: (() => void) | null = null;
 let lastDsp: DspPrediction | null = null;
@@ -157,6 +159,25 @@ function clearAsrWait(): void {
   }
 }
 
+function resetListenUi(): void {
+  listening = false;
+  $('btnRec').classList.remove('on');
+  $('btnLbl').textContent = 'tap to speak';
+  stopWave?.();
+  stopWave = null;
+}
+
+function resetTakeState(): void {
+  attemptFinalized = false;
+  dspProcessed = false;
+  asrEnded = false;
+  endingTake = false;
+  clearAsrWait();
+  pendingHeard = null;
+  pendingAsrPass = null;
+  asrHadResult = false;
+}
+
 function releaseMic(): void {
   if (recStream) {
     recStream.getTracks().forEach((t) => t.stop());
@@ -174,56 +195,46 @@ function scheduleAttemptFinalize(): void {
     return;
   }
 
-  if (!dspProcessed) return;
+  if (!dspProcessed || !endingTake) return;
 
   clearAsrWait();
 
   if (!asrEnded) {
     asrWaitTimer = setTimeout(() => {
       asrWaitTimer = null;
-      if (!asrEnded) {
-        asrEnded = true;
-        stopMediaRecorder();
-      }
-    }, 8000);
+      asrEnded = true;
+      scheduleAttemptFinalize();
+    }, 5000);
     return;
   }
 
-  const graceMs = pendingHeard && pendingHeard.length > 0 ? 50 : 600;
+  const graceMs = pendingHeard && pendingHeard.length > 0 ? 50 : 800;
   asrWaitTimer = setTimeout(() => {
     asrWaitTimer = null;
     finalizeAttempt();
   }, graceMs);
 }
 
-function stopMediaRecorder(): void {
-  if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
-  else scheduleAttemptFinalize();
-}
-
-function onAsrSessionEnd(): void {
-  if (asrEnded) return;
-  asrEnded = true;
-  stopMediaRecorder();
-}
-
-function beginEndTake(): void {
+/** Stop listening UI, speech recognition, and recorder together. */
+function endTake(): void {
   if (endingTake) return;
   endingTake = true;
-  listening = false;
-  stopWave?.();
-  stopWave = null;
-  $('btnRec').classList.remove('on');
-  $('btnLbl').textContent = 'tap to speak';
+  resetListenUi();
 
   if (activeRecognition) {
     try {
       activeRecognition.stop();
     } catch {
-      onAsrSessionEnd();
+      asrEnded = true;
     }
   } else {
-    onAsrSessionEnd();
+    asrEnded = true;
+  }
+
+  if (mediaRec && mediaRec.state !== 'inactive') {
+    mediaRec.stop();
+  } else if (dspProcessed) {
+    scheduleAttemptFinalize();
   }
 }
 
@@ -233,6 +244,7 @@ function finalizeAttempt(): void {
   dspProcessed = false;
   asrEnded = false;
   clearAsrWait();
+  resetListenUi();
   releaseMic();
 
   const heard = pendingHeard ?? '';
@@ -371,17 +383,21 @@ function onVoiceBootstrapComplete(): void {
 
 async function toggleRec(): Promise<void> {
   if (listening) {
-    beginEndTake();
+    endTake();
     return;
   }
 
-  attemptFinalized = false;
-  dspProcessed = false;
-  asrEnded = false;
-  endingTake = false;
-  clearAsrWait();
-  pendingHeard = null;
-  pendingAsrPass = null;
+  if (activeRecognition) {
+    try {
+      activeRecognition.abort();
+    } catch {
+      /* previous session */
+    }
+    activeRecognition = null;
+  }
+
+  const session = ++takeSessionId;
+  resetTakeState();
 
   const ctx = getAudioContext();
   if (ctx.state === 'suspended') await ctx.resume();
@@ -403,31 +419,48 @@ async function toggleRec(): Promise<void> {
       void processAudio();
     };
 
+    listening = true;
+    $('btnRec').classList.add('on');
+    $('btnLbl').textContent = 'listening...';
+    clearFB();
+    hide('hmWrap');
+    hide('pbWrap');
+    hide('resultBanner');
+    stopWave = drawWave(an, () => listening && session === takeSessionId);
+
     activeRecognition = createSpeechRecognition();
     if (activeRecognition) {
       const recognition = activeRecognition;
       recognition.onresult = (e: SpeechRecognitionEvent) => {
+        if (session !== takeSessionId) return;
         const heard = fullTranscriptFromEvent(e);
         const last = e.results.length > 0 ? e.results[e.results.length - 1] : null;
         const isFinal = last?.isFinal ?? false;
-        if (heard) applyAsrTranscript(heard);
+        if (heard) {
+          asrHadResult = true;
+          applyAsrTranscript(heard);
+        }
         const matched = heard ? transcriptMatchesItem(curStageId, heard, curItem) : false;
-        if (listening && (isFinal || matched)) beginEndTake();
+        if (listening && (isFinal || matched)) endTake();
       };
       recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
+        if (session !== takeSessionId) return;
+        asrEnded = true;
         if (e.error !== 'aborted' && pendingHeard === null) {
           pendingHeard = '';
           pendingAsrPass = false;
         }
-        if (listening) beginEndTake();
-        else {
-          onAsrSessionEnd();
-          scheduleAttemptFinalize();
-        }
+        if (listening) endTake();
+        else scheduleAttemptFinalize();
       };
       recognition.onend = () => {
-        onAsrSessionEnd();
-        scheduleAttemptFinalize();
+        if (session !== takeSessionId) return;
+        asrEnded = true;
+        if (endingTake) {
+          scheduleAttemptFinalize();
+          return;
+        }
+        if (asrHadResult) endTake();
       };
       try {
         recognition.start();
@@ -440,16 +473,8 @@ async function toggleRec(): Promise<void> {
     }
 
     mediaRec.start(100);
-
-    listening = true;
-    $('btnRec').classList.add('on');
-    $('btnLbl').textContent = 'listening...';
-    clearFB();
-    hide('hmWrap');
-    hide('pbWrap');
-    hide('resultBanner');
-    stopWave = drawWave(an, () => listening);
   } catch (e) {
+    resetListenUi();
     showErr(`Mic denied — ${e instanceof Error ? e.message : String(e)}`);
   }
 }
