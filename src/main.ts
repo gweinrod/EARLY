@@ -98,12 +98,16 @@ let asrRestartsThisTake = 0;
 let takeAsrAccum = '';
 /** Chrome onend fired while heard was an incomplete bee/dee prefix (consonant only). */
 let sawIncompleteEeOnEnd = false;
+/** ASR result locked when ee-tail autofill ends take (survives short-recording clear). */
+let lockedEeTailAsr: { heard: string; pass: boolean } | null = null;
 /** End take after speech pauses (post-speech tail). */
 const ASR_PAUSE_MS = 1400;
 /** Extra wait when Chrome only heard the consonant of bee/dee before onend. */
 const ASR_EE_TAIL_MS = 2200;
 /** Brief floor so auto-stop does not fire on the first syllable. */
 const MIN_TAKE_MS = 350;
+/** Min time for full "bee" before ee-tail autofill ends the take (one utterance). */
+const EE_TAIL_MIN_TAKE_MS = 850;
 /** Chrome ends continuous ASR often; restart in the same take (not a second tap). */
 const ASR_MAX_RESTARTS_PER_TAKE = 24;
 let stopWave: (() => void) | null = null;
@@ -162,8 +166,10 @@ async function processAudio(): Promise<void> {
 
     if (frames.length < 4) {
       displayFeedback([{ t: 'warn', s: 'Recording too short — try again' }]);
-      pendingHeard = null;
-      pendingAsrPass = null;
+      if (!lockedEeTailAsr) {
+        pendingHeard = null;
+        pendingAsrPass = null;
+      }
       attemptFinalized = true;
       dspProcessed = false;
       clearAsrWait();
@@ -219,6 +225,7 @@ function resetTakeState(): void {
   asrRestartsThisTake = 0;
   takeAsrAccum = '';
   sawIncompleteEeOnEnd = false;
+  lockedEeTailAsr = null;
   clearAsrWait();
   pendingHeard = null;
   pendingAsrPass = null;
@@ -249,7 +256,7 @@ function scheduleMediaStop(): void {
   const hasTranscript = pendingHeard !== null && pendingHeard.length > 0;
   if (!hasTranscript) setAsrWaitStatus('checking speech…');
 
-  const ms = hasTranscript ? 650 : 2800;
+  const ms = lockedEeTailAsr ? 400 : hasTranscript ? 650 : 2800;
   asrWaitTimer = setTimeout(() => {
     asrWaitTimer = null;
     if (pendingHeard === null) {
@@ -326,11 +333,10 @@ function endTake(): void {
     try {
       activeRecognition.stop();
     } catch {
-      markAsrEnded();
+      /* Chrome may still fire onend; we stop media regardless */
     }
-  } else {
-    markAsrEnded();
   }
+  markAsrEnded();
 }
 
 function finalizeAttempt(): void {
@@ -342,8 +348,9 @@ function finalizeAttempt(): void {
   resetListenUi();
   releaseMic();
 
-  const heard = pendingHeard ?? '';
-  const asrPass = pendingAsrPass ?? false;
+  const heard = lockedEeTailAsr?.heard ?? pendingHeard ?? '';
+  const asrPass = lockedEeTailAsr?.pass ?? pendingAsrPass ?? false;
+  lockedEeTailAsr = null;
   pendingHeard = null;
   pendingAsrPass = null;
 
@@ -384,8 +391,14 @@ function applyAsrTranscript(heard: string): void {
       resolved !== heard ? `heard: ${resolved}` : `heard: ${heard}`;
   }
 
-  if (listening && !endingTake && shouldEndTakeFromEeTailAutofill(resolved)) {
+  if (
+    listening &&
+    !endingTake &&
+    Date.now() - takeStartedAt >= EE_TAIL_MIN_TAKE_MS &&
+    shouldEndTakeFromEeTailAutofill(resolved)
+  ) {
     console.log('[ASR] endTake ee-tail autofill');
+    lockedEeTailAsr = { heard: resolved, pass: true };
     clearAsrPauseTimer();
     endTake();
     return;
@@ -698,7 +711,7 @@ async function toggleRec(): Promise<void> {
         if (
           letterNameIsKeyPlusEe(curItem) &&
           isIncompleteEeNamePrefix(heard, curItem) &&
-          Date.now() - takeStartedAt >= MIN_TAKE_MS
+          Date.now() - takeStartedAt >= EE_TAIL_MIN_TAKE_MS
         ) {
           sawIncompleteEeOnEnd = true;
         }
