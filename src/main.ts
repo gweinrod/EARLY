@@ -395,15 +395,21 @@ async function runEeTailDspBackfill(): Promise<void> {
 }
 
 function endEeTailCapture(): void {
-  setAsrWaitStatus('got it!');
   stopMediaRecorderNow();
   stopMicTracksNow();
   finalizeEeTailImmediately();
+  asrEnded = true;
+  clearAsrWait();
+  $('btnLbl').textContent = 'tap to speak';
   void runEeTailDspBackfill();
 }
 
 /** Stop recorder after ASR has time to deliver late transcripts. */
 function scheduleMediaStop(): void {
+  if (attemptFinalized) {
+    takeLog('scheduleMediaStop skip (attempt finalized)');
+    return;
+  }
   clearAsrWait();
   const hasTranscript = pendingHeard !== null && pendingHeard.length > 0;
   if (!hasTranscript) setAsrWaitStatus('checking speech…');
@@ -434,6 +440,10 @@ function markAsrEnded(): void {
   }
   asrEnded = true;
   takeLog('markAsrEnded');
+  if (attemptFinalized) {
+    takeLog('markAsrEnded skip schedule (attempt finalized)');
+    return;
+  }
   if (lockedEeTailAsr) {
     takeLog('markAsrEnded ee-tail (recorder stop already requested)');
     return;
@@ -525,13 +535,13 @@ function endTake(caller = 'unknown'): void {
   endingTake = true;
   takeSessionId++;
   resetListenUi();
+  tearDownRecognition();
   if (lockedEeTailAsr) {
     endEeTailCapture();
   } else {
     setAsrWaitStatus('checking…');
+    markAsrEnded();
   }
-  tearDownRecognition();
-  markAsrEnded();
 }
 
 function finalizeAttempt(): void {
@@ -598,7 +608,7 @@ function applyAsrTranscript(heard: string): void {
     return;
   }
 
-  if (endingTake) scheduleMediaStop();
+  if (endingTake && !attemptFinalized) scheduleMediaStop();
   else if (!listening) scheduleAttemptFinalize();
 }
 
@@ -671,6 +681,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
     lastLoggedAttemptId = attempt.id;
     if (eeTailBackfill && !dsp.embedding) {
       takeLog('finishAttempt defer collector until ee-tail DSP backfill');
+      addFB({ t: 'pass', s: `Heard “${heard}” — scoring audio…` }, true);
       return;
     }
     if (asrPass && heard.trim() && dsp.dspPass) {
