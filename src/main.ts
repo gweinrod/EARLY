@@ -24,6 +24,8 @@ import {
   transcriptMatchesItemForScoring,
   transcriptMatchesItemForSessionEnd,
   isIncompleteEeNamePrefix,
+  letterNameIsKeyPlusEe,
+  resolveHeardForEeChromeTail,
 } from './curriculum';
 import { ensureDspEngine, runDspPrediction, type DspPrediction } from './dsp-predict';
 import { extractFrames, resetMelFilterbank } from './dsp';
@@ -93,8 +95,12 @@ let listening = false;
 let asrRestartsThisTake = 0;
 /** Cumulative ASR text across Chrome recognition restarts within one tap. */
 let takeAsrAccum = '';
+/** Chrome onend fired while heard was an incomplete bee/dee prefix (consonant only). */
+let sawIncompleteEeOnEnd = false;
 /** End take after speech pauses (post-speech tail). */
 const ASR_PAUSE_MS = 1400;
+/** Extra wait when Chrome only heard the consonant of bee/dee before onend. */
+const ASR_EE_TAIL_MS = 2200;
 /** Brief floor so auto-stop does not fire on the first syllable. */
 const MIN_TAKE_MS = 350;
 /** Chrome ends continuous ASR often; restart in the same take (not a second tap). */
@@ -211,6 +217,7 @@ function resetTakeState(): void {
   endingTake = false;
   asrRestartsThisTake = 0;
   takeAsrAccum = '';
+  sawIncompleteEeOnEnd = false;
   clearAsrWait();
   pendingHeard = null;
   pendingAsrPass = null;
@@ -344,10 +351,28 @@ function finalizeAttempt(): void {
 
 function applyAsrTranscript(heard: string): void {
   if (!heard.trim()) return;
-  console.log('[ASR]', heard, '| match:', transcriptMatchesItem(curStageId, heard, curItem));
-  pendingHeard = heard;
-  pendingAsrPass = transcriptMatchesItemForScoring(curStageId, heard, curItem);
-  if (listening) $('btnLbl').textContent = `heard: ${heard}`;
+  const resolved = resolveHeardForEeChromeTail(heard, curItem, sawIncompleteEeOnEnd);
+  console.log(
+    '[ASR]',
+    heard,
+    '| match:',
+    transcriptMatchesItem(curStageId, heard, curItem),
+    '| score:',
+    transcriptMatchesItemForScoring(curStageId, resolved, curItem),
+    '| incomplete:',
+    isIncompleteEeNamePrefix(heard, curItem),
+    '| chromeAteTail:',
+    sawIncompleteEeOnEnd,
+    '| restarts:',
+    asrRestartsThisTake,
+  );
+  pendingHeard = resolved;
+  takeAsrAccum = resolved;
+  pendingAsrPass = transcriptMatchesItemForScoring(curStageId, resolved, curItem);
+  if (listening) {
+    $('btnLbl').textContent =
+      resolved !== heard ? `heard: ${resolved}` : `heard: ${heard}`;
+  }
   if (endingTake) scheduleMediaStop();
   else if (!listening) scheduleAttemptFinalize();
 }
@@ -618,6 +643,34 @@ async function toggleRec(): Promise<void> {
     activeRecognition = createSpeechRecognition();
     if (activeRecognition) {
       const recognition = activeRecognition;
+
+      const scheduleAsrPauseEnd = () => {
+        clearAsrPauseTimer();
+        const raw = pendingHeard ?? '';
+        const incomplete =
+          !!raw && isIncompleteEeNamePrefix(raw, curItem) && !sawIncompleteEeOnEnd;
+        const ms = incomplete || (raw && isIncompleteEeNamePrefix(raw, curItem))
+          ? ASR_EE_TAIL_MS
+          : ASR_PAUSE_MS;
+        asrPauseTimer = setTimeout(() => {
+          asrPauseTimer = null;
+          if (!listening || session !== takeSessionId || endingTake || !pendingHeard) return;
+          const h = pendingHeard ?? '';
+          if (isIncompleteEeNamePrefix(h, curItem) && !sawIncompleteEeOnEnd) {
+            scheduleAsrPauseEnd();
+            return;
+          }
+          if (
+            sawIncompleteEeOnEnd &&
+            letterNameIsKeyPlusEe(curItem) &&
+            isIncompleteEeNamePrefix(h, curItem)
+          ) {
+            applyAsrTranscript(resolveHeardForEeChromeTail(h, curItem, true));
+          }
+          endTake();
+        }, ms);
+      };
+
       recognition.onresult = (e: SpeechRecognitionEvent) => {
         if (session !== takeSessionId || endingTake) return;
         const eventText = fullTranscriptFromEvent(e);
@@ -638,21 +691,7 @@ async function toggleRec(): Promise<void> {
           return;
         }
 
-        clearAsrPauseTimer();
-        asrPauseTimer = setTimeout(() => {
-          asrPauseTimer = null;
-          if (!listening || session !== takeSessionId || endingTake || !pendingHeard) return;
-          if (isIncompleteEeNamePrefix(pendingHeard, curItem)) {
-            asrPauseTimer = setTimeout(() => {
-              asrPauseTimer = null;
-              if (listening && session === takeSessionId && !endingTake && pendingHeard) {
-                endTake();
-              }
-            }, ASR_PAUSE_MS);
-            return;
-          }
-          endTake();
-        }, ASR_PAUSE_MS);
+        scheduleAsrPauseEnd();
       };
       recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
         if (session !== takeSessionId) return;
@@ -677,23 +716,24 @@ async function toggleRec(): Promise<void> {
           return;
         }
         // Chrome stops continuous sessions constantly; restart in the SAME take (user does not tap again).
+        if (isIncompleteEeNamePrefix(heardOnEnd, curItem)) {
+          sawIncompleteEeOnEnd = true;
+          clearAsrPauseTimer();
+          applyAsrTranscript(heardOnEnd);
+          $('btnLbl').textContent = `heard "${heardOnEnd}" — keep going…`;
+        }
         if (asrRestartsThisTake < ASR_MAX_RESTARTS_PER_TAKE) {
           asrRestartsThisTake++;
-          if (isIncompleteEeNamePrefix(heardOnEnd, curItem)) {
-            $('btnLbl').textContent = `heard "${heardOnEnd}" — keep going…`;
-          }
           try {
             recognition.start();
+            scheduleAsrPauseEnd();
             return;
           } catch {
             /* fall through */
           }
         }
         if (pendingHeard && !asrPauseTimer) {
-          asrPauseTimer = setTimeout(() => {
-            asrPauseTimer = null;
-            if (listening && session === takeSessionId && !endingTake) endTake();
-          }, 400);
+          scheduleAsrPauseEnd();
         }
       };
       try {

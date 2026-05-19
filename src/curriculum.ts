@@ -135,6 +135,25 @@ export function isIncompleteEeNamePrefix(heard: string, item: CurriculumItem): b
   return sn.startsWith(h);
 }
 
+/** Letter name spelled as key + "ee" (bee, dee) — not "see" where key is not a literal prefix. */
+export function letterNameIsKeyPlusEe(item: CurriculumItem): boolean {
+  const sn = normalizeHeardLabel(item.spokenName).replace(/\s+/g, '');
+  return spokenNameEndsWithEeSound(item) && sn.length > 1 && sn[0] === item.key;
+}
+
+/**
+ * Chrome onend often fires after only "b"; the student already said "ee" but ASR missed it.
+ */
+export function resolveHeardForEeChromeTail(
+  heard: string,
+  item: CurriculumItem,
+  chromeAteEeTail: boolean,
+): string {
+  if (!chromeAteEeTail || !letterNameIsKeyPlusEe(item)) return heard;
+  if (!isIncompleteEeNamePrefix(heard, item)) return heard;
+  return normalizeHeardLabel(item.spokenName);
+}
+
 /**
  * ASR often says the letter then the name: "c see", "b bee". Keep the name token for matching.
  */
