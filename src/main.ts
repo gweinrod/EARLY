@@ -58,6 +58,8 @@ let recStream: MediaStream | null = null;
 let activeRecognition: SpeechRecognition | null = null;
 let asrWaitTimer: ReturnType<typeof setTimeout> | null = null;
 let attemptFinalized = false;
+let dspProcessed = false;
+let asrEnded = false;
 let listening = false;
 let stopWave: (() => void) | null = null;
 let lastDsp: DspPrediction | null = null;
@@ -115,7 +117,9 @@ async function processAudio(): Promise<void> {
     if (frames.length < 4) {
       displayFeedback([{ t: 'warn', s: 'Recording too short — try again' }]);
       pendingHeard = null;
+      pendingAsrPass = null;
       attemptFinalized = true;
+      dspProcessed = false;
       clearAsrWait();
       releaseMic();
       return;
@@ -143,13 +147,16 @@ async function processAudio(): Promise<void> {
   } catch {
     displayFeedback([{ t: 'warn', s: 'Could not decode audio' }]);
     pendingHeard = null;
+    pendingAsrPass = null;
     lastDsp = null;
     attemptFinalized = true;
+    dspProcessed = false;
     clearAsrWait();
     releaseMic();
     return;
   }
 
+  dspProcessed = true;
   scheduleAttemptFinalize();
 }
 
@@ -176,17 +183,23 @@ function scheduleAttemptFinalize(): void {
     return;
   }
 
+  if (!dspProcessed) return;
+
+  if (activeRecognition && !asrEnded) return;
+
   clearAsrWait();
-  const waitMs = activeRecognition ? 1200 : 0;
+  const graceMs = pendingHeard !== null ? 80 : 3500;
   asrWaitTimer = setTimeout(() => {
     asrWaitTimer = null;
     finalizeAttempt();
-  }, waitMs);
+  }, graceMs);
 }
 
 function finalizeAttempt(): void {
   if (attemptFinalized) return;
   attemptFinalized = true;
+  dspProcessed = false;
+  asrEnded = false;
   clearAsrWait();
   releaseMic();
 
@@ -331,6 +344,8 @@ async function toggleRec(): Promise<void> {
   }
 
   attemptFinalized = false;
+  dspProcessed = false;
+  asrEnded = false;
   clearAsrWait();
   pendingHeard = null;
   pendingAsrPass = null;
@@ -367,20 +382,27 @@ async function toggleRec(): Promise<void> {
         if (listening && (isFinal || matched)) stopRec();
       };
       recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
+        asrEnded = true;
         if (e.error !== 'aborted' && pendingHeard === null) {
           pendingHeard = '';
           pendingAsrPass = false;
         }
         if (listening) stopRec();
+        else scheduleAttemptFinalize();
       };
       recognition.onend = () => {
+        asrEnded = true;
         if (listening) stopRec();
+        else scheduleAttemptFinalize();
       };
       try {
         recognition.start();
       } catch {
         activeRecognition = null;
+        asrEnded = true;
       }
+    } else {
+      asrEnded = true;
     }
 
     listening = true;
@@ -399,7 +421,6 @@ async function toggleRec(): Promise<void> {
 function stopRec(): void {
   if (!listening) return;
   listening = false;
-  if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
   stopWave?.();
   stopWave = null;
   $('btnRec').classList.remove('on');
@@ -409,9 +430,11 @@ function stopRec(): void {
     try {
       activeRecognition.stop();
     } catch {
-      scheduleAttemptFinalize();
+      asrEnded = true;
     }
   }
+
+  if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
 }
 
 function initStagePills(): void {
