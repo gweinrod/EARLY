@@ -1,4 +1,5 @@
 import * as tf from '@tensorflow/tfjs';
+import { setWasmPaths } from '@tensorflow/tfjs-backend-wasm';
 import '@tensorflow/tfjs-backend-wasm';
 import type { CurriculumStageId } from './curriculum';
 import { buildBootstrapDataset } from './bootstrap-embeddings';
@@ -19,6 +20,14 @@ let ready = false;
 let trainingBusy = false;
 let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let activeStage: CurriculumStageId = 'alphabet';
+let wasmPathsConfigured = false;
+
+function ensureWasmPaths(): void {
+  if (wasmPathsConfigured) return;
+  // Bundled JS lives under /assets/; .wasm must be served as static files (see public/tfjs-wasm/).
+  setWasmPaths('/tfjs-wasm/');
+  wasmPathsConfigured = true;
+}
 
 function modelStorageUrl(stageId: CurriculumStageId): string {
   return `localstorage://early-tf-${stageId}`;
@@ -73,6 +82,7 @@ export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<Tf
   const vocabSize = getVocabWords().length;
   if (vocabSize === 0) return noneResult();
 
+  ensureWasmPaths();
   await tf.setBackend('wasm');
   await tf.ready();
 
@@ -164,6 +174,7 @@ export async function retrainFromVoiceBank(stageId: CurriculumStageId): Promise<
   const vocabSize = getVocabWords().length;
   if (vocabSize === 0) return false;
 
+  ensureWasmPaths();
   await tf.setBackend('wasm');
   await tf.ready();
 

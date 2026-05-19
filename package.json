@@ -1,10 +1,13 @@
 {
   "name": "early",
   "private": true,
-  "version": "0.25.0",
+  "version": "0.26.0",
   "type": "module",
   "scripts": {
     "version:bump": "node scripts/bump-version.mjs",
+    "copy:wasm": "node scripts/copy-tfjs-wasm.mjs",
+    "predev": "node scripts/copy-tfjs-wasm.mjs",
+    "prebuild": "node scripts/copy-tfjs-wasm.mjs",
     "dev": "vite",
     "dev:lan": "vite --host",
     "build": "tsc && vite build",

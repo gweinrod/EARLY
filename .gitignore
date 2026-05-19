@@ -11,3 +11,4 @@ exports/
 data/calibration/
 data/voice-bank/
 public/models/**/train-weights.json
+public/tfjs-wasm/*.wasm

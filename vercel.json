@@ -2,5 +2,16 @@
   "buildCommand": "npm run build",
   "outputDirectory": "dist",
   "framework": "vite",
-  "rewrites": [{ "source": "/((?!api/).*)", "destination": "/index.html" }]
+  "headers": [
+    {
+      "source": "/tfjs-wasm/(.*)\\.wasm",
+      "headers": [{ "key": "Content-Type", "value": "application/wasm" }]
+    }
+  ],
+  "rewrites": [
+    {
+      "source": "/((?!api/|assets/|models/|tfjs-wasm/|manifest\\.json|icon\\.svg|styles/).*)",
+      "destination": "/index.html"
+    }
+  ]
 }
