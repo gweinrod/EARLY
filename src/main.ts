@@ -117,7 +117,14 @@ async function processAudio(): Promise<void> {
     }
 
     if (settings.collectorMode) {
-      showDspVerdict(lastDsp.summary, lastDsp.tf?.guessedKey ?? null, curItem.display, curItem.key);
+      showDspVerdict(
+        lastDsp.summary,
+        lastDsp.tf?.guessedKey ?? null,
+        curItem.display,
+        curItem.key,
+        lastDsp.guessConfidence,
+        lastDsp.targetProbability,
+      );
     }
   } catch {
     displayFeedback([{ t: 'warn', s: 'Could not decode audio' }]);
@@ -148,7 +155,12 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       dspPass: false,
     } satisfies DspPrediction);
 
-  const { appPass, basis } = deriveAppPass(asrPass, { ...dsp, guessedKey: dsp.tf?.guessedKey }, curItem.key);
+  const { appPass, basis } = deriveAppPass(
+    asrPass,
+    { ...dsp, guessedKey: dsp.tf?.guessedKey },
+    curItem.key,
+    curStageId,
+  );
 
   total++;
   if (appPass) correct++;
@@ -211,7 +223,6 @@ async function onTeacherJudgment(j: {
   await trainCalibrationSample({
     embedding: lastDsp.embedding,
     targetKey: curItem.key,
-    teacherHeard: j.teacherHeard,
     teacherHeardKey: j.teacherHeardKey,
     agrees: j.agrees,
     asrWrong: j.asrWrong,

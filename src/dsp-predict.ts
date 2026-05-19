@@ -1,38 +1,41 @@
 import { VC, W2C } from './data';
-import { type Frame, extractNucleusMfcc } from './dsp';
+import { type Frame, extractEmbedding } from './dsp';
 import { heuristicFeedback, type FeedbackItem } from './feedback';
 import { heuristicVerdict } from './scoring';
-import { initTfPhonemeModel, isTfReady, predictWordForTarget, type TfWordPrediction } from './tf-phoneme';
+import {
+  initTfPhonemeModel,
+  isTfPredictBusy,
+  isTfReady,
+  predictWordForTarget,
+  type TfWordPrediction,
+} from './tf-phoneme';
+import type { CurriculumStageId } from './curriculum';
 
 export interface DspPrediction {
   embedding: number[] | null;
   heuristicItems: FeedbackItem[];
   heuristicPass: boolean | null;
   tf: TfWordPrediction | null;
-  /** Whole-word guess from TF.js classifier. */
   guessedWord: string | null;
   guessConfidence: number;
-  /** Target word probability from TF. */
   targetProbability: number;
-  /** Human-readable line for teacher UI. */
   summary: string;
-  /** DSP pass: TF match to target when confident, else heuristics. */
   dspPass: boolean;
 }
 
 const TF_CONFIDENCE_MIN = 0.22;
 
-function formatTfLine(tf: TfWordPrediction, targetWord: string): string {
+function formatTfLine(tf: TfWordPrediction, targetKey: string): string {
   const alt = tf.top3
-    .filter((t) => t.word !== tf.guessedWord)
+    .filter((t) => t.key !== tf.guessedKey)
     .slice(0, 2)
-    .map((t) => `${t.word} ${Math.round(t.probability * 100)}%`)
+    .map((t) => `${t.key} ${Math.round(t.probability * 100)}%`)
     .join(', ');
   const pct = Math.round(tf.confidence * 100);
   const targetPct = Math.round(tf.targetProbability * 100);
-  let line = `DSP heard “${tf.guessedWord}” (${pct}%)`;
-  if (tf.guessedWord !== targetWord) {
-    line += ` · target “${targetWord}” at ${targetPct}%`;
+  let line = `DSP heard “${tf.guessedKey}” (${pct}%)`;
+  if (tf.guessedKey !== targetKey) {
+    line += ` · target “${targetKey}” at ${targetPct}%`;
   }
   if (alt) line += ` · also ${alt}`;
   return line;
@@ -46,7 +49,7 @@ function heuristicSummary(items: FeedbackItem[]): string {
   return `Heuristics: pass — ${judged[0].s.slice(0, 80)}`;
 }
 
-export async function ensureDspEngine(stageId: import('./curriculum').CurriculumStageId): Promise<void> {
+export async function ensureDspEngine(stageId: CurriculumStageId): Promise<void> {
   await initTfPhonemeModel(stageId);
 }
 
@@ -55,23 +58,21 @@ export function runDspPrediction(
   targetKey: string,
   groupKey: string,
 ): DspPrediction {
-  const embedding = extractNucleusMfcc(frames);
+  const embedding = extractEmbedding(frames);
   const heuristicItems = heuristicFeedback(frames, targetKey, groupKey);
   const heuristicPass = heuristicVerdict(heuristicItems);
 
   let tf: TfWordPrediction | null = null;
-  if (embedding && isTfReady()) {
+  if (embedding && isTfReady() && !isTfPredictBusy()) {
     tf = predictWordForTarget(embedding, targetKey);
   }
 
-  const guessedWord = tf?.guessedWord ?? null;
+  const guessedWord = tf?.guessedKey ?? null;
   const guessConfidence = tf?.confidence ?? 0;
   const targetProbability = tf?.targetProbability ?? 0;
 
   const tfSaysTarget =
-    tf !== null &&
-    tf.guessedKey === targetKey.toLowerCase() &&
-    tf.confidence >= TF_CONFIDENCE_MIN;
+    tf !== null && tf.guessedKey === targetKey.toLowerCase() && tf.confidence >= TF_CONFIDENCE_MIN;
 
   const tfSaysOther =
     tf !== null && tf.guessedKey !== targetKey.toLowerCase() && tf.confidence >= TF_CONFIDENCE_MIN;
@@ -88,9 +89,17 @@ export function runDspPrediction(
   }
 
   const parts = [heuristicSummary(heuristicItems)];
-  if (tf) parts.unshift(formatTfLine(tf, targetKey));
-  else if (embedding) parts.unshift('DSP neural net: still loading…');
-  else parts.unshift('DSP: no clear vowel nucleus in recording');
+  if (tf) {
+    parts.unshift(formatTfLine(tf, targetKey));
+  } else if (isTfPredictBusy()) {
+    parts.unshift('DSP neural net: updating from your last judgment — wait a moment');
+  } else if (!isTfReady()) {
+    parts.unshift('DSP neural net: still loading…');
+  } else if (!embedding) {
+    parts.unshift('DSP: recording too quiet or too short — try again, speak a bit longer');
+  } else {
+    parts.unshift('DSP neural net: could not classify this take');
+  }
 
   if (W2C[targetKey] !== undefined) {
     const ci = W2C[targetKey];

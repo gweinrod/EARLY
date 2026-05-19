@@ -69,16 +69,25 @@ export function showDspVerdict(
   guessedKey: string | null,
   targetDisplay: string,
   targetKey: string,
+  confidence?: number | null,
+  targetProbability?: number | null,
 ): void {
   const guessEl = $('dspGuessWord');
+  const pct =
+    confidence != null && confidence > 0 ? ` (${Math.round(confidence * 100)}%)` : '';
+  const targetPct =
+    targetProbability != null && targetProbability >= 0
+      ? ` · target at ${Math.round(targetProbability * 100)}%`
+      : '';
+
   if (guessedKey && guessedKey !== targetKey) {
-    guessEl.textContent = `DSP guess: “${guessedKey}” (target ${targetDisplay})`;
+    guessEl.textContent = `DSP guess: “${guessedKey}”${pct} (target ${targetDisplay})${targetPct}`;
     guessEl.classList.add('mismatch');
   } else if (guessedKey) {
-    guessEl.textContent = `DSP guess: “${guessedKey}” matches ${targetDisplay}`;
+    guessEl.textContent = `DSP guess: “${guessedKey}”${pct} matches ${targetDisplay}`;
     guessEl.classList.remove('mismatch');
   } else {
-    guessEl.textContent = 'DSP guess: —';
+    guessEl.textContent = pct ? `DSP guess: —${pct}` : 'DSP guess: — (see detail below)';
     guessEl.classList.remove('mismatch');
   }
   $('dspVerdictDetail').textContent = summary;
@@ -114,6 +123,8 @@ export function promptTeacherJudgment(attempt: AttemptLog, stageId: CurriculumSt
       attempt.dspGuessWord,
       attempt.word,
       attempt.targetKey ?? attempt.word,
+      attempt.dspGuessConfidence,
+      attempt.dspTargetProbability,
     );
   }
   show('judgmentBlock');

@@ -186,3 +186,24 @@ export function extractNucleusMfcc(frames: Frame[]): number[] | null {
   }
   return nucM;
 }
+
+/** Fallback for short letter names: average MFCC over all voiced frames. */
+export function extractUtteranceMfcc(frames: Frame[]): number[] | null {
+  let mxR = 0;
+  for (const f of frames) if (f.rms > mxR) mxR = f.rms;
+  const thr = mxR * 0.08;
+  const vf = frames.filter((f) => f.rms > thr);
+  if (vf.length < 2) return null;
+
+  const out: number[] = [];
+  for (let i = 0; i < NMCC; i++) {
+    let s = 0;
+    for (const f of vf) s += f.mfcc[i];
+    out.push(s / vf.length);
+  }
+  return out;
+}
+
+export function extractEmbedding(frames: Frame[]): number[] | null {
+  return extractNucleusMfcc(frames) ?? extractUtteranceMfcc(frames);
+}

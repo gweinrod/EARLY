@@ -1,3 +1,4 @@
+import type { CurriculumStageId } from './curriculum';
 import type { DspPrediction } from './dsp-predict';
 import type { FeedbackItem } from './feedback';
 
@@ -18,7 +19,12 @@ export function deriveAppPass(
   asrPass: boolean,
   dsp: Pick<DspPrediction, 'dspPass' | 'heuristicPass' | 'tf'> & { guessedKey?: string | null },
   targetKey: string,
+  stageId: CurriculumStageId = 'alphabet',
 ): { appPass: boolean; basis: ScoringBasis } {
+  if (stageId === 'alphabet' || stageId === 'consonants') {
+    return { appPass: asrPass, basis: 'asr' };
+  }
+
   const t = targetKey.toLowerCase();
   const guess = dsp.tf?.guessedKey ?? dsp.guessedKey ?? null;
   if (dsp.tf && dsp.tf.confidence >= 0.22) {

@@ -9,6 +9,8 @@ const INPUT_DIM = NMCC;
 
 let model: tf.LayersModel | null = null;
 let ready = false;
+let trainingBusy = false;
+let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let activeStage: CurriculumStageId = 'alphabet';
 
 function modelStorageUrl(stageId: CurriculumStageId): string {
@@ -17,6 +19,10 @@ function modelStorageUrl(stageId: CurriculumStageId): string {
 
 export function isTfReady(): boolean {
   return ready && model !== null;
+}
+
+export function isTfPredictBusy(): boolean {
+  return trainingBusy;
 }
 
 export function getActiveTfStage(): CurriculumStageId {
@@ -78,7 +84,7 @@ async function runBootstrapTraining(stageId: CurriculumStageId): Promise<void> {
   if (!model) return;
   const { x, y } = buildBootstrapDataset(stageId, 12);
   await fitBatch(x, y, 40, 16);
-  await model.save(modelStorageUrl(stageId));
+  await persistModel();
 }
 
 async function fitBatch(x: number[][], y: number[], epochs: number, batchSize: number): Promise<void> {
@@ -94,6 +100,19 @@ async function fitBatch(x: number[][], y: number[], epochs: number, batchSize: n
   }
 }
 
+async function persistModel(): Promise<void> {
+  if (!model) return;
+  await model.save(modelStorageUrl(activeStage));
+}
+
+function schedulePersist(): void {
+  if (saveTimer) clearTimeout(saveTimer);
+  saveTimer = setTimeout(() => {
+    saveTimer = null;
+    void persistModel();
+  }, 1500);
+}
+
 export interface TfWordPrediction {
   guessedWord: string;
   guessedKey: string;
@@ -103,61 +122,71 @@ export interface TfWordPrediction {
 }
 
 export function predictWordForTarget(embedding: number[], targetKey: string): TfWordPrediction | null {
-  if (!model || !ready || embedding.length !== INPUT_DIM) return null;
+  if (!model || !ready || trainingBusy || embedding.length !== INPUT_DIM) return null;
 
-  const words = getVocabWords();
-  const probs = tf.tidy(() => {
-    const input = tf.tensor2d([embedding]);
-    const out = model!.predict(input) as tf.Tensor;
-    return Array.from(out.dataSync());
-  });
+  try {
+    const words = getVocabWords();
+    const probs = tf.tidy(() => {
+      const input = tf.tensor2d([embedding]);
+      const out = model!.predict(input) as tf.Tensor;
+      return Array.from(out.dataSync());
+    });
 
-  let topIdx = 0;
-  for (let i = 1; i < probs.length; i++) if (probs[i] > probs[topIdx]) topIdx = i;
+    if (probs.some((p) => Number.isNaN(p))) return null;
 
-  const sorted = probs
-    .map((p, i) => ({ word: words[i], key: words[i], probability: p }))
-    .sort((a, b) => b.probability - a.probability);
+    let topIdx = 0;
+    for (let i = 1; i < probs.length; i++) if (probs[i] > probs[topIdx]) topIdx = i;
 
-  const ti = wordIndex(targetKey);
+    const sorted = probs
+      .map((p, i) => ({ word: words[i], key: words[i], probability: p }))
+      .sort((a, b) => b.probability - a.probability);
 
-  return {
-    guessedWord: words[topIdx],
-    guessedKey: words[topIdx],
-    confidence: probs[topIdx],
-    targetProbability: ti !== undefined ? probs[ti] : 0,
-    top3: sorted.slice(0, 3),
-  };
+    const ti = wordIndex(targetKey);
+
+    return {
+      guessedWord: words[topIdx],
+      guessedKey: words[topIdx],
+      confidence: probs[topIdx],
+      targetProbability: ti !== undefined ? probs[ti] : 0,
+      top3: sorted.slice(0, 3),
+    };
+  } catch {
+    return null;
+  }
 }
 
 export interface CalibrationTrainInput {
   embedding: number[];
   targetKey: string;
-  teacherHeard: string;
   teacherHeardKey: string | null;
   agrees: boolean;
   asrWrong: boolean;
   dspWrong: boolean;
 }
 
-/** Train on teacher ground truth and/or confirmed correct target. */
 export async function trainCalibrationSample(input: CalibrationTrainInput): Promise<void> {
-  if (!model) return;
-  const { embedding, targetKey, teacherHeardKey, agrees, asrWrong, dspWrong } = input;
+  if (!model || trainingBusy) return;
 
-  if (teacherHeardKey) {
-    const heardIdx = wordIndex(teacherHeardKey);
-    if (heardIdx !== undefined) {
-      await fitBatch([embedding], [heardIdx], 10, 1);
+  trainingBusy = true;
+  try {
+    const { embedding, targetKey, teacherHeardKey, agrees, asrWrong, dspWrong } = input;
+
+    if (teacherHeardKey) {
+      const heardIdx = wordIndex(teacherHeardKey);
+      if (heardIdx !== undefined) {
+        await fitBatch([embedding], [heardIdx], 4, 1);
+      }
     }
-  }
 
-  if (agrees && !asrWrong && !dspWrong) {
-    const targetIdx = wordIndex(targetKey);
-    if (targetIdx !== undefined) {
-      await fitBatch([embedding], [targetIdx], 10, 1);
+    if (agrees && !asrWrong && !dspWrong) {
+      const targetIdx = wordIndex(targetKey);
+      if (targetIdx !== undefined) {
+        await fitBatch([embedding], [targetIdx], 4, 1);
+      }
     }
-  }
 
-  await model.save(modelStorageUrl(activeStage));
+    schedulePersist();
+  } finally {
+    trainingBusy = false;
+  }
 }
