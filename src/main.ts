@@ -2,6 +2,7 @@ import {
   createSpeechRecognition,
   eventHasFinalTranscript,
   fullTranscriptFromEvent,
+  mergeTakeTranscript,
 } from './asr';
 import { APP_VERSION } from './version';
 import {
@@ -21,6 +22,7 @@ import {
   transcriptMatchesItem,
   transcriptMatchesItemForAutoStop,
   transcriptMatchesItemForSessionEnd,
+  isIncompleteEeNamePrefix,
 } from './curriculum';
 import { ensureDspEngine, runDspPrediction, type DspPrediction } from './dsp-predict';
 import { extractFrames, resetMelFilterbank } from './dsp';
@@ -88,6 +90,8 @@ let maxTakeTimer: ReturnType<typeof setTimeout> | null = null;
 let asrPauseTimer: ReturnType<typeof setTimeout> | null = null;
 let listening = false;
 let asrRestartsThisTake = 0;
+/** Cumulative ASR text across Chrome recognition restarts within one tap. */
+let takeAsrAccum = '';
 /** End take after speech pauses (post-speech tail). */
 const ASR_PAUSE_MS = 1400;
 /** Brief floor so auto-stop does not fire on the first syllable. */
@@ -205,6 +209,7 @@ function resetTakeState(): void {
   asrEnded = false;
   endingTake = false;
   asrRestartsThisTake = 0;
+  takeAsrAccum = '';
   clearAsrWait();
   pendingHeard = null;
   pendingAsrPass = null;
@@ -613,8 +618,10 @@ async function toggleRec(): Promise<void> {
       const recognition = activeRecognition;
       recognition.onresult = (e: SpeechRecognitionEvent) => {
         if (session !== takeSessionId || endingTake) return;
-        const heard = fullTranscriptFromEvent(e);
-        if (!heard) return;
+        const eventText = fullTranscriptFromEvent(e);
+        if (!eventText) return;
+        const heard = mergeTakeTranscript(takeAsrAccum, eventText, curItem);
+        takeAsrAccum = heard;
         const isFinal = eventHasFinalTranscript(e);
 
         applyAsrTranscript(heard);
@@ -632,9 +639,17 @@ async function toggleRec(): Promise<void> {
         clearAsrPauseTimer();
         asrPauseTimer = setTimeout(() => {
           asrPauseTimer = null;
-          if (listening && session === takeSessionId && !endingTake && pendingHeard) {
-            endTake();
+          if (!listening || session !== takeSessionId || endingTake || !pendingHeard) return;
+          if (isIncompleteEeNamePrefix(pendingHeard, curItem)) {
+            asrPauseTimer = setTimeout(() => {
+              asrPauseTimer = null;
+              if (listening && session === takeSessionId && !endingTake && pendingHeard) {
+                endTake();
+              }
+            }, ASR_PAUSE_MS);
+            return;
           }
+          endTake();
         }, ASR_PAUSE_MS);
       };
       recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
@@ -651,6 +666,7 @@ async function toggleRec(): Promise<void> {
         const heardOnEnd = pendingHeard ?? '';
         if (
           heardOnEnd &&
+          !isIncompleteEeNamePrefix(heardOnEnd, curItem) &&
           Date.now() - takeStartedAt >= MIN_TAKE_MS &&
           transcriptMatchesItemForSessionEnd(curStageId, heardOnEnd, curItem)
         ) {

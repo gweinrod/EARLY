@@ -115,6 +115,24 @@ export function normalizeHeardLabel(text: string): string {
   return text.trim().toLowerCase().replace(/[^a-z0-9'\s-]/g, '').replace(/\s+/g, ' ');
 }
 
+/** American letter names ending in long-E: bee, see, dee, ee, jee, pee, tee, vee, zee. */
+export function spokenNameEndsWithEeSound(item: CurriculumItem): boolean {
+  const sn = item.spokenName.toLowerCase();
+  return sn.endsWith('ee');
+}
+
+/**
+ * Chrome often ends the session after the consonant ("b") before "ee" in "bee".
+ * Do not treat as a finished answer yet.
+ */
+export function isIncompleteEeNamePrefix(heard: string, item: CurriculumItem): boolean {
+  if (!spokenNameEndsWithEeSound(item)) return false;
+  const sn = normalizeHeardLabel(item.spokenName).replace(/\s+/g, '');
+  const h = normalizeHeardLabel(heard).replace(/\s+/g, '');
+  if (!h || h.length >= sn.length) return false;
+  return sn.startsWith(h);
+}
+
 /** Letter name is the key repeated (e.g. E → "ee"). ASR often finalizes as lone "e". */
 export function spokenNameIsDoubledLetter(item: CurriculumItem): boolean {
   const { key, spokenName } = item;
@@ -180,7 +198,9 @@ export function transcriptMatchesItemForSessionEnd(
   heard: string,
   item: CurriculumItem,
 ): boolean {
-  return transcriptMatchesItem(stageId, heard, item);
+  if (!transcriptMatchesItem(stageId, heard, item)) return false;
+  if (isIncompleteEeNamePrefix(heard, item)) return false;
+  return true;
 }
 
 /** Next item in curriculum order; wraps A→…→Z→A for alphabet. */

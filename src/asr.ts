@@ -1,3 +1,6 @@
+import type { CurriculumItem } from './curriculum';
+import { normalizeHeardLabel } from './curriculum';
+
 export function levenshtein(a: string, b: string): number {
   const m = a.length;
   const n = b.length;
@@ -80,15 +83,49 @@ export interface TranscriptSlice {
   isFinal: boolean;
 }
 
-/** "cc", "bbb" (no space) → single letter; leaves "see", "bee" unchanged. */
+/** "cc", "bbb" (no space) → single letter; leaves "see", "bee", "ee" unchanged. */
 export function collapseRepeatedLetterRun(token: string): string {
   if (token.length < 2) return token;
   const ch = token[0];
+  // "ee" is a letter name (E), not stutter — do not collapse to "e".
+  if (ch === 'e' && [...token].every((c) => c === 'e')) return token;
   if ([...token].every((c) => c === ch)) return ch;
   return token;
 }
 
-/** Collapse ASR stutter like "p p", "cc", or "tee tee" → "p" / "tee". */
+/**
+ * Merge ASR across Chrome restarts in one tap (e.g. "b" then "ee" → "bee").
+ */
+export function mergeTakeTranscript(
+  accum: string,
+  eventText: string,
+  item: CurriculumItem,
+): string {
+  const a = collapseRepeatedTokens(accum);
+  const e = collapseRepeatedTokens(eventText);
+  if (!a) return e;
+  if (!e) return a;
+  if (e.startsWith(a) || a.startsWith(e)) return e.length >= a.length ? e : a;
+
+  const compactA = a.replace(/\s+/g, '');
+  const compactE = e.replace(/\s+/g, '');
+  const joined = compactA + compactE;
+  const sn = normalizeHeardLabel(item.spokenName).replace(/\s+/g, '');
+
+  if (joined === sn) return item.spokenName.toLowerCase();
+  if (item.aliases.some((al) => normalizeHeardLabel(al).replace(/\s+/g, '') === joined)) {
+    return normalizeHeardLabel(item.aliases.find(
+      (al) => normalizeHeardLabel(al).replace(/\s+/g, '') === joined,
+    )!);
+  }
+
+  if (sn.endsWith('ee') && sn.startsWith(compactA) && (compactE === 'ee' || compactE === 'e')) {
+    return item.spokenName.toLowerCase();
+  }
+
+  return collapseRepeatedTokens(`${a} ${e}`);
+}
+
 export function collapseRepeatedTokens(heard: string): string {
   const tokens = heard
     .trim()
