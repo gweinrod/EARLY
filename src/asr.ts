@@ -100,6 +100,14 @@ export function fullTranscriptFromEvent(e: SpeechRecognitionEvent): string {
   return collapseRepeatedTokens(text);
 }
 
+/** True if any segment in this event is marked final by the browser. */
+export function eventHasFinalTranscript(e: SpeechRecognitionEvent): boolean {
+  for (let i = 0; i < e.results.length; i++) {
+    if (e.results[i].isFinal) return true;
+  }
+  return false;
+}
+
 /** Prefer the latest segment only (avoids duplicated letters across segments). */
 export function transcriptFromEvent(e: SpeechRecognitionEvent): TranscriptSlice {
   const last = e.results.length > 0 ? e.results[e.results.length - 1] : null;
