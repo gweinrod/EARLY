@@ -1,0 +1,18 @@
+{
+  "name": "EARLY — Early Assisted Reading",
+  "short_name": "EARLY",
+  "description": "Phoneme pronunciation practice for students",
+  "start_url": "/",
+  "display": "standalone",
+  "background_color": "#f8fafc",
+  "theme_color": "#3b82f6",
+  "orientation": "portrait",
+  "icons": [
+    {
+      "src": "/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}

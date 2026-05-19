@@ -26,6 +26,13 @@ export function showErr(msg: string): void {
   e.style.display = 'block';
 }
 
+export function showResultBanner(pass: boolean): void {
+  const el = $('resultBanner');
+  el.className = 'result-banner ' + (pass ? 'pass' : 'fail');
+  el.textContent = pass ? '✓' : '↻';
+  el.style.display = 'flex';
+}
+
 export function addFB(fb: { t: FeedbackType; s: string }, prepend = false): void {
   const d = document.createElement('div');
   const cls =

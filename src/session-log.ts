@@ -1,0 +1,123 @@
+import type { FeedbackItem } from './feedback';
+
+export interface HeuristicFlag {
+  result: FeedbackItem['t'];
+  message: string;
+}
+
+export interface AttemptLog {
+  id: string;
+  sessionId: string;
+  studentId: string;
+  timestamp: string;
+  group: string;
+  word: string;
+  heard: string | null;
+  asrPass: boolean;
+  heuristicFlags: HeuristicFlag[];
+  nucleusMfcc: number[] | null;
+  vowelClassIndex: number | null;
+  teacherAgrees: boolean | null;
+}
+
+export interface SessionMeta {
+  sessionId: string;
+  studentId: string;
+  startedAt: string;
+}
+
+const LOG_KEY = 'early.sessionLog.v1';
+const META_KEY = 'early.sessionMeta.v1';
+
+function uuid(): string {
+  return crypto.randomUUID?.() ?? `id-${Date.now()}-${Math.random().toString(36).slice(2, 9)}`;
+}
+
+export function getSessionMeta(): SessionMeta {
+  const raw = localStorage.getItem(META_KEY);
+  if (raw) return JSON.parse(raw) as SessionMeta;
+  const meta: SessionMeta = {
+    sessionId: uuid(),
+    studentId: '',
+    startedAt: new Date().toISOString(),
+  };
+  localStorage.setItem(META_KEY, JSON.stringify(meta));
+  return meta;
+}
+
+export function setStudentId(studentId: string): void {
+  const meta = getSessionMeta();
+  meta.studentId = studentId.trim();
+  localStorage.setItem(META_KEY, JSON.stringify(meta));
+}
+
+export function loadAttempts(): AttemptLog[] {
+  try {
+    const raw = localStorage.getItem(LOG_KEY);
+    return raw ? (JSON.parse(raw) as AttemptLog[]) : [];
+  } catch {
+    return [];
+  }
+}
+
+function saveAttempts(attempts: AttemptLog[]): void {
+  localStorage.setItem(LOG_KEY, JSON.stringify(attempts));
+}
+
+export function logAttempt(entry: Omit<AttemptLog, 'id' | 'sessionId' | 'timestamp'>): AttemptLog {
+  const meta = getSessionMeta();
+  const row: AttemptLog = {
+    ...entry,
+    id: uuid(),
+    sessionId: meta.sessionId,
+    timestamp: new Date().toISOString(),
+    studentId: entry.studentId || meta.studentId,
+  };
+  const attempts = loadAttempts();
+  attempts.push(row);
+  saveAttempts(attempts);
+  return row;
+}
+
+export function updateTeacherJudgment(attemptId: string, teacherAgrees: boolean): void {
+  const attempts = loadAttempts();
+  const row = attempts.find((a) => a.id === attemptId);
+  if (!row) return;
+  row.teacherAgrees = teacherAgrees;
+  saveAttempts(attempts);
+}
+
+export function exportLogJson(): string {
+  const meta = getSessionMeta();
+  return JSON.stringify(
+    {
+      meta,
+      attempts: loadAttempts(),
+      exportedAt: new Date().toISOString(),
+    },
+    null,
+    2,
+  );
+}
+
+export function downloadSessionLog(): void {
+  const blob = new Blob([exportLogJson()], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = `early-session-${getSessionMeta().sessionId.slice(0, 8)}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+export function clearSessionLog(): void {
+  localStorage.removeItem(LOG_KEY);
+  localStorage.removeItem(META_KEY);
+}
+
+/** Heuristic fails/warns — what the model “flagged” for teacher review. */
+export function flagsFromFeedback(items: FeedbackItem[]): HeuristicFlag[] {
+  return items
+    .filter((f) => f.t === 'fail' || f.t === 'warn')
+    .map((f) => ({ result: f.t, message: f.s }));
+}

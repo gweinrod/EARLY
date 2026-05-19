@@ -10,8 +10,92 @@ body {
 .container {
   max-width: 680px;
   margin: 0 auto;
-  padding: 2rem 1.25rem;
+  padding: 1.25rem 1.25rem 2rem;
+  padding-bottom: max(2rem, env(safe-area-inset-bottom));
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
 }
+
+.portrait-app {
+  overflow-x: hidden;
+}
+
+.app-header { margin-bottom: 1rem; }
+.app-title { font-size: 1.25rem; font-weight: 700; letter-spacing: 0.06em; }
+.app-sub { font-size: 14px; color: #64748b; margin-top: 4px; }
+
+.word-stage { flex: 1; display: flex; flex-direction: column; justify-content: center; min-height: 140px; }
+
+.result-banner {
+  display: none;
+  align-items: center;
+  justify-content: center;
+  width: 72px;
+  height: 72px;
+  margin: 0.75rem auto 0;
+  border-radius: 50%;
+  font-size: 36px;
+  font-weight: 700;
+}
+.result-banner.pass { background: #dcfce7; color: #16a34a; }
+.result-banner.fail { background: #fef9c3; color: #ca8a04; }
+
+.btns-bottom {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  margin-top: auto;
+  padding-top: 1rem;
+}
+
+body.student-face .tech-only { display: none !important; }
+body.student-face .student-hide { display: none !important; }
+
+.collector-panel {
+  background: #f1f5f9;
+  border-radius: 8px;
+  padding: 0.75rem 1rem;
+  margin-bottom: 1rem;
+  border: 1px solid #e2e8f0;
+}
+.field-label { display: block; font-size: 12px; color: #64748b; margin-bottom: 0.5rem; }
+.text-input {
+  display: block;
+  width: 100%;
+  margin-top: 4px;
+  padding: 10px 12px;
+  font-size: 16px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+}
+.collector-actions { margin: 0.5rem 0; }
+.btn-secondary {
+  padding: 10px 16px;
+  font-size: 14px;
+  border-radius: 8px;
+  border: 1px solid #cbd5e1;
+  background: #fff;
+  cursor: pointer;
+  min-height: 44px;
+}
+.judgment-block { margin-top: 0.75rem; padding-top: 0.75rem; border-top: 1px solid #e2e8f0; }
+.judgment-summary { font-size: 13px; color: #475569; margin-bottom: 8px; line-height: 1.4; }
+.judgment-btns { display: flex; gap: 8px; flex-wrap: wrap; }
+.btn-agree, .btn-disagree {
+  flex: 1;
+  min-height: 48px;
+  padding: 10px;
+  border-radius: 8px;
+  font-size: 14px;
+  font-weight: 500;
+  cursor: pointer;
+  border: 1px solid #cbd5e1;
+}
+.btn-agree { background: #dcfce7; color: #15803d; }
+.btn-disagree { background: #fee2e2; color: #dc2626; }
+.judgment-status { font-size: 12px; color: #64748b; margin-top: 8px; display: none; }
+.teacher-toggles { display: flex; flex-direction: column; gap: 6px; margin-top: 0.75rem; }
 
 #netBadge {
   display: flex;
@@ -32,14 +116,16 @@ body {
 
 .pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1rem; }
 .pill {
-  padding: 5px 14px;
+  padding: 10px 16px;
+  min-height: 44px;
   border-radius: 99px;
   border: 1px solid #e2e8f0;
   background: transparent;
-  font-size: 13px;
+  font-size: 14px;
   color: #64748b;
   cursor: pointer;
   transition: all 0.12s;
+  touch-action: manipulation;
 }
 .pill:hover { border-color: #93c5fd; color: #1d4ed8; }
 .pill.on    { background: #dbeafe; border-color: #93c5fd; color: #1d4ed8; font-weight: 500; }
@@ -89,16 +175,21 @@ body {
 .btn-rec {
   display: flex;
   align-items: center;
+  justify-content: center;
   gap: 8px;
-  padding: 10px 22px;
-  border-radius: 8px;
+  width: 100%;
+  min-height: 64px;
+  padding: 16px 22px;
+  border-radius: 12px;
   border: 1px solid #cbd5e1;
   background: #fff;
   color: #1e293b;
-  font-size: 14px;
-  font-weight: 500;
+  font-size: 18px;
+  font-weight: 600;
   cursor: pointer;
   transition: all 0.12s;
+  -webkit-tap-highlight-color: transparent;
+  touch-action: manipulation;
 }
 .btn-rec:hover { background: #f8fafc; }
 .btn-rec.on {
@@ -107,13 +198,16 @@ body {
   color: #dc2626;
 }
 .btn-next {
-  padding: 10px 22px;
+  width: 100%;
+  min-height: 48px;
+  padding: 12px 22px;
   border-radius: 8px;
   border: 1px solid #e2e8f0;
   background: transparent;
   color: #64748b;
-  font-size: 14px;
+  font-size: 16px;
   cursor: pointer;
+  touch-action: manipulation;
 }
 .btn-next:hover { background: #f1f5f9; }
 .dot {

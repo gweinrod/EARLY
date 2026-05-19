@@ -1,10 +1,20 @@
 import { createSpeechRecognition, transcriptMatchesTarget } from './asr';
-import { GROUP_KEYS, GROUPS, VC, VH, W2C } from './data';
+import { initCollectorPanel, promptTeacherJudgment, syncStudentIdField } from './collector-ui';
+import { GROUP_KEYS, GROUPS, W2C } from './data';
 import { extractFrames, extractNucleusMfcc, resetMelFilterbank } from './dsp';
-import { heuristicFeedback } from './feedback';
+import { heuristicFeedback, type FeedbackItem } from './feedback';
 import { generateNonsenseWord, pickCurriculumWord } from './phonemes/generator';
 import { analyzeReferenceCatalog } from './reference-offline';
+import { buildRecordingBlob, createMediaRecorder } from './recorder';
 import { oneHot, trainingBuffer, vowelNet } from './net';
+import { applySettingsToDocument, loadSettings, saveSettings, type AppSettings } from './settings';
+import {
+  flagsFromFeedback,
+  getSessionMeta,
+  logAttempt,
+  setStudentId,
+} from './session-log';
+import { asrStudentMessage, toStudentFeedback } from './student-feedback';
 import {
   $,
   addFB,
@@ -16,22 +26,24 @@ import {
   show,
   showErr,
   showProbBars,
+  showResultBanner,
   updateNetBadge,
   updateScores,
 } from './ui';
 
-const REFERENCE_AUDIO_PATHS: string[] = [
-  // Add WAV files under public/reference-audio/ then list them here.
-];
+const REFERENCE_AUDIO_PATHS: string[] = [];
 
+let settings: AppSettings = loadSettings();
 let audioCtx: AudioContext | null = null;
 let recChunks: Blob[] = [];
 let mediaRec: MediaRecorder | null = null;
 let recStream: MediaStream | null = null;
-let recognition: SpeechRecognition | null = null;
 let listening = false;
 let stopWave: (() => void) | null = null;
 let lastNuc: number[] | null = null;
+let lastHeuristicItems: FeedbackItem[] = [];
+let pendingHeard: string | null = null;
+let pendingAsrPass: boolean | null = null;
 
 let correct = 0;
 let total = 0;
@@ -39,11 +51,12 @@ const history: { w: string; h: string; pass: boolean }[] = [];
 
 let curGroup = GROUP_KEYS[0];
 let curWord = '';
-let useNonsense = true;
 
 function getAudioContext(): AudioContext {
   if (!audioCtx) {
-    const Ctx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+    const Ctx =
+      window.AudioContext ||
+      (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
     audioCtx = new Ctx();
   }
   return audioCtx;
@@ -56,10 +69,11 @@ function setTargetWord(display: string, phonLabel: string): void {
   clearFB();
   hide('hmWrap');
   hide('pbWrap');
+  hide('resultBanner');
 }
 
 function nextWord(): void {
-  if (useNonsense) {
+  if (settings.useNonsenseWords) {
     const gen = generateNonsenseWord(curGroup);
     setTargetWord(gen.display, `focus: ${gen.phonemeFocus}`);
   } else {
@@ -68,124 +82,128 @@ function nextWord(): void {
   }
 }
 
-function runVowelNet(frames: ReturnType<typeof extractFrames>): void {
+/** Run vowel net silently for training data; optional debug UI. */
+function runVowelNet(frames: ReturnType<typeof extractFrames>): number | null {
   const gtype = GROUPS[curGroup]?.type;
-  if (gtype !== 'vowel') return;
+  if (gtype !== 'vowel') return null;
 
   lastNuc = extractNucleusMfcc(frames);
-  if (!lastNuc) return;
+  if (!lastNuc) return null;
 
   const t0 = performance.now();
   const probs = vowelNet.predict(lastNuc);
   const ms = (performance.now() - t0).toFixed(2);
-  showProbBars(probs, ms);
 
-  let top = 0;
-  for (let i = 1; i < probs.length; i++) if (probs[i] > probs[top]) top = i;
-
-  const exp = W2C[curWord];
-  const conf = Math.round(probs[top] * 100);
-  const n = trainingBuffer.X.length;
-
-  if (n < 8) {
-    addFB({
-      t: 'info',
-      s: `Neural net: model cold — need ~10 correct vowel attempts before predictions are reliable (have ${n})`,
-    });
-  } else if (top === exp) {
-    addFB({
-      t: 'pass',
-      s: `Neural net: ${VC[top].label} ✓ (${conf}% confidence · ${n} training samples · ${ms}ms)`,
-    });
-  } else {
-    const tip = VH[curWord]?.tip;
-    addFB({
-      t: 'fail',
-      s: `Neural net: predicted ${VC[top].label} (${conf}%), expected ${VC[exp]?.label ?? '?'}${tip ? ` — ${tip}` : ''}`,
-    });
+  if (settings.showMlDebug) {
+    showProbBars(probs, ms);
+    let top = 0;
+    for (let i = 1; i < probs.length; i++) if (probs[i] > probs[top]) top = i;
+    const exp = W2C[curWord];
+    const conf = Math.round(probs[top] * 100);
+    const n = trainingBuffer.X.length;
+    if (n < 8) {
+      addFB({
+        t: 'info',
+        s: `Neural net: model cold — need ~10 correct vowel attempts (have ${n})`,
+      });
+    } else if (top === exp) {
+      addFB({ t: 'pass', s: `Neural net: class ${top} ✓ (${conf}% · ${ms}ms)` });
+    } else {
+      addFB({ t: 'fail', s: `Neural net: predicted ${top}, expected ${exp ?? '?'}` });
+    }
   }
+
+  return W2C[curWord] ?? null;
+}
+
+function trainVowelNetSilently(): void {
+  if (!lastNuc) return;
+  const ci = W2C[curWord];
+  if (ci === undefined) return;
+  trainingBuffer.X.push(lastNuc.slice());
+  trainingBuffer.Y.push(oneHot(ci, 6));
+  const loss = vowelNet.train(trainingBuffer.X, trainingBuffer.Y);
+  if (settings.showMlDebug) {
+    updateNetBadge(trainingBuffer.X.length, loss);
+  }
+}
+
+function displayFeedback(items: FeedbackItem[]): void {
+  const shown = settings.collectorMode && !settings.showMlDebug ? toStudentFeedback(items) : items;
+  for (const fb of shown) addFB(fb);
 }
 
 async function processAudio(): Promise<void> {
   if (!recChunks.length || !audioCtx) return;
-  const blob = new Blob(recChunks, { type: 'audio/webm' });
+  const blob = buildRecordingBlob(recChunks);
   const ab = await blob.arrayBuffer();
 
   try {
-    const aB = await audioCtx.decodeAudioData(ab);
+    const aB = await audioCtx.decodeAudioData(ab.slice(0));
     const audio = Array.from(aB.getChannelData(0));
     const frames = extractFrames(audio, aB.sampleRate);
 
     if (frames.length < 4) {
-      addFB({ t: 'warn', s: 'Recording too short — try again' });
+      displayFeedback([{ t: 'warn', s: 'Recording too short — try again' }]);
+      pendingHeard = null;
       return;
     }
 
-    drawHeatmap(frames);
+    if (settings.showMlDebug) drawHeatmap(frames);
+
     lastNuc = null;
+    lastHeuristicItems = heuristicFeedback(frames, curWord, curGroup);
     runVowelNet(frames);
-    for (const fb of heuristicFeedback(frames, curWord, curGroup)) {
-      addFB(fb);
-    }
+    displayFeedback(lastHeuristicItems);
   } catch {
-    addFB({ t: 'warn', s: 'Could not decode audio' });
+    displayFeedback([{ t: 'warn', s: 'Could not decode audio' }]);
+    pendingHeard = null;
+    return;
+  }
+
+  if (pendingHeard !== null && pendingAsrPass !== null) {
+    finishAttempt(pendingHeard, pendingAsrPass);
+    pendingHeard = null;
+    pendingAsrPass = null;
   }
 }
 
-function startASR(): void {
-  recognition = createSpeechRecognition();
-  if (!recognition) return;
+function finishAttempt(heard: string, asrPass: boolean): void {
+  total++;
+  if (asrPass) correct++;
+  updateScores(correct, total);
+  addHistory(curWord, heard, asrPass, history);
+  showResultBanner(asrPass);
 
-  recognition.onresult = (e: SpeechRecognitionEvent) => {
-    const heard = e.results[0][0].transcript.trim().toLowerCase();
-    const pass = transcriptMatchesTarget(heard, curWord);
+  const studentMsg = settings.collectorMode && !settings.showMlDebug
+    ? asrStudentMessage(asrPass, heard)
+    : {
+        t: asrPass ? ('pass' as const) : ('fail' as const),
+        s: `speech-to-text: “${heard}” — ${asrPass ? 'matches target' : `expected “${curWord}”`}`,
+      };
+  addFB(studentMsg, true);
 
-    total++;
-    if (pass) correct++;
-    updateScores(correct, total);
-    addHistory(curWord, heard, pass, history);
-    addFB(
-      {
-        t: pass ? 'pass' : 'fail',
-        s: `speech-to-text: “${heard}” — ${pass ? 'matches target' : `expected “${curWord}”`}`,
-      },
-      true,
-    );
+  if (asrPass) trainVowelNetSilently();
 
-    if (pass && lastNuc) {
-      const ci = W2C[curWord];
-      if (ci !== undefined) {
-        trainingBuffer.X.push(lastNuc.slice());
-        trainingBuffer.Y.push(oneHot(ci, 6));
-        const loss = vowelNet.train(trainingBuffer.X, trainingBuffer.Y);
-        updateNetBadge(trainingBuffer.X.length, loss);
-      }
-    }
-
-    stopRec();
-  };
-
-  recognition.onerror = () => stopRec();
-  recognition.onend = () => {
-    if (listening) stopRec();
-  };
-
-  try {
-    recognition.start();
-  } catch {
-    /* already started */
+  if (settings.collectorMode) {
+    const sidInput = $('studentId') as HTMLInputElement;
+    if (sidInput.value.trim()) setStudentId(sidInput.value);
+    const meta = getSessionMeta();
+    const attempt = logAttempt({
+      studentId: meta.studentId,
+      group: curGroup,
+      word: curWord,
+      heard,
+      asrPass,
+      heuristicFlags: flagsFromFeedback(lastHeuristicItems),
+      nucleusMfcc: lastNuc,
+      vowelClassIndex: W2C[curWord] ?? null,
+      teacherAgrees: null,
+    });
+    promptTeacherJudgment(attempt);
   }
-}
 
-function stopRec(): void {
-  if (!listening) return;
-  listening = false;
-  if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
-  if (recStream) recStream.getTracks().forEach((t) => t.stop());
-  stopWave?.();
-  stopWave = null;
-  $('btnRec').classList.remove('on');
-  $('btnLbl').textContent = 'tap to speak';
+  stopRec();
 }
 
 async function toggleRec(): Promise<void> {
@@ -206,7 +224,7 @@ async function toggleRec(): Promise<void> {
     src.connect(an);
 
     recChunks = [];
-    mediaRec = new MediaRecorder(stream);
+    mediaRec = createMediaRecorder(stream);
     mediaRec.ondataavailable = (e) => {
       if (e.data.size > 0) recChunks.push(e.data);
     };
@@ -215,17 +233,52 @@ async function toggleRec(): Promise<void> {
     };
     mediaRec.start(100);
 
-    startASR();
+    // iOS: fresh SpeechRecognition per tap, started only inside user gesture
+    const recognition = createSpeechRecognition();
+    if (recognition) {
+      recognition.onresult = (e: SpeechRecognitionEvent) => {
+        const heard = e.results[0][0].transcript.trim().toLowerCase();
+        pendingHeard = heard;
+        pendingAsrPass = transcriptMatchesTarget(heard, curWord);
+        stopRec();
+      };
+      recognition.onerror = () => {
+        pendingHeard = '';
+        pendingAsrPass = false;
+        stopRec();
+      };
+      recognition.onend = () => {
+        if (listening) stopRec();
+      };
+      try {
+        recognition.start();
+      } catch {
+        /* already started */
+      }
+    }
+
     listening = true;
     $('btnRec').classList.add('on');
     $('btnLbl').textContent = 'listening...';
     clearFB();
     hide('hmWrap');
     hide('pbWrap');
+    hide('resultBanner');
     stopWave = drawWave(an, () => listening);
   } catch (e) {
     showErr(`Mic denied — ${e instanceof Error ? e.message : String(e)}`);
   }
+}
+
+function stopRec(): void {
+  if (!listening) return;
+  listening = false;
+  if (mediaRec && mediaRec.state !== 'inactive') mediaRec.stop();
+  if (recStream) recStream.getTracks().forEach((t) => t.stop());
+  stopWave?.();
+  stopWave = null;
+  $('btnRec').classList.remove('on');
+  $('btnLbl').textContent = 'tap to speak';
 }
 
 function initPills(): void {
@@ -246,26 +299,53 @@ function initPills(): void {
   });
 }
 
+function applySettingsUi(): void {
+  applySettingsToDocument(settings);
+  const nonsenseToggle = $('nonsenseMode') as HTMLInputElement;
+  nonsenseToggle.checked = settings.useNonsenseWords;
+  const debugToggle = $('debugMode') as HTMLInputElement;
+  debugToggle.checked = settings.showMlDebug;
+
+  if (settings.showMlDebug) show('netBadge');
+  else hide('netBadge');
+
+  const collectorPanel = $('collectorPanel');
+  if (settings.collectorMode) show('collectorPanel');
+  else hide('collectorPanel');
+}
+
 function init(): void {
+  settings = loadSettings();
+  applySettingsUi();
   initPills();
+  if (settings.collectorMode) {
+    initCollectorPanel();
+    const meta = getSessionMeta();
+    syncStudentIdField(meta.studentId);
+  }
 
   $('btnRec').addEventListener('click', () => {
     void toggleRec();
   });
   $('btnNext').addEventListener('click', nextWord);
 
-  const nonsenseToggle = $('nonsenseMode') as HTMLInputElement;
-  nonsenseToggle.addEventListener('change', () => {
-    useNonsense = nonsenseToggle.checked;
+  $('nonsenseMode').addEventListener('change', (e) => {
+    settings.useNonsenseWords = (e.target as HTMLInputElement).checked;
+    saveSettings(settings);
     nextWord();
   });
-  useNonsense = nonsenseToggle.checked;
+
+  $('debugMode').addEventListener('change', (e) => {
+    settings.showMlDebug = (e.target as HTMLInputElement).checked;
+    saveSettings(settings);
+    applySettingsUi();
+  });
 
   if (!navigator.mediaDevices?.getUserMedia) {
-    showErr('getUserMedia not available — run npm run dev and use Chrome or Edge');
+    showErr('Microphone needs HTTPS or localhost — use Safari on iPad after deploying to Vercel.');
   }
 
-  updateNetBadge(0);
+  if (settings.showMlDebug) updateNetBadge(0);
   nextWord();
 
   if (REFERENCE_AUDIO_PATHS.length > 0) {
