@@ -13,18 +13,14 @@ export function heuristicVerdict(items: FeedbackItem[]): boolean | null {
 }
 
 /**
- * Student pass/fail: DSP (TF + heuristics) first, ASR only when DSP has no signal.
+ * Student pass/fail: trust DSP when it matches the target; ASR only when DSP has no signal.
  */
 export function deriveAppPass(
   asrPass: boolean,
   dsp: Pick<DspPrediction, 'dspPass' | 'heuristicPass' | 'tf'> & { guessedKey?: string | null },
   targetKey: string,
-  stageId: CurriculumStageId = 'alphabet',
+  _stageId: CurriculumStageId = 'alphabet',
 ): { appPass: boolean; basis: ScoringBasis } {
-  if (stageId === 'alphabet' || stageId === 'consonants') {
-    return { appPass: asrPass, basis: 'asr' };
-  }
-
   const t = targetKey.toLowerCase();
   const guess = dsp.tf?.guessedKey ?? dsp.guessedKey ?? null;
   if (dsp.tf && dsp.tf.confidence >= 0.22) {

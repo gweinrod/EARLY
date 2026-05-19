@@ -238,9 +238,9 @@ export async function trainCalibrationSample(input: CalibrationTrainInput): Prom
       }
     }
 
-    if (agrees && !asrWrong && !dspWrong) {
+    if (agrees && !asrWrong) {
       const targetIdx = wordIndex(targetKey);
-      if (targetIdx !== undefined) {
+      if (targetIdx !== undefined && (!dspWrong || teacherHeardKey === targetKey)) {
         await fitBatch([embedding], [targetIdx], 4, 1);
       }
     }

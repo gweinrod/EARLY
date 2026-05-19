@@ -380,17 +380,17 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       teacherHeardKey: null,
       curriculumStage: curStageId,
     });
-    if (asrPass && heard.trim()) {
-      const judgment = autoConfirmAsrPass(attempt, curStageId, heard);
+    if (asrPass && heard.trim() && !dsp.dspPass) {
+      const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: true });
       addFB(
         {
           t: 'pass',
-          s: `ASR heard “${heard}” — student correct; saved for training.`,
+          s: `ASR heard “${heard}” — DSP missed it; saved for training.`,
         },
         true,
       );
       void onTeacherJudgment(judgment);
-    } else {
+    } else if (!dsp.dspPass) {
       promptTeacherJudgment(attempt, curStageId);
     }
   }
