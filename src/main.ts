@@ -35,6 +35,11 @@ import {
   uploadCalibrationSample,
 } from './cloud-calibration';
 import {
+  flushVoiceBankQueue,
+  getVoiceBankQueueLength,
+  syncLocalVoiceBankToCloud,
+} from './cloud-voice-bank';
+import {
   applyPublishedModelUpdate,
   checkForPublishedModelUpdate,
   trainCalibrationSample,
@@ -438,7 +443,9 @@ async function onTeacherJudgment(j: {
     studentId: meta.studentId || undefined,
     attemptId: lastLoggedAttemptId ?? undefined,
   }).then(() => {
-    void flushCloudQueue().then(() => refreshCloudStats(curStageId));
+    void flushCloudQueue()
+      .then(() => flushVoiceBankQueue())
+      .then(() => refreshCloudStats(curStageId, getVoiceBankQueueLength()));
   });
 }
 
@@ -462,7 +469,7 @@ async function switchStage(stageId: CurriculumStageId): Promise<void> {
     );
   }
   $('netTxt').textContent = `TensorFlow.js WASM · ${getStage(stageId).label}`;
-  void refreshCloudStats(stageId);
+  void refreshCloudStats(stageId, getVoiceBankQueueLength());
   nextItem();
 }
 
@@ -653,7 +660,14 @@ function init(): void {
     subscribeCloudSync((s) => {
       $('cloudSyncStatus').textContent = formatCloudSyncLine(s);
     });
-    void flushCloudQueue().then(() => refreshCloudStats(curStageId));
+    void flushCloudQueue()
+      .then(() => flushVoiceBankQueue())
+      .then(async () => {
+        if (isVoiceBankComplete(curStageId)) {
+          await syncLocalVoiceBankToCloud(curStageId);
+        }
+        await refreshCloudStats(curStageId, getVoiceBankQueueLength());
+      });
   }
 
   initVoiceBootstrapUi({

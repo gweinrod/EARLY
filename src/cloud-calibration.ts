@@ -25,6 +25,8 @@ export type CloudSyncState = {
   enabled: boolean;
   pending: number;
   serverTotal: number | null;
+  voiceBankTotal: number | null;
+  voicePending: number;
   lastUploadAt: string | null;
   lastError: string | null;
 };
@@ -33,9 +35,16 @@ let state: CloudSyncState = {
   enabled: false,
   pending: 0,
   serverTotal: null,
+  voiceBankTotal: null,
+  voicePending: 0,
   lastUploadAt: null,
   lastError: null,
 };
+
+/** Called by cloud-voice-bank when uploads or queue changes. */
+export function notifyCloudSyncActivity(): void {
+  emit();
+}
 
 let listeners: Array<(s: CloudSyncState) => void> = [];
 
@@ -137,20 +146,34 @@ export async function flushCloudQueue(): Promise<void> {
 }
 
 /** Fetch how many samples are stored for this stage (all devices). */
-export async function refreshCloudStats(stageId: CurriculumStageId): Promise<void> {
+export async function refreshCloudStats(
+  stageId: CurriculumStageId,
+  voicePending = 0,
+): Promise<void> {
+  state.voicePending = voicePending;
   try {
-    const res = await fetch(`/api/calibration?stage=${encodeURIComponent(stageId)}`);
-    if (res.status === 503) {
+    const [calRes, voiceRes] = await Promise.all([
+      fetch(`/api/calibration?stage=${encodeURIComponent(stageId)}`),
+      fetch(`/api/voice-bank?stage=${encodeURIComponent(stageId)}`),
+    ]);
+    if (calRes.status === 503 || voiceRes.status === 503) {
       state.enabled = false;
       state.serverTotal = null;
+      state.voiceBankTotal = null;
       emit();
       return;
     }
-    if (!res.ok) return;
-    const data = (await res.json()) as { total: number };
-    state.enabled = true;
-    state.serverTotal = data.total;
-    state.lastError = null;
+    if (calRes.ok) {
+      const data = (await calRes.json()) as { total: number };
+      state.serverTotal = data.total;
+      state.enabled = true;
+      state.lastError = null;
+    }
+    if (voiceRes.ok) {
+      const data = (await voiceRes.json()) as { total: number };
+      state.voiceBankTotal = data.total;
+      state.enabled = true;
+    }
     emit();
   } catch {
     /* offline */
@@ -158,13 +181,21 @@ export async function refreshCloudStats(stageId: CurriculumStageId): Promise<voi
 }
 
 export function formatCloudSyncLine(s: CloudSyncState): string {
-  if (!s.enabled && s.pending === 0 && s.serverTotal === null) {
+  if (
+    !s.enabled &&
+    s.pending === 0 &&
+    s.voicePending === 0 &&
+    s.serverTotal === null &&
+    s.voiceBankTotal === null
+  ) {
     return 'Cloud training: not connected (enable Vercel Blob on deploy).';
   }
   const parts: string[] = [];
-  if (s.serverTotal !== null) parts.push(`${s.serverTotal} samples on server`);
-  if (s.pending > 0) parts.push(`${s.pending} waiting to upload`);
-  if (s.lastUploadAt && s.pending === 0) parts.push('synced');
+  if (s.voiceBankTotal !== null) parts.push(`${s.voiceBankTotal} voice on server`);
+  if (s.serverTotal !== null) parts.push(`${s.serverTotal} judgments on server`);
+  const pending = s.pending + s.voicePending;
+  if (pending > 0) parts.push(`${pending} waiting to upload`);
+  if (s.lastUploadAt && pending === 0) parts.push('synced');
   if (s.lastError) parts.push(s.lastError);
   return parts.length ? `Cloud training: ${parts.join(' · ')}` : 'Cloud training: connected';
 }

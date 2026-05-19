@@ -1,6 +1,6 @@
 # Cloud training — one model for all teachers
 
-Every teacher **accept** (or ASR auto-confirm when DSP missed) uploads a calibration sample to Vercel Blob. You periodically **train and deploy** a shared model; every device loads it on the next visit.
+Every **voice-bank letter recording** and every teacher **accept** (or ASR auto-confirm when DSP missed) uploads to Vercel Blob. You periodically **train and deploy** a shared model; every device loads it on the next visit.
 
 ## 1. Enable storage (once)
 
@@ -14,6 +14,7 @@ The teacher panel shows **Cloud training: N samples on server** when uploads wor
 
 | Event | Behavior |
 |--------|----------|
+| Voice setup (each letter) | POST `/api/voice-bank` with 13-D embedding + letter key |
 | Teacher confirms | POST `/api/calibration` with 13-D embedding + labels |
 | Offline | Queued in `localStorage`, retried on next load |
 | App start | Loads newest `public/models/<stage>/` if manifest version &gt; device version |
@@ -50,10 +51,11 @@ After deploy, all iPads/PCs load the new version on next open (feedback: “Load
 ## 4. Data layout in Blob
 
 ```
-calibration/<stageId>/<uuid>.json
+voice-bank/<stageId>/<uuid>.json   — guided voice recordings
+calibration/<stageId>/<uuid>.json  — teacher judgments
 ```
 
-Each file matches `CalibrationSamplePayload` in `api/calibration.ts`.
+Publish pulls both into `data/voice-bank/` and `data/calibration/`; training uses all of them.
 
 ## 5. Privacy
 

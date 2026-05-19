@@ -21,12 +21,40 @@ import tensorflow as tf
 import tensorflowjs as tfjs
 
 ROOT = Path(__file__).resolve().parents[1]
-SAMPLES_DIR = ROOT / "data" / "calibration"
+CALIBRATION_DIR = ROOT / "data" / "calibration"
+VOICE_BANK_DIR = ROOT / "data" / "voice-bank"
 MODELS_DIR = ROOT / "public" / "models"
 EMBEDDING_LEN = 13
 
 # Alphabet stage keys (must match src/curriculum.ts alphabet items)
 ALPHABET_KEYS = list("abcdefghijklmnopqrstuvwxyz")
+
+
+def _add_sample(
+    row: dict,
+    stage_id: str,
+    xs: list[list[float]],
+    ys: list[int],
+    vocab: dict[str, int],
+) -> bool:
+    if row.get("stageId") != stage_id:
+        return False
+    emb = row.get("embedding")
+    if not isinstance(emb, list) or len(emb) != EMBEDDING_LEN:
+        return False
+
+    if row.get("kind") == "voice_bank":
+        label_key = row.get("targetKey")
+    else:
+        label_key = row.get("teacherHeardKey")
+        if not label_key and row.get("agrees"):
+            label_key = row.get("targetKey")
+    if not label_key or label_key not in vocab:
+        return False
+
+    xs.append([float(x) for x in emb])
+    ys.append(vocab[label_key])
+    return True
 
 
 def load_samples(stage_id: str) -> tuple[list[list[float]], list[int], dict[str, int]]:
@@ -37,28 +65,15 @@ def load_samples(stage_id: str) -> tuple[list[list[float]], list[int], dict[str,
     xs: list[list[float]] = []
     ys: list[int] = []
 
-    if not SAMPLES_DIR.is_dir():
-        raise SystemExit(f"No samples at {SAMPLES_DIR}. Run: npm run calibration:pull")
-
-    for path in SAMPLES_DIR.glob("*.json"):
-        try:
-            row = json.loads(path.read_text(encoding="utf-8"))
-        except json.JSONDecodeError:
+    for samples_dir in (VOICE_BANK_DIR, CALIBRATION_DIR):
+        if not samples_dir.is_dir():
             continue
-        if row.get("stageId") != stage_id:
-            continue
-        emb = row.get("embedding")
-        if not isinstance(emb, list) or len(emb) != EMBEDDING_LEN:
-            continue
-
-        label_key = row.get("teacherHeardKey")
-        if not label_key and row.get("agrees"):
-            label_key = row.get("targetKey")
-        if not label_key or label_key not in vocab:
-            continue
-
-        xs.append([float(x) for x in emb])
-        ys.append(vocab[label_key])
+        for path in samples_dir.glob("*.json"):
+            try:
+                row = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            _add_sample(row, stage_id, xs, ys, vocab)
 
     return xs, ys, vocab
 
@@ -95,7 +110,10 @@ def main() -> None:
 
     xs, ys, vocab = load_samples(args.stage)
     if len(xs) < 5:
-        raise SystemExit(f"Need at least 5 samples for {args.stage}; found {len(xs)}.")
+        raise SystemExit(
+            f"Need at least 5 samples for {args.stage}; found {len(xs)}. "
+            "Run: npm run calibration:pull (after voice setup + judgments on live app)."
+        )
 
     x_t = tf.constant(xs, dtype=tf.float32)
     y_t = tf.constant(ys, dtype=tf.int32)

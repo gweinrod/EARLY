@@ -9,3 +9,4 @@ dist/
 .vite/
 exports/
 data/calibration/
+data/voice-bank/

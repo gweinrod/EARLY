@@ -46,11 +46,11 @@ echo ========================================
 echo.
 
 echo Checking cloud sample count...
-powershell -NoProfile -Command "try { $r = Invoke-RestMethod -Uri 'https://early-sigma.vercel.app/api/calibration?stage=%STAGE%' -TimeoutSec 20; Write-Host ('  Server reports ' + $r.total + ' samples for %STAGE%'); if ($r.total -lt 5) { exit 2 } } catch { Write-Host '  (could not reach API — continuing anyway)' }"
+powershell -NoProfile -Command "try { $c = Invoke-RestMethod -Uri 'https://early-sigma.vercel.app/api/calibration?stage=%STAGE%' -TimeoutSec 20; $v = Invoke-RestMethod -Uri 'https://early-sigma.vercel.app/api/voice-bank?stage=%STAGE%' -TimeoutSec 20; $t = $c.total + $v.total; Write-Host ('  Judgments: ' + $c.total + ', voice: ' + $v.total + ', total: ' + $t); if ($t -lt 5) { exit 2 } } catch { Write-Host '  (could not reach API — continuing anyway)' }"
 if errorlevel 2 (
   echo.
-  echo Need at least 5 teacher accepts on the live app ^(v0.11+^) with cloud sync working.
-  echo Then run this script again.
+  echo Need at least 5 cloud samples total ^(voice recordings + teacher accepts^).
+  echo Finish voice setup and/or practice accepts on the live app ^(v0.12+^), then retry.
   exit /b 1
 )
 

@@ -8,6 +8,7 @@ import {
   isVoiceBankComplete,
   loadVoiceBank,
 } from './voice-bank';
+import { uploadVoiceBankSample } from './cloud-voice-bank';
 import { deleteStoredModel, retrainFromVoiceBank } from './tf-phoneme';
 import { createMediaRecorder } from './recorder';
 import { $, hide, show } from './ui';
@@ -151,7 +152,12 @@ async function onBootstrapRecorded(): Promise<void> {
 
   const item = currentItem();
   addVoiceSample(stageId, item.key, result.embedding);
-  $('bootstrapStatus').textContent = `Saved ${item.display} (${item.spokenName}).`;
+  void uploadVoiceBankSample({
+    stageId,
+    targetKey: item.key,
+    embedding: result.embedding,
+  });
+  $('bootstrapStatus').textContent = `Saved ${item.display} (${item.spokenName}) — syncing to cloud.`;
 
   if (!isVoiceBankComplete(stageId)) {
     itemIndex = firstMissingIndex();
