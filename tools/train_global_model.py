@@ -29,8 +29,9 @@ ARCHIVE_VOICE_BANK_DIR = ROOT / "data" / "training-archive" / "voice-bank"
 MODELS_DIR = ROOT / "public" / "models"
 EMBEDDING_LEN = 13
 
-# Alphabet stage keys (must match src/curriculum.ts alphabet items)
-ALPHABET_KEYS = list("abcdefghijklmnopqrstuvwxyz")
+# Alphabet stage keys (must match src/word-vocabulary.ts: a-z + silence "")
+SILENCE_KEY = ""
+ALPHABET_KEYS = [*list("abcdefghijklmnopqrstuvwxyz"), SILENCE_KEY]
 
 
 def _add_sample(
@@ -91,7 +92,55 @@ def load_samples(stage_id: str) -> tuple[list[list[float]], list[int], dict[str,
                 continue
             _add_sample(row, stage_id, xs, ys, vocab, seen)
 
+    append_silence_training(xs, ys, vocab, seen)
     return xs, ys, vocab
+
+
+def append_silence_training(
+    xs: list[list[float]],
+    ys: list[int],
+    vocab: dict[str, int],
+    seen: set[str],
+) -> None:
+    """Ensure silence class exists (matches client syntheticSilenceEmbedding + augments)."""
+    import random
+
+    if SILENCE_KEY not in vocab:
+        return
+    idx = vocab[SILENCE_KEY]
+    emb: list[float] | None = None
+    for samples_dir in (
+        ARCHIVE_VOICE_BANK_DIR,
+        VOICE_BANK_DIR,
+        ARCHIVE_CALIBRATION_DIR,
+        CALIBRATION_DIR,
+    ):
+        if not samples_dir.is_dir():
+            continue
+        for path in samples_dir.glob("*.json"):
+            try:
+                row = json.loads(path.read_text(encoding="utf-8"))
+            except json.JSONDecodeError:
+                continue
+            if row.get("stageId") != "alphabet":
+                continue
+            e = row.get("embedding")
+            if row.get("targetKey") == SILENCE_KEY and isinstance(e, list) and len(e) == EMBEDDING_LEN:
+                emb = [float(x) for x in e]
+                break
+        if emb is not None:
+            break
+    if emb is None:
+        emb = [0.0] * EMBEDDING_LEN
+
+    for _ in range(24):
+        sample = [v + random.uniform(-0.12, 0.12) for v in emb]
+        dedupe_key = f"{SILENCE_KEY}:{','.join(f'{float(x):.6f}' for x in sample)}"
+        if dedupe_key in seen:
+            continue
+        seen.add(dedupe_key)
+        xs.append(sample)
+        ys.append(idx)
 
 
 def apply_base_weights(model: tf.keras.Model, base_path: Path) -> None:

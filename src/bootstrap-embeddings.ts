@@ -1,7 +1,8 @@
 import type { CurriculumStageId } from './curriculum';
 import { getStage } from './curriculum';
+import { syntheticSilenceEmbedding } from './silence-embedding';
 import { isVoiceBankComplete, loadVoiceBank } from './voice-bank';
-import { wordIndex } from './word-vocabulary';
+import { SILENCE_VOCAB_KEY, wordIndex } from './word-vocabulary';
 
 /** Light jitter on real teacher recordings only (not synthetic templates). */
 function augmentReal(base: number[], scale = 0.12): number[] {
@@ -38,8 +39,30 @@ export function buildBootstrapDataset(
     }
   }
 
+  appendSilenceClass(x, y, bank, augmentsPerSample);
+
   if (!x.length) return null;
   return { x, y };
+}
+
+function appendSilenceClass(
+  x: number[][],
+  y: number[],
+  bank: ReturnType<typeof loadVoiceBank>,
+  augmentsPerSample: number,
+): void {
+  const idx = wordIndex(SILENCE_VOCAB_KEY);
+  if (idx === undefined) return;
+
+  const recorded = bank.samples[SILENCE_VOCAB_KEY]?.[0];
+  const emb = recorded ?? syntheticSilenceEmbedding();
+
+  x.push(emb.slice());
+  y.push(idx);
+  for (let a = 0; a < augmentsPerSample; a++) {
+    x.push(augmentReal(emb));
+    y.push(idx);
+  }
 }
 
 /** @deprecated No synthetic templates — use voice bank. */

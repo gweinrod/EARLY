@@ -1,6 +1,7 @@
 import type { CurriculumStageId } from './curriculum';
 import { getStage } from './curriculum';
 import { NMCC } from './dsp';
+import { SILENCE_VOCAB_KEY } from './word-vocabulary';
 
 const BANK_KEY = 'early.voiceBank.v1';
 
@@ -55,11 +56,16 @@ export function clearVoiceBank(stageId: CurriculumStageId): void {
   saveAll(all);
 }
 
+export function hasSilenceSample(stageId: CurriculumStageId): boolean {
+  return (loadVoiceBank(stageId).samples[SILENCE_VOCAB_KEY]?.length ?? 0) > 0;
+}
+
 export function countRecorded(stageId: CurriculumStageId): { done: number; total: number } {
   const bank = loadVoiceBank(stageId);
   const items = getStage(stageId).items;
-  const done = items.filter((it) => (bank.samples[it.key]?.length ?? 0) > 0).length;
-  return { done, total: items.length };
+  const lettersDone = items.filter((it) => (bank.samples[it.key]?.length ?? 0) > 0).length;
+  const silenceDone = hasSilenceSample(stageId) ? 1 : 0;
+  return { done: lettersDone + silenceDone, total: items.length + 1 };
 }
 
 export function isVoiceBankComplete(stageId: CurriculumStageId): boolean {

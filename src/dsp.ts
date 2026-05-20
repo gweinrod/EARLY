@@ -204,6 +204,18 @@ export function extractUtteranceMfcc(frames: Frame[]): number[] | null {
   return out;
 }
 
+/** Average MFCC over every frame (quiet room / silence bootstrap). */
+export function extractSilenceEmbedding(frames: Frame[]): number[] | null {
+  if (frames.length < 4) return null;
+  const out: number[] = [];
+  for (let i = 0; i < NMCC; i++) {
+    let s = 0;
+    for (const f of frames) s += f.mfcc[i];
+    out.push(s / frames.length);
+  }
+  return out;
+}
+
 export function extractEmbedding(frames: Frame[]): number[] | null {
   return extractNucleusMfcc(frames) ?? extractUtteranceMfcc(frames);
 }

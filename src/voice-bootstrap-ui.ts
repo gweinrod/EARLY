@@ -1,6 +1,7 @@
 import type { CurriculumItem, CurriculumStageId } from './curriculum';
 import { getStage } from './curriculum';
-import { embeddingFromRecording } from './audio-embedding';
+import { embeddingFromRecording, silenceEmbeddingFromRecording } from './audio-embedding';
+import { SILENCE_VOCAB_KEY } from './word-vocabulary';
 import {
   addVoiceSample,
   clearVoiceBank,
@@ -84,15 +85,30 @@ export function hideBootstrap(): void {
   stopBootstrapRec();
 }
 
+type BootstrapStep = CurriculumItem & { key: string };
+
+function bootstrapSteps(): BootstrapStep[] {
+  const items = getStage(stageId).items;
+  return [
+    ...items,
+    {
+      key: SILENCE_VOCAB_KEY,
+      display: 'Quiet',
+      spokenName: 'silence — stay quiet ~1 second',
+      phonemeNote: 'Room noise only — maps DSP to "" (no speech).',
+      aliases: [],
+    },
+  ];
+}
+
 function firstMissingIndex(): number {
   const bank = loadVoiceBank(stageId);
-  const items = getStage(stageId).items;
-  const idx = items.findIndex((it) => !(bank.samples[it.key]?.length));
+  const idx = bootstrapSteps().findIndex((it) => !(bank.samples[it.key]?.length));
   return idx >= 0 ? idx : 0;
 }
 
-function currentItem(): CurriculumItem {
-  return getStage(stageId).items[itemIndex];
+function currentItem(): BootstrapStep {
+  return bootstrapSteps()[itemIndex];
 }
 
 function updateBootstrapUi(): void {
@@ -100,10 +116,13 @@ function updateBootstrapUi(): void {
   $('bootstrapProgress').textContent = `${done} / ${total} recorded for this stage`;
   const item = currentItem();
   $('bootstrapTarget').textContent = `${item.display} — say: ${item.spokenName}`;
+  const isSilence = item.key === SILENCE_VOCAB_KEY;
   $('bootstrapStatus').textContent =
     done === total
       ? 'All items recorded. Training neural net…'
-      : 'Say the prompt clearly, then tap record again to stop.';
+      : isSilence
+        ? 'Stay quiet — tap record, wait ~1s, tap again to stop.'
+        : 'Say the prompt clearly, then tap record again to stop.';
 }
 
 async function toggleBootstrapRec(): Promise<void> {
@@ -151,15 +170,20 @@ function stopBootstrapRec(): void {
 
 async function onBootstrapRecorded(): Promise<void> {
   const ctx = getAudioContext();
-  const result = await embeddingFromRecording(ctx, recChunks);
+  const item = currentItem();
+  const isSilence = item.key === SILENCE_VOCAB_KEY;
+  const result = isSilence
+    ? await silenceEmbeddingFromRecording(ctx, recChunks)
+    : await embeddingFromRecording(ctx, recChunks);
   recChunks = [];
 
   if (!result) {
-    $('bootstrapStatus').textContent = 'Too short or quiet — try again, speak a bit longer.';
+    $('bootstrapStatus').textContent = isSilence
+      ? 'Too short — stay quiet a bit longer, then try again.'
+      : 'Too short or quiet — try again, speak a bit longer.';
     return;
   }
 
-  const item = currentItem();
   addVoiceSample(stageId, item.key, result.embedding);
   void uploadVoiceBankSample({
     stageId,
@@ -167,7 +191,10 @@ async function onBootstrapRecorded(): Promise<void> {
     embedding: result.embedding,
   });
   refreshLocalTrainingStatus(stageId);
-  $('bootstrapStatus').textContent = `Saved ${item.display} (${item.spokenName}) — syncing to cloud.`;
+  $('bootstrapStatus').textContent =
+    item.key === SILENCE_VOCAB_KEY
+      ? 'Saved silence (no speech) — syncing to cloud.'
+      : `Saved ${item.display} (${item.spokenName}) — syncing to cloud.`;
 
   if (!isVoiceBankComplete(stageId)) {
     itemIndex = firstMissingIndex();

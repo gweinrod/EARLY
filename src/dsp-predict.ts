@@ -1,5 +1,5 @@
 import { VC, W2C } from './data';
-import { type Frame, extractEmbedding } from './dsp';
+import { type Frame, extractEmbedding, extractSilenceEmbedding } from './dsp';
 import { heuristicFeedback, type FeedbackItem } from './feedback';
 import { heuristicVerdict } from './scoring';
 import {
@@ -11,6 +11,7 @@ import {
   type TfWordPrediction,
 } from './tf-phoneme';
 import type { CurriculumStageId } from './curriculum';
+import { formatVocabKeyForDisplay, isSilenceVocabKey } from './word-vocabulary';
 
 export interface DspPrediction {
   embedding: number[] | null;
@@ -25,16 +26,19 @@ export interface DspPrediction {
 }
 
 const TF_CONFIDENCE_MIN = 0.22;
+/** Below this peak frame RMS, treat as silence (skip TF letter guess). */
+const PEAK_RMS_SILENCE_MAX = 0.014;
 
 function formatTfLine(tf: TfWordPrediction, targetKey: string): string {
+  const guessLabel = formatVocabKeyForDisplay(tf.guessedKey);
   const alt = tf.top3
     .filter((t) => t.key !== tf.guessedKey)
     .slice(0, 2)
-    .map((t) => `${t.key} ${Math.round(t.probability * 100)}%`)
+    .map((t) => `${formatVocabKeyForDisplay(t.key)} ${Math.round(t.probability * 100)}%`)
     .join(', ');
   const pct = Math.round(tf.confidence * 100);
   const targetPct = Math.round(tf.targetProbability * 100);
-  let line = `DSP heard “${tf.guessedKey}” (${pct}%)`;
+  let line = `DSP heard “${guessLabel}” (${pct}%)`;
   if (tf.guessedKey !== targetKey) {
     line += ` · target “${targetKey}” at ${targetPct}%`;
   }
@@ -54,29 +58,49 @@ export async function ensureDspEngine(stageId: CurriculumStageId): Promise<TfIni
   return initTfPhonemeModel(stageId);
 }
 
+function peakFrameRms(frames: Frame[]): number {
+  if (!frames.length) return 0;
+  return Math.max(...frames.map((f) => f.rms));
+}
+
 export function runDspPrediction(
   frames: Frame[],
   targetKey: string,
   groupKey: string,
 ): DspPrediction {
-  const embedding = extractEmbedding(frames);
+  const peakRms = peakFrameRms(frames);
+  const likelySilence = peakRms < PEAK_RMS_SILENCE_MAX;
+
+  const embedding = likelySilence ? extractSilenceEmbedding(frames) : extractEmbedding(frames);
   const heuristicItems = heuristicFeedback(frames, targetKey, groupKey);
   const heuristicPass = heuristicVerdict(heuristicItems);
 
   let tf: TfWordPrediction | null = null;
-  if (embedding && isTfReady() && !isTfPredictBusy()) {
+  if (embedding && isTfReady() && !isTfPredictBusy() && !likelySilence) {
     tf = predictWordForTarget(embedding, targetKey);
   }
 
-  const guessedWord = tf?.guessedKey ?? null;
-  const guessConfidence = tf?.confidence ?? 0;
-  const targetProbability = tf?.targetProbability ?? 0;
+  const quietTake =
+    likelySilence ||
+    (tf !== null && isSilenceVocabKey(tf.guessedKey) && tf.confidence >= TF_CONFIDENCE_MIN);
+
+  const guessedWord = quietTake ? '' : (tf?.guessedKey ?? null);
+  const guessConfidence = quietTake ? 0 : (tf?.confidence ?? 0);
+  const targetProbability = quietTake ? 0 : (tf?.targetProbability ?? 0);
 
   const tfSaysTarget =
-    tf !== null && tf.guessedKey === targetKey.toLowerCase() && tf.confidence >= TF_CONFIDENCE_MIN;
+    !quietTake &&
+    tf !== null &&
+    !isSilenceVocabKey(tf.guessedKey) &&
+    tf.guessedKey === targetKey.toLowerCase() &&
+    tf.confidence >= TF_CONFIDENCE_MIN;
 
   const tfSaysOther =
-    tf !== null && tf.guessedKey !== targetKey.toLowerCase() && tf.confidence >= TF_CONFIDENCE_MIN;
+    !quietTake &&
+    tf !== null &&
+    !isSilenceVocabKey(tf.guessedKey) &&
+    tf.guessedKey !== targetKey.toLowerCase() &&
+    tf.confidence >= TF_CONFIDENCE_MIN;
 
   let dspPass: boolean;
   if (tfSaysTarget) {
