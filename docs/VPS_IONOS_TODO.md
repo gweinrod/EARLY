@@ -19,7 +19,7 @@ Checklist for the **`vps`** branch. Combines [MIGRATION_OFF_VERCEL.md](MIGRATION
 | **Tutoring** | `gregtutors.com` / `www` → `proxy_pass http://127.0.0.1:4200` (**Next.js** `next-server`) |
 | **Tutoring SSL** | Let’s Encrypt `gregtutors.com` (certbot), expires **2026-07-24** |
 | **Apache** | Not installed |
-| **EARLY** | Not deployed yet — static site at `/app/early/dist` + new `early` vhost |
+| **EARLY** | Static + API: `/app/early/dist`, `early` nginx vhost, Postgres API on **8787** |
 
 Tutoring config: `/etc/nginx/sites-available/gregtutors` (leave unchanged).  
 Re-run inventory anytime: `~/vps-inventory.sh` (see chat / create from script in repo notes).
@@ -32,7 +32,7 @@ Re-run inventory anytime: `~/vps-inventory.sh` (see chat / create from script in
 |----------------|----------------------|--------|
 | `/` → static `dist/` | `npm run build` → `dist/` | Same. Ship `public/models/` and `public/tfjs-wasm/` via build. |
 | `GET /api/model` | `GET /models/alphabet/model.json` | App loads shared TF.js model from static files; no API required for class practice. |
-| `POST /api/samples` + PostgreSQL | `POST /api/calibration` + Vercel Blob | Different contract. Phase A: static-only. Phase B: port existing APIs or new backend. |
+| `POST /api/samples` + PostgreSQL | `POST /api/calibration` + Postgres (`server/`) | Phase 5: same `/api/*` routes on VPS; Vercel retired when ready (Phase 7). |
 | Nightly `retrain.py` (sklearn) | `tools/train_global_model.py` (TF.js) | Prefer existing trainer + `public/models/`; train on PC or VPS. |
 | Client `const API = 'https://…'` | Relative `/api/...` | Optional base URL on `vps` branch when API is live. |
 
@@ -44,7 +44,7 @@ Re-run inventory anytime: `~/vps-inventory.sh` (see chat / create from script in
 - [x] Note **IONOS VPS public IP** (same IP for `gregtutors.com` and `early.gregtutors.com`).
 - [x] Run server inventory (nginx, UFW, ports) — **no reinstall needed**.
 - [x] Decide **Phase A** (static app only) vs **Phase B** (API + storage for teacher uploads).
-- [ ] Keep Vercel live until `https://early.gregtutors.com` passes iPad mic + one full practice take.
+- [x] Keep Vercel live until `https://early.gregtutors.com` passes iPad mic + one full practice take.
 
 ---
 
@@ -63,7 +63,7 @@ Everything below is **already on the server** from tutoring. Only install what�
 - [x] Ubuntu **24.04** — keep current image.
 - [x] **nginx** + **certbot** (`python3-certbot-nginx`).
 - [x] **UFW** — SSH, HTTP, HTTPS open.
-- [ ] Optional: dedicated Linux user `early` for deploys (you may use `root` today — fine for Phase 3).
+- [x] Optional: dedicated Linux user `early` for deploys (you may use `root` today — fine for Phase 3).
 - [x] Optional: `apt update && apt upgrade -y` (maintenance only, not required for EARLY).
 - [x] Install only if missing for later phases:
 
@@ -184,13 +184,13 @@ Code: [server/README.md](../server/README.md), [server/index.mjs](../server/inde
 ### Checklist
 
 - [x] Install Postgres on VPS; create `earlydb` / `earlyuser` (localhost only — no public 5432).
-- [ ] `cd /app/early/server && npm install && psql $DATABASE_URL -f schema.sql`
-- [ ] `.env` with `DATABASE_URL`, `PORT=8787`, `DATA_DIR=/var/lib/early/samples`
-- [ ] systemd `early-api.service` → `node index.mjs` (see server README)
-- [ ] nginx `location /api/ { proxy_pass http://127.0.0.1:8787; }` on **early** vhost only
-- [ ] One-time import — see **Phase 5 — Step 4** below
-- [ ] Teacher panel: “Cloud training: N judgments on server” updates without Vercel bill
-- [ ] Training export: `npm run calibration:pull:postgres` (SSH tunnel if DB not exposed)
+- [x] `cd /app/early/server && npm install && psql $DATABASE_URL -f schema.sql`
+- [x] `.env` with `DATABASE_URL`, `PORT=8787`, `DATA_DIR=/var/lib/early/samples`
+- [x] systemd `early-api.service` in `/etc/systemd/system/` — **Step 5** below
+- [x] nginx `location /api/` → `127.0.0.1:8787` — **Step 6** below (early vhost only)
+- [x] One-time import — **Step 4** below (291 unique calibrations if archive has duplicate `attemptId`s)
+- [x] Teacher panel: “Cloud training: N judgments on server” updates without Vercel bill
+- [ ] Training export: `npm run calibration:pull:postgres` (SSH tunnel if DB not exposed) — when training from live DB
 
 **Not using:** PDF FastAPI sample schema (different URLs). **Using:** Postgres + existing JSON bodies.
 
@@ -298,9 +298,136 @@ Omit Step 4. Counts start at **0**; each new teacher **accept** adds rows via PO
 | Import count 0 | Run `git pull`; check `ls data/training-archive/calibration \| head` |
 | Permission denied on DB | Re-run GRANTs as `postgres` (Step 1 in server README) |
 
+**619 files vs 291 rows:** The archive has many JSON files sharing the same `attemptId`. Postgres keeps one row per `(kind, attempt_id)` — that is correct for training counts.
+
 #### After import
 
-Continue Phase 5: **systemd** `early-api` + nginx **`location /api/`** → then test on iPad.
+Continue with **Step 5** (systemd) and **Step 6** (nginx).
+
+### Step 5 — systemd (`early-api`)
+
+Run on the VPS. Uses the `early` Linux user (same as deploy).
+
+#### 5a — Server deps and sample directory
+
+```bash
+cd /app/early/server
+npm install
+
+# Optional JSON mirror on upload (API still works if this fails)
+sudo mkdir -p /var/lib/early/samples
+sudo chown early:early /var/lib/early/samples
+
+# .env must exist (chmod 600). Example:
+#   DATABASE_URL=postgresql://earlyuser:PASSWORD@127.0.0.1:5432/earlydb
+#   PORT=8787
+#   DATA_DIR=/var/lib/early/samples
+nano .env
+```
+
+#### 5b — Node path
+
+```bash
+which node
+# e.g. /usr/bin/node — use that path in the unit file below
+```
+
+#### 5c — Install unit file
+
+```bash
+sudo tee /etc/systemd/system/early-api.service <<'EOF'
+[Unit]
+Description=EARLY training API (Postgres)
+After=network.target postgresql.service
+
+[Service]
+User=early
+WorkingDirectory=/app/early/server
+EnvironmentFile=/app/early/server/.env
+ExecStart=/usr/bin/node /app/early/server/index.mjs
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
+EOF
+```
+
+If `which node` is not `/usr/bin/node`, change `ExecStart=` to match (e.g. `/home/early/.nvm/versions/node/v20.x.x/bin/node`).
+
+#### 5d — Start and verify
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl enable early-api
+sudo systemctl start early-api
+sudo systemctl status early-api --no-pager
+```
+
+**Healthy:**
+
+```bash
+curl -s http://127.0.0.1:8787/health
+# {"ok":true}
+
+curl -s "http://127.0.0.1:8787/api/calibration?stage=alphabet"
+# {"total":291,"byStage":{"alphabet":291}}  (your counts)
+
+curl -s "http://127.0.0.1:8787/api/voice-bank?stage=alphabet"
+# {"total":26,"byStage":{"alphabet":26}}
+```
+
+**If it fails:** `sudo journalctl -u early-api -n 50 --no-pager` (common: wrong `DATABASE_URL`, missing `npm install` in `server/`, bad password).
+
+### Step 6 — nginx (API proxy on early vhost only)
+
+Edit **only** the EARLY site — do not change `gregtutors.com` (port 4200).
+
+Certbot usually added a **443** `server` block. Add `location /api/` there (and optionally on port 80 if you still serve HTTP).
+
+```bash
+sudo nano /etc/nginx/sites-available/early
+```
+
+Inside the **`listen 443 ssl`** block (the one with `root /app/early/dist;`), add **before** or **after** `location / { ... }`:
+
+```nginx
+  location /api/ {
+    proxy_pass http://127.0.0.1:8787;
+    proxy_http_version 1.1;
+    proxy_set_header Host $host;
+    proxy_set_header X-Real-IP $remote_addr;
+    proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+    proxy_set_header X-Forwarded-Proto $scheme;
+  }
+```
+
+`location /` with `try_files` stays as-is for the static app. `/api/*` goes to Node; everything else stays static.
+
+```bash
+sudo nginx -t
+sudo systemctl reload nginx
+```
+
+#### 6b — Public HTTPS check
+
+```bash
+curl -s "https://early.gregtutors.com/api/calibration?stage=alphabet"
+curl -s "https://early.gregtutors.com/api/voice-bank?stage=alphabet"
+```
+
+(`/health` over HTTPS still serves `index.html` unless you add a dedicated `location` — use `http://127.0.0.1:8787/health` for a direct API check.)
+
+On iPad: teacher panel → **Cloud training: 26 voice · 291 judgments** (no Vercel Blob traffic).
+
+#### 6c — After server code changes
+
+```bash
+cd /app/early && git pull origin vps
+cd server && npm install
+sudo systemctl restart early-api
+```
+
+Static app only: `/app/deploy-early.sh` (no API restart needed unless `server/` changed).
 
 ---
 
@@ -322,8 +449,8 @@ Uses `data/training-archive/` in Git (647 files).
 
 ## Phase 7 — Cutover & decommission Vercel
 
-- [ ] Point classroom to `https://early.gregtutors.com`
-- [ ] Final Blob export on PC if needed (`npm run calibration:pull` + `training:archive`)
+- [x] Point classroom to `https://early.gregtutors.com`
+- [ ] Optional: final Blob export on PC (`npm run calibration:pull` + `training:archive`) if anything never made it into Git
 - [ ] Pause Vercel after one week stable on VPS
 - [ ] Update [DEPLOY.md](DEPLOY.md) (PR `vps` → `main`)
 
@@ -333,14 +460,14 @@ Uses `data/training-archive/` in Git (647 files).
 
 | Test | Pass? |
 |------|-------|
-| `https://gregtutors.com` still loads (tutoring / Next.js) | |
-| `https://early.gregtutors.com` loads, no cert warnings | |
-| `/models/alphabet/manifest.json` shows `"version": 5` (or newer) | |
-| `/tfjs-wasm/*.wasm` returns 200, `application/wasm` | |
-| iPad Safari: mic works on HTTPS | |
-| One take: ASR + DSP + pass/fail UI | |
-| Teacher panel: export session log | |
-| (If API live) cloud training counts update after accept | |
+| `https://gregtutors.com` still loads (tutoring / Next.js) | [x] |
+| `https://early.gregtutors.com` loads, no cert warnings | [x] |
+| `/models/alphabet/manifest.json` shows `"version": 5` (or newer) | [x] |
+| `/tfjs-wasm/*.wasm` returns 200, `application/wasm` | [x] |
+| iPad Safari: mic works on HTTPS | [x] |
+| One take: ASR + DSP + pass/fail UI | [x] |
+| Teacher panel: export session log | [x] |
+| Cloud training counts (Postgres API) update / match teacher panel | [x] |
 
 ---
 
@@ -358,9 +485,9 @@ Uses `data/training-archive/` in Git (647 files).
 ## Suggested order
 
 1. ~~Phase 0–1~~ (done)  
-2. **Phase 2** — skim inventory; optional `apt upgrade` only  
-3. **Phase 3** — `early` vhost + build + certbot + iPad test  
-4. **Phase 4** — `deploy-early.sh`  
-5. **Phase 6** — retrain/publish model when needed  
-6. **Phase 5** — only if you need multi-device cloud sync  
-7. **Phase 7** — turn off Vercel
+2. ~~Phase 2~~ — inventory  
+3. ~~Phase 3~~ — `early` vhost + build + certbot + iPad test  
+4. ~~Phase 4~~ — `deploy-early.sh`  
+5. ~~Phase 5~~ — Postgres API + systemd + nginx `/api/`  
+6. **Phase 6** — retrain/publish model when needed  
+7. **Phase 7** — pause Vercel after a stable week; merge docs to `main`
