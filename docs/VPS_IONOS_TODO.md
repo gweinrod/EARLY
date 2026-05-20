@@ -64,8 +64,8 @@ Everything below is **already on the server** from tutoring. Only install what�
 - [x] **nginx** + **certbot** (`python3-certbot-nginx`).
 - [x] **UFW** — SSH, HTTP, HTTPS open.
 - [ ] Optional: dedicated Linux user `early` for deploys (you may use `root` today — fine for Phase 3).
-- [ ] Optional: `apt update && apt upgrade -y` (maintenance only, not required for EARLY).
-- [ ] Install only if missing for later phases:
+- [x] Optional: `apt update && apt upgrade -y` (maintenance only, not required for EARLY).
+- [x] Install only if missing for later phases:
 
   ```bash
   # Check first: git --version; node -v; python3 --version
@@ -74,7 +74,7 @@ Everything below is **already on the server** from tutoring. Only install what�
   # postgresql — only for Phase 5 Option B
   ```
 
-- [ ] Confirm tutoring still works after any changes: `https://gregtutors.com` → Next.js on **4200** (do not stop `next-server`).
+- [x] Confirm tutoring still works after any changes: `https://gregtutors.com` → Next.js on **4200** (do not stop `next-server`).
 
 ---
 
@@ -83,7 +83,7 @@ Everything below is **already on the server** from tutoring. Only install what�
 Works with **no** backend; uses committed model under `/models/alphabet/`.  
 **Does not** modify `/etc/nginx/sites-available/gregtutors`.
 
-- [ ] Create app directory (separate from tutoring):
+- [x] Create app directory (separate from tutoring):
 
   ```bash
   sudo mkdir -p /app/early/dist
@@ -93,7 +93,7 @@ Works with **no** backend; uses committed model under `/models/alphabet/`.
   git checkout vps   # or main after merge
   ```
 
-- [ ] Build on **PC** (recommended) or on VPS with Node 20:
+- [x] Build on **PC** (recommended) or on VPS with Node 20:
 
   ```bash
   # On PC (Windows):
@@ -105,7 +105,7 @@ Works with **no** backend; uses committed model under `/models/alphabet/`.
 
   `npm run build` copies `public/models/` and `public/tfjs-wasm/` into `dist/`.
 
-- [ ] New nginx site `/etc/nginx/sites-available/early` (HTTP first):
+- [x] New nginx site `/etc/nginx/sites-available/early` (HTTP first):
 
   ```nginx
   server {
@@ -127,7 +127,7 @@ Works with **no** backend; uses committed model under `/models/alphabet/`.
   }
   ```
 
-- [ ] Enable site (keep `gregtutors` and existing `default` as they are):
+- [x] Enable site (keep `gregtutors` and existing `default` as they are):
 
   ```bash
   sudo ln -s /etc/nginx/sites-available/early /etc/nginx/sites-enabled/
@@ -135,11 +135,11 @@ Works with **no** backend; uses committed model under `/models/alphabet/`.
   sudo systemctl reload nginx
   ```
 
-- [ ] SSL (after DNS OK): `sudo certbot --nginx -d early.gregtutors.com`  
+- [x] SSL (after DNS OK): `sudo certbot --nginx -d early.gregtutors.com`  
   Adds a **separate** cert; does not change `gregtutors.com` cert paths.
 
-- [ ] Test in **Safari on iPad**: HTTPS, mic, footer **v0.68+**, shared model **v5+**
-- [ ] Add to Home Screen; one letter take in collector/teacher mode
+- [x] Test in **Safari on iPad**: HTTPS, mic, footer **v0.68+**, shared model **v5+**
+- [x] Add to Home Screen; one letter take in collector/teacher mode
 
 **Phase 3 done when:** `https://early.gregtutors.com` works and tutoring at `gregtutors.com` is unchanged.
 
@@ -147,7 +147,7 @@ Works with **no** backend; uses committed model under `/models/alphabet/`.
 
 ## Phase 4 — Deploy script (repeatable updates)
 
-- [ ] Create `/app/deploy-early.sh` on VPS:
+- [x] Create `/app/deploy-early.sh` on VPS:
 
   ```bash
   #!/bin/bash
@@ -162,30 +162,37 @@ Works with **no** backend; uses committed model under `/models/alphabet/`.
   echo "Deployed $(git rev-parse --short HEAD) → /app/early/dist"
   ```
 
-- [ ] `chmod +x /app/deploy-early.sh`
-- [ ] From PC: `ssh root@early.gregtutors.com /app/deploy-early.sh`
+- [x] `chmod +x /app/deploy-early.sh`
+- [x] From PC: `ssh root@early.gregtutors.com /app/deploy-early.sh`
 
 ---
 
-## Phase 5 — Backend (optional — teacher cloud sync)
+## Phase 5 — Postgres training API (teacher cloud sync)
 
-Pick **one** path; do not build both at once.
+**Why:** Vercel Blob **list** on every stats refresh burned “advanced” ops. The old API never incremented `counts.json` on POST, so GET often listed **every** judgment file.
 
-### Option A — Port current EARLY APIs (closest to today)
+**Approach:** `server/` — Node + **PostgreSQL** + same `/api/*` routes. UI unchanged (same origin on `early.gregtutors.com`).
 
-- [ ] Run Node adapter on VPS (or keep training as **git + manual train** only).
-- [ ] Replace Vercel Blob with disk or S3-compatible storage; keep routes:
-  - `GET/POST /api/calibration?stage=alphabet`
-  - `GET/POST /api/voice-bank?stage=alphabet`
-- [ ] Nginx: `location /api/` on `early.gregtutors.com` → backend (separate port from **4200**).
-- [ ] On `vps` branch: configurable API base URL if needed.
+| Op | Cost |
+|----|------|
+| **GET** `?stage=alphabet` | `SELECT sample_count` from `stage_sample_counts` — O(1) |
+| **POST** upload | `INSERT` sample + **increment counter** in one transaction |
+| **Clear server** | `DELETE` + reset counters (no Blob list) |
 
-### Option B — PDF FastAPI + PostgreSQL (greenfield)
+Code: [server/README.md](../server/README.md), [server/index.mjs](../server/index.mjs), [server/schema.sql](../server/schema.sql).
 
-- [ ] `sudo apt install postgresql postgresql-contrib` if not present.
-- [ ] DB + tables per PDF; uvicorn on e.g. `127.0.0.1:8000` (not 4200).
-- [ ] Proxy only from `early.gregtutors.com` `/api/`.
-- [ ] Prefer repo `train_global_model.py` over PDF sklearn `retrain.py` for model weights.
+### Checklist
+
+- [ ] Install Postgres on VPS; create `earlydb` / `earlyuser` (localhost only — no public 5432).
+- [ ] `cd /app/early/server && npm install && psql $DATABASE_URL -f schema.sql`
+- [ ] `.env` with `DATABASE_URL`, `PORT=8787`, `DATA_DIR=/var/lib/early/samples`
+- [ ] systemd `early-api.service` → `node index.mjs` (see server README)
+- [ ] nginx `location /api/ { proxy_pass http://127.0.0.1:8787; }` on **early** vhost only
+- [ ] One-time import: `npm run calibration:pull` (Blob) then `npm run calibration:import:postgres` on PC, **or** import on VPS from archive
+- [ ] Teacher panel: “Cloud training: N judgments on server” updates without Vercel bill
+- [ ] Training export: `npm run calibration:pull:postgres` (SSH tunnel if DB not exposed)
+
+**Not using:** PDF FastAPI sample schema (different URLs). **Using:** Postgres + existing JSON bodies.
 
 ---
 

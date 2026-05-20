@@ -1,0 +1,13 @@
+[Unit]
+Description=EARLY training API (Postgres)
+After=network.target postgresql.service
+
+[Service]
+User=early
+WorkingDirectory=/app/early/server
+EnvironmentFile=/app/early/server/.env
+ExecStart=/usr/bin/node /app/early/server/index.mjs
+Restart=always
+
+[Install]
+WantedBy=multi-user.target
