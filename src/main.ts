@@ -107,7 +107,7 @@ let eeTailBackfill: { heard: string; asrPass: boolean } | null = null;
 /** End take after speech pauses (post-speech tail). */
 const ASR_PAUSE_MS = 1400;
 /** Extra wait when Chrome only heard the consonant of bee/dee before onend. */
-const ASR_EE_TAIL_MS = 2200;
+const ASR_EE_TAIL_MS = 900;
 /** Brief floor so auto-stop does not fire on the first syllable. */
 const MIN_TAKE_MS = 350;
 /** Min time for full "bee" before ee-tail autofill ends the take (one utterance). */
@@ -414,7 +414,7 @@ function scheduleMediaStop(): void {
   const hasTranscript = pendingHeard !== null && pendingHeard.length > 0;
   if (!hasTranscript) setAsrWaitStatus('checking speech…');
 
-  const ms = lockedEeTailAsr ? 0 : hasTranscript ? 650 : 2800;
+  const ms = lockedEeTailAsr ? 0 : hasTranscript ? 650 : 800;
   takeLog('scheduleMediaStop', { delayMs: ms, hasTranscript, immediate: !!lockedEeTailAsr });
   asrWaitTimer = setTimeout(() => {
     asrWaitTimer = null;
@@ -892,8 +892,12 @@ async function toggleRec(): Promise<void> {
           takeLog('scheduleAsrPauseEnd skipped', { why, endingTake, locked: !!lockedEeTailAsr, asrEnded });
           return;
         }
-        clearAsrPauseTimer();
         const raw = pendingHeard ?? '';
+        if (asrPauseTimer && sawIncompleteEeOnEnd && isIncompleteEeNamePrefix(raw, curItem)) {
+          takeLog('scheduleAsrPauseEnd held (ee-tail locked)', { why });
+          return;
+        }
+        clearAsrPauseTimer();
         const incomplete =
           !!raw && isIncompleteEeNamePrefix(raw, curItem) && !sawIncompleteEeOnEnd;
         const ms = incomplete || (raw && isIncompleteEeNamePrefix(raw, curItem))
@@ -913,11 +917,17 @@ async function toggleRec(): Promise<void> {
             return;
           }
           const h = pendingHeard ?? '';
-          if (isIncompleteEeNamePrefix(h, curItem) && !sawIncompleteEeOnEnd) {
-            // Chrome Win often never fires onend after lone "b"; don't reschedule forever.
-            takeLog('pauseTimer force ee-tail autofill (no onend)');
-            sawIncompleteEeOnEnd = true;
-            applyAsrTranscript(h);
+          if (isIncompleteEeNamePrefix(h, curItem)) {
+            if (sawIncompleteEeOnEnd) {
+              const resolved = normalizeHeardLabel(curItem.spokenName);
+              takeLog('pauseTimer pause-ee-forced', { resolved });
+              lockedEeTailAsr = { heard: resolved, pass: true };
+              endTake('pause-ee-forced');
+            } else {
+              takeLog('pauseTimer force ee-tail autofill (no onend)');
+              sawIncompleteEeOnEnd = true;
+              applyAsrTranscript(h);
+            }
             return;
           }
           if (pendingAsrPass && sawIncompleteEeOnEnd && letterNameIsKeyPlusEe(curItem)) {
