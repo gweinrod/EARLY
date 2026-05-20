@@ -117,6 +117,8 @@ const EE_TAIL_MIN_TAKE_MS = 850;
 const ASR_MAX_RESTARTS_PER_TAKE = 24;
 /** Hard cap per tap (was 12s — too long when Chrome never returns onresult). */
 const MAX_TAKE_MS = 4000;
+/** Ignore phantom ASR / auto-end until the mic has been open this long. */
+const MIN_RECORDING_MS = 600;
 let stopWave: (() => void) | null = null;
 let lastDsp: DspPrediction | null = null;
 let pendingHeard: string | null = null;
@@ -333,11 +335,28 @@ function clearAsrNoResultTimer(): void {
   }
 }
 
+function takeElapsedMs(): number {
+  return takeStartedAt ? Date.now() - takeStartedAt : 0;
+}
+
+function canAutoEndTake(): boolean {
+  return takeElapsedMs() >= MIN_RECORDING_MS;
+}
+
+/** Chrome often emits a phantom lone letter the instant the mic opens. */
+function isPhantomKeyTranscript(heard: string): boolean {
+  if (!letterNameIsKeyPlusEe(curItem)) return false;
+  if (takeElapsedMs() >= EE_TAIL_MIN_TAKE_MS) return false;
+  const tokens = normalizeHeardLabel(heard).split(/\s+/).filter(Boolean);
+  return tokens.length === 1 && tokens[0] === curItem.key;
+}
+
 /** When Chrome never delivers onresult, still end bee/dee letters with full spoken name. */
 function forceEeLetterNameEndTake(caller: string): boolean {
   if (endingTake || lockedEeTailAsr || attemptFinalized) return false;
   if (!letterNameIsKeyPlusEe(curItem)) return false;
-  if (Date.now() - takeStartedAt < EE_TAIL_MIN_TAKE_MS) return false;
+  if (!canAutoEndTake() || takeElapsedMs() < EE_TAIL_MIN_TAKE_MS) return false;
+  if (takeAsrAccum.trim() || (pendingHeard ?? '').trim()) return false;
   const resolved = normalizeHeardLabel(curItem.spokenName);
   lockedEeTailAsr = {
     heard: resolved,
@@ -355,11 +374,14 @@ function scheduleAsrNoResultWatchdog(session: number): void {
   asrNoResultTimer = setTimeout(() => {
     asrNoResultTimer = null;
     if (session !== takeSessionId || endingTake || attemptFinalized || !listening) return;
+    if (!canAutoEndTake()) return;
     const raw = pendingHeard ?? '';
-    if (raw && !isIncompleteEeNamePrefix(raw, curItem)) return;
-    if (raw) {
-      sawIncompleteEeOnEnd = true;
-      applyAsrTranscript(raw);
+    const accum = takeAsrAccum.trim();
+    if (raw || accum) {
+      if (raw && isIncompleteEeNamePrefix(raw, curItem)) {
+        sawIncompleteEeOnEnd = true;
+        applyAsrTranscript(raw);
+      }
       return;
     }
     forceEeLetterNameEndTake('no-asr-watchdog');
@@ -606,7 +628,8 @@ function finalizeAttempt(): void {
   if (
     !heard.trim() &&
     letterNameIsKeyPlusEe(curItem) &&
-    lastDsp?.tf?.guessedKey === curItem.key
+    lastDsp?.tf?.guessedKey === curItem.key &&
+    takeElapsedMs() >= EE_TAIL_MIN_TAKE_MS
   ) {
     heard = normalizeHeardLabel(curItem.spokenName);
     asrPass = transcriptMatchesItemForScoring(curStageId, heard, curItem);
@@ -652,7 +675,8 @@ function applyAsrTranscript(heard: string): void {
   if (
     listening &&
     !endingTake &&
-    Date.now() - takeStartedAt >= EE_TAIL_MIN_TAKE_MS &&
+    canAutoEndTake() &&
+    takeElapsedMs() >= EE_TAIL_MIN_TAKE_MS &&
     shouldEndTakeFromEeTailAutofill(resolved)
   ) {
     takeLog('ee-tail autofill → endTake');
@@ -956,11 +980,9 @@ async function toggleRec(): Promise<void> {
         const incomplete =
           !!raw && isIncompleteEeNamePrefix(raw, curItem) && !sawIncompleteEeOnEnd;
         const ms =
-          !raw && letterNameIsKeyPlusEe(curItem)
-            ? EE_TAIL_MIN_TAKE_MS + 80
-            : incomplete || (raw && isIncompleteEeNamePrefix(raw, curItem))
-              ? ASR_EE_TAIL_MS
-              : ASR_PAUSE_MS;
+          incomplete || (raw && isIncompleteEeNamePrefix(raw, curItem))
+            ? ASR_EE_TAIL_MS
+            : ASR_PAUSE_MS;
         takeLog('scheduleAsrPauseEnd', { why, delayMs: ms, incomplete, raw });
         asrPauseTimer = setTimeout(() => {
           asrPauseTimer = null;
@@ -974,11 +996,12 @@ async function toggleRec(): Promise<void> {
             });
             return;
           }
-          const h = pendingHeard ?? '';
-          if (!h) {
-            forceEeLetterNameEndTake('pause-no-asr');
+          if (!canAutoEndTake()) {
+            scheduleAsrPauseEnd('pause-wait-min-recording');
             return;
           }
+          const h = pendingHeard ?? '';
+          if (!h) return;
           if (isIncompleteEeNamePrefix(h, curItem)) {
             if (sawIncompleteEeOnEnd) {
               const resolved = normalizeHeardLabel(curItem.spokenName);
@@ -1012,6 +1035,10 @@ async function toggleRec(): Promise<void> {
         const eventText = fullTranscriptFromEvent(e);
         if (!eventText) return;
         const heard = mergeTakeTranscript(takeAsrAccum, eventText, curItem);
+        if (isPhantomKeyTranscript(heard)) {
+          takeLog('onresult ignore phantom key', { heard, takeMs: takeElapsedMs() });
+          return;
+        }
         takeAsrAccum = heard;
         const isFinal = eventHasFinalTranscript(e);
 
@@ -1019,7 +1046,7 @@ async function toggleRec(): Promise<void> {
         if (
           letterNameIsKeyPlusEe(curItem) &&
           isIncompleteEeNamePrefix(heard, curItem) &&
-          Date.now() - takeStartedAt >= EE_TAIL_MIN_TAKE_MS
+          takeElapsedMs() >= EE_TAIL_MIN_TAKE_MS
         ) {
           sawIncompleteEeOnEnd = true;
         }
@@ -1028,7 +1055,8 @@ async function toggleRec(): Promise<void> {
         if (!listening || endingTake) return;
 
         if (
-          Date.now() - takeStartedAt >= MIN_TAKE_MS &&
+          canAutoEndTake() &&
+          takeElapsedMs() >= MIN_TAKE_MS &&
           transcriptMatchesItemForAutoStop(curStageId, heard, curItem, isFinal)
         ) {
           clearAsrPauseTimer();
@@ -1065,7 +1093,8 @@ async function toggleRec(): Promise<void> {
         if (
           heardOnEnd &&
           !isIncompleteEeNamePrefix(heardOnEnd, curItem) &&
-          Date.now() - takeStartedAt >= MIN_TAKE_MS &&
+          canAutoEndTake() &&
+          takeElapsedMs() >= MIN_TAKE_MS &&
           transcriptMatchesItemForSessionEnd(curStageId, heardOnEnd, curItem)
         ) {
           takeLog('onend → endTake session match');
@@ -1075,7 +1104,13 @@ async function toggleRec(): Promise<void> {
         }
         if (isIncompleteEeNamePrefix(heardOnEnd, curItem)) {
           takeLog('onend incomplete');
-          sawIncompleteEeOnEnd = true;
+          if (isPhantomKeyTranscript(heardOnEnd)) {
+            takeLog('onend ignore phantom key');
+            return;
+          }
+          if (takeElapsedMs() >= EE_TAIL_MIN_TAKE_MS) {
+            sawIncompleteEeOnEnd = true;
+          }
           clearAsrPauseTimer();
           applyAsrTranscript(heardOnEnd);
           if (endingTake || !listening || lockedEeTailAsr) {
@@ -1105,7 +1140,6 @@ async function toggleRec(): Promise<void> {
       };
       try {
         recognition.start();
-        scheduleAsrPauseEnd('take-start');
         scheduleAsrNoResultWatchdog(session);
       } catch {
         activeRecognition = null;
