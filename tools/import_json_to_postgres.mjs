@@ -49,8 +49,25 @@ const schema = fs.readFileSync(path.join(root, 'server', 'schema.sql'), 'utf8');
 await pool.query(schema);
 await pool.query(`TRUNCATE training_samples, stage_sample_counts`);
 
-const cal = await importDir('calibration', path.join(root, 'data', 'calibration'));
-const voice = await importDir('voice_bank', path.join(root, 'data', 'voice-bank'));
+const calDir =
+  process.env.CALIBRATION_DIR ??
+  (fs.existsSync(path.join(root, 'data', 'calibration')) &&
+  fs.readdirSync(path.join(root, 'data', 'calibration')).some((f) => f.endsWith('.json'))
+    ? path.join(root, 'data', 'calibration')
+    : path.join(root, 'data', 'training-archive', 'calibration'));
+
+const voiceDir =
+  process.env.VOICE_BANK_DIR ??
+  (fs.existsSync(path.join(root, 'data', 'voice-bank')) &&
+  fs.readdirSync(path.join(root, 'data', 'voice-bank')).some((f) => f.endsWith('.json'))
+    ? path.join(root, 'data', 'voice-bank')
+    : path.join(root, 'data', 'training-archive', 'voice-bank'));
+
+console.log(`Calibration JSON dir: ${calDir}`);
+console.log(`Voice-bank JSON dir: ${voiceDir}`);
+
+const cal = await importDir('calibration', calDir);
+const voice = await importDir('voice_bank', voiceDir);
 
 await pool.query(`
   INSERT INTO stage_sample_counts (kind, stage_id, sample_count, updated_at)

@@ -183,16 +183,124 @@ Code: [server/README.md](../server/README.md), [server/index.mjs](../server/inde
 
 ### Checklist
 
-- [ ] Install Postgres on VPS; create `earlydb` / `earlyuser` (localhost only — no public 5432).
+- [x] Install Postgres on VPS; create `earlydb` / `earlyuser` (localhost only — no public 5432).
 - [ ] `cd /app/early/server && npm install && psql $DATABASE_URL -f schema.sql`
 - [ ] `.env` with `DATABASE_URL`, `PORT=8787`, `DATA_DIR=/var/lib/early/samples`
 - [ ] systemd `early-api.service` → `node index.mjs` (see server README)
 - [ ] nginx `location /api/ { proxy_pass http://127.0.0.1:8787; }` on **early** vhost only
-- [ ] One-time import: `npm run calibration:pull` (Blob) then `npm run calibration:import:postgres` on PC, **or** import on VPS from archive
+- [ ] One-time import — see **Phase 5 — Step 4** below
 - [ ] Teacher panel: “Cloud training: N judgments on server” updates without Vercel bill
 - [ ] Training export: `npm run calibration:pull:postgres` (SSH tunnel if DB not exposed)
 
 **Not using:** PDF FastAPI sample schema (different URLs). **Using:** Postgres + existing JSON bodies.
+
+### Step 4 — One-time import (detailed)
+
+**Before you start:** Steps 1–3 done — Postgres running, `earlydb` + `earlyuser` created, `schema.sql` applied, `/app/early/server/.env` has a working `DATABASE_URL`.
+
+**Warning:** The import script **`TRUNCATE`s** `training_samples` and `stage_sample_counts` and rebuilds counts. Safe on a **fresh** DB; do not run if you already have live uploads you care about.
+
+#### What gets imported
+
+| Source folder (in repo) | DB `kind` | Typical count |
+|-------------------------|-----------|---------------|
+| `data/training-archive/calibration/*.json` | `calibration` | ~620 judgments |
+| `data/training-archive/voice-bank/*.json` | `voice_bank` | ~27 voice seed |
+
+The importer auto-uses `data/training-archive/` when `data/calibration/` is empty (after `git pull` on `vps`).
+
+#### Path A — Import on the VPS from Git archive (recommended)
+
+```bash
+cd /app/early
+git pull origin vps
+
+# Confirm archive is present
+ls data/training-archive/calibration/*.json | wc -l
+ls data/training-archive/voice-bank/*.json | wc -l
+
+# Root package needs `pg` (for the import script)
+npm install
+
+# Load DB URL from server .env
+set -a
+source server/.env
+set +a
+
+# Run import (1–3 minutes for ~650 files)
+npm run calibration:import:postgres
+```
+
+**Expected output (approximate):**
+
+```text
+Calibration JSON dir: .../data/training-archive/calibration
+Voice-bank JSON dir: .../data/training-archive/voice-bank
+Imported 620 calibration + 27 voice JSON files.
+  calibration: 620 counted in stage_sample_counts
+  voice_bank: 27 counted in stage_sample_counts
+```
+
+#### Verify in Postgres
+
+```bash
+psql "$DATABASE_URL" -c "SELECT kind, stage_id, sample_count FROM stage_sample_counts ORDER BY kind, stage_id;"
+psql "$DATABASE_URL" -c "SELECT COUNT(*) FROM training_samples WHERE kind='calibration';"
+```
+
+#### Verify through the API (after Step 5 nginx + systemd)
+
+```bash
+curl -s "http://127.0.0.1:8787/api/calibration?stage=alphabet"
+curl -s "http://127.0.0.1:8787/api/voice-bank?stage=alphabet"
+```
+
+Expect `"total":620` and `"total":27` (or your actual file counts). In the teacher UI: **Cloud training: 27 voice on server · 620 judgments on server**.
+
+#### Path B — Import from Vercel Blob (if archive is stale)
+
+Use while `BLOB_READ_WRITE_TOKEN` still works.
+
+**On your Windows PC** (`C:\EARLY`, `.env` with token):
+
+```powershell
+cd C:\EARLY
+npm run calibration:pull
+```
+
+**Copy to VPS** (replace IP/host):
+
+```powershell
+scp -r data/calibration early@YOUR_VPS:/app/early/data/
+scp -r data/voice-bank early@YOUR_VPS:/app/early/data/
+```
+
+**On VPS** (importer prefers `data/calibration/` when it has files):
+
+```bash
+cd /app/early
+npm install
+set -a && source server/.env && set +a
+npm run calibration:import:postgres
+```
+
+#### Path C — Skip import (start empty)
+
+Omit Step 4. Counts start at **0**; each new teacher **accept** adds rows via POST. Fine for testing; you lose historical judgments until you import later.
+
+#### Troubleshooting
+
+| Problem | Fix |
+|---------|-----|
+| `Set DATABASE_URL` | `source server/.env` from `/app/early` |
+| `role "early" does not exist` | Use full URL with `earlyuser@127.0.0.1`, not bare `psql` |
+| `Cannot find module 'pg'` | Run `npm install` in `/app/early` (repo root) |
+| Import count 0 | Run `git pull`; check `ls data/training-archive/calibration \| head` |
+| Permission denied on DB | Re-run GRANTs as `postgres` (Step 1 in server README) |
+
+#### After import
+
+Continue Phase 5: **systemd** `early-api` + nginx **`location /api/`** → then test on iPad.
 
 ---
 
