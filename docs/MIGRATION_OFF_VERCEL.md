@@ -1,5 +1,7 @@
 # Moving EARLY off Vercel
 
+**Active rollout checklist (IONOS):** [VPS_IONOS_TODO.md](VPS_IONOS_TODO.md) on the `vps` branch.
+
 The classroom app is a **static Vite build** plus optional **cloud training APIs**. You can split those: host the app anywhere; store training samples wherever you like.
 
 ## What you need in production (minimum)
