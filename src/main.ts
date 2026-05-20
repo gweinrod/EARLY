@@ -115,7 +115,7 @@ const MIN_TAKE_MS = 350;
 const EE_TAIL_MIN_TAKE_MS = 850;
 /** Chrome ends continuous ASR often; restart in the same take (not a second tap). */
 const ASR_MAX_RESTARTS_PER_TAKE = 24;
-/** Hard cap per tap (was 12s â€” too long when Chrome never returns onresult). */
+/** Hard cap per tap (was 12s " too long when Chrome never returns onresult). */
 const MAX_TAKE_MS = 4000;
 /** Ignore phantom ASR / auto-end until the mic has been open this long. */
 const MIN_RECORDING_MS = 600;
@@ -123,7 +123,7 @@ const MIN_RECORDING_MS = 600;
 const SPEECH_RMS_THRESHOLD = 0.028;
 let stopWave: (() => void) | null = null;
 let speechCheckInterval: ReturnType<typeof setInterval> | null = null;
-/** Set when mic energy exceeds threshold â€” lone "b" ASR is ignored until then. */
+/** Set when mic energy exceeds threshold " lone "b" ASR is ignored until then. */
 let speechDetectedThisTake = false;
 let lastDsp: DspPrediction | null = null;
 let pendingHeard: string | null = null;
@@ -151,7 +151,7 @@ function setTargetItem(item: CurriculumItem): void {
   curItem = item;
   const stage = getStage(curStageId);
   $('tWord').textContent = item.display;
-  $('tPhon').textContent = `say: ${item.spokenName} Â· ${item.phonemeNote}`;
+  $('tPhon').textContent = `say: ${item.spokenName} | ${item.phonemeNote}`;
   $('stageSubtitle').textContent = stage.subtitle;
   clearFB();
   hide('hmWrap');
@@ -202,7 +202,7 @@ async function processAudio(dspBackfill = false): Promise<void> {
 
     if (frames.length < 4) {
       if (!lockedEeTailAsr) {
-        displayFeedback([{ t: 'warn', s: 'Recording too short â€” try again' }]);
+        displayFeedback([{ t: 'warn', s: 'Recording too short " try again' }]);
         pendingHeard = null;
         pendingAsrPass = null;
         attemptFinalized = true;
@@ -414,14 +414,14 @@ function backfillEeTailCollector(): void {
   if (asrPass && heard.trim() && lastDsp.dspPass) {
     const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: false });
     addFB(
-      { t: 'pass', s: `DSP and ASR agree on â€œ${heard}â€ â€” saved for training.` },
+      { t: 'pass', s: `DSP and ASR agree on "${heard}" " saved for training.` },
       true,
     );
     void onTeacherJudgment(judgment);
   } else if (asrPass && heard.trim() && !lastDsp.dspPass) {
     const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: true });
     addFB(
-      { t: 'pass', s: `ASR correct, DSP missed â€” pass; saved for training.` },
+      { t: 'pass', s: `ASR correct, DSP missed " pass; saved for training.` },
       true,
     );
     void onTeacherJudgment(judgment);
@@ -460,7 +460,7 @@ function scheduleMediaStop(): void {
   }
   clearAsrWait();
   const hasTranscript = pendingHeard !== null && pendingHeard.length > 0;
-  if (!hasTranscript) setAsrWaitStatus('checking speechâ€¦');
+  if (!hasTranscript) setAsrWaitStatus('checking speech...');
 
   const ms = lockedEeTailAsr ? 0 : hasTranscript ? 650 : 800;
   asrWaitTimer = setTimeout(() => {
@@ -571,7 +571,7 @@ function endTake(caller = 'unknown'): void {
   if (lockedEeTailAsr) {
     endEeTailCapture();
   } else {
-    setAsrWaitStatus('checkingâ€¦');
+    setAsrWaitStatus('checking...');
     markAsrEnded();
   }
 }
@@ -652,7 +652,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       heuristicPass: null,
       tf: null,
       guessedWord: null,
-      dspGuessDisplay: 'â€”',
+      dspGuessDisplay: '"',
       guessConfidence: 0,
       targetProbability: 0,
       summary: 'DSP not run',
@@ -677,8 +677,8 @@ function finishAttempt(heard: string, asrPass: boolean): void {
     : {
         t: appPass ? ('pass' as const) : ('fail' as const),
         s:
-          `app ${appPass ? 'pass' : 'fail'} (${basis}) Â· DSP â€œ${dsp.dspGuessDisplay}â€ Â· ` +
-          `ASR â€œ${heard}â€`,
+          `app ${appPass ? 'pass' : 'fail'} (${basis}) | DSP "${dsp.dspGuessDisplay}" | ` +
+          `ASR "${heard}"`,
       };
   addFB(studentMsg, true);
 
@@ -712,7 +712,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
     });
     lastLoggedAttemptId = attempt.id;
     if (eeTailBackfill && !dsp.embedding) {
-      addFB({ t: 'pass', s: `Heard â€œ${heard}â€ â€” scoring audioâ€¦` }, true);
+      addFB({ t: 'pass', s: `Heard "${heard}" " scoring audio...` }, true);
       return;
     }
     if (asrPass && heard.trim() && dsp.dspPass) {
@@ -720,7 +720,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       addFB(
         {
           t: 'pass',
-          s: `DSP and ASR agree on â€œ${heard}â€ â€” saved for training.`,
+          s: `DSP and ASR agree on "${heard}" " saved for training.`,
         },
         true,
       );
@@ -730,7 +730,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       addFB(
         {
           t: 'pass',
-          s: `ASR correct, DSP missed â€” pass; saved for training.`,
+          s: `ASR correct, DSP missed " pass; saved for training.`,
         },
         true,
       );
@@ -794,7 +794,7 @@ async function onTeacherJudgment(j: {
 function applyModelLoadStatus(load: TfInitResult): void {
   if (load.publishLoadFailed && load.availablePublishVersion != null) {
     setModelLoadStatus(
-      `Could not load shared model v${load.availablePublishVersion} â€” using local`,
+      `Could not load shared model v${load.availablePublishVersion} " using local`,
       'warn',
     );
     return;
@@ -820,8 +820,8 @@ function applyModelLoadStatus(load: TfInitResult): void {
 
 async function prepareStage(stageId: CurriculumStageId): Promise<void> {
   resetMelFilterbank();
-  setModelLoadStatus('Loading classroom modelâ€¦', 'neutral');
-  $('netTxt').textContent = 'Loading classroom modelâ€¦';
+  setModelLoadStatus('Loading classroom model...', 'neutral');
+  $('netTxt').textContent = 'Loading classroom model...';
   const load = await ensureDspEngine(stageId);
 
   setTargetItem(getStage(stageId).items[0] ?? curItem);
@@ -831,10 +831,10 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
     const shared =
       load.publishedVersion != null &&
       (load.source === 'published_fresh' || load.source === 'published_cached');
-    const sharedTag = shared ? ` Â· shared v${load.publishedVersion}` : '';
-    $('netTxt').textContent = `TensorFlow.js WASM Â· ${getStage(stageId).label}${sharedTag}`;
+    const sharedTag = shared ? ` | shared v${load.publishedVersion}` : '';
+    $('netTxt').textContent = `TensorFlow.js WASM | ${getStage(stageId).label}${sharedTag}`;
   } else {
-    $('netTxt').textContent = 'Heuristics only â€” publish or record teacher voice seed';
+    $('netTxt').textContent = 'Heuristics only " publish or record teacher voice seed';
   }
 
   void refreshCloudStats(stageId, getVoiceBankQueueLength());
@@ -1044,7 +1044,7 @@ async function toggleRec(): Promise<void> {
           if (endingTake || !listening || lockedEeTailAsr) {
             return;
           }
-          $('btnLbl').textContent = `heard "${heardOnEnd}" â€” keep goingâ€¦`;
+          $('btnLbl').textContent = `heard "${heardOnEnd}" " keep going...`;
         }
         if (!listening || endingTake || lockedEeTailAsr) {
           return;
@@ -1078,7 +1078,7 @@ async function toggleRec(): Promise<void> {
     }
   } catch (e) {
     resetListenUi();
-    showErr(`Mic denied â€” ${e instanceof Error ? e.message : String(e)}`);
+    showErr(`Mic denied " ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
