@@ -1,5 +1,7 @@
 # Cloud training — one model for all teachers
 
+**Moving off Vercel?** See [`MIGRATION_OFF_VERCEL.md`](MIGRATION_OFF_VERCEL.md). The shared model in `public/models/` works on any static host; Blob/API are optional for syncing new judgments.
+
 **Teacher (once):** use **record teacher voice (seed)** in the teacher panel — uploads to Blob when done.
 
 **Each student session:** teacher **accept** (and ASR when DSP missed) uploads **judgments** only — students never record the 26-letter voice bootstrap. You periodically **train and deploy** a shared model; every device loads it on the next visit.
