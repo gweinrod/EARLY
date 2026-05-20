@@ -33,9 +33,22 @@ export function dspGuessDisplay(
   tf: TfWordPrediction | null,
   quietTake: boolean,
 ): string {
-  if (quietTake) return '""';
+  if (quietTake) return '(silence)';
   if (tf) return formatVocabKeyForDisplay(tf.guessedKey);
   return '—';
+}
+
+/** One-line DSP guess for scoring summary (no nested quotes). */
+export function formatDspGuessForSummary(
+  dsp: Pick<DspPrediction, 'tf' | 'guessConfidence' | 'dspGuessDisplay'>,
+): string {
+  if (dsp.tf) {
+    const pct = Math.round((dsp.tf.confidence ?? dsp.guessConfidence) * 100);
+    if (isSilenceVocabKey(dsp.tf.guessedKey)) return `silence (${pct}%)`;
+    return `${formatVocabKeyForDisplay(dsp.tf.guessedKey)} (${pct}%)`;
+  }
+  if (dsp.dspGuessDisplay === '—' || dsp.dspGuessDisplay === 'n/a') return 'n/a';
+  return dsp.dspGuessDisplay;
 }
 
 function formatTfLine(tf: TfWordPrediction, targetKey: string): string {

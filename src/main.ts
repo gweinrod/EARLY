@@ -28,7 +28,12 @@ import {
   normalizeHeardLabel,
   resolveHeardForEeChromeTail,
 } from './curriculum';
-import { ensureDspEngine, runDspPrediction, type DspPrediction } from './dsp-predict';
+import {
+  ensureDspEngine,
+  formatDspGuessForSummary,
+  runDspPrediction,
+  type DspPrediction,
+} from './dsp-predict';
 import { extractFrames, resetMelFilterbank } from './dsp';
 import { buildRecordingBlob, createMediaRecorder } from './recorder';
 import { applySettingsToDocument, loadSettings, saveSettings, type AppSettings } from './settings';
@@ -202,7 +207,7 @@ async function processAudio(dspBackfill = false): Promise<void> {
 
     if (frames.length < 4) {
       if (!lockedEeTailAsr) {
-        displayFeedback([{ t: 'warn', s: 'Recording too short " try again' }]);
+        displayFeedback([{ t: 'warn', s: 'Recording too short - try again' }]);
         pendingHeard = null;
         pendingAsrPass = null;
         attemptFinalized = true;
@@ -241,6 +246,9 @@ async function processAudio(dspBackfill = false): Promise<void> {
   dspProcessed = true;
   mediaProcessInFlight = false;
   if (dspBackfill) {
+    if (eeTailBackfill) {
+      finishAttempt(eeTailBackfill.heard, eeTailBackfill.asrPass);
+    }
     backfillEeTailCollector();
     return;
   }
@@ -403,7 +411,7 @@ function finalizeEeTailImmediately(): void {
   pendingHeard = eeTailBackfill.heard;
   pendingAsrPass = eeTailBackfill.asrPass;
   dspProcessed = true;
-  finalizeAttempt();
+  finalizeAttempt({ deferScoring: true });
 }
 
 function backfillEeTailCollector(): void {
@@ -414,14 +422,14 @@ function backfillEeTailCollector(): void {
   if (asrPass && heard.trim() && lastDsp.dspPass) {
     const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: false });
     addFB(
-      { t: 'pass', s: `DSP and ASR agree on "${heard}" " saved for training.` },
+      { t: 'pass', s: `DSP and ASR agree on "${heard}" - saved for training.` },
       true,
     );
     void onTeacherJudgment(judgment);
   } else if (asrPass && heard.trim() && !lastDsp.dspPass) {
     const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: true });
     addFB(
-      { t: 'pass', s: `ASR correct, DSP missed " pass; saved for training.` },
+      { t: 'pass', s: `ASR correct, DSP missed - pass; saved for training.` },
       true,
     );
     void onTeacherJudgment(judgment);
@@ -576,7 +584,7 @@ function endTake(caller = 'unknown'): void {
   }
 }
 
-function finalizeAttempt(): void {
+function finalizeAttempt(opts?: { deferScoring?: boolean }): void {
   if (attemptFinalized) {
     return;
   }
@@ -602,6 +610,7 @@ function finalizeAttempt(): void {
   pendingHeard = null;
   pendingAsrPass = null;
 
+  if (opts?.deferScoring) return;
   finishAttempt(heard, asrPass);
 }
 
@@ -652,7 +661,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       heuristicPass: null,
       tf: null,
       guessedWord: null,
-      dspGuessDisplay: '"',
+      dspGuessDisplay: 'n/a',
       guessConfidence: 0,
       targetProbability: 0,
       summary: 'DSP not run',
@@ -677,7 +686,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
     : {
         t: appPass ? ('pass' as const) : ('fail' as const),
         s:
-          `app ${appPass ? 'pass' : 'fail'} (${basis}) | DSP "${dsp.dspGuessDisplay}" | ` +
+          `app ${appPass ? 'pass' : 'fail'} (${basis}) | DSP ${formatDspGuessForSummary(dsp)} | ` +
           `ASR "${heard}"`,
       };
   addFB(studentMsg, true);
@@ -712,7 +721,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
     });
     lastLoggedAttemptId = attempt.id;
     if (eeTailBackfill && !dsp.embedding) {
-      addFB({ t: 'pass', s: `Heard "${heard}" " scoring audio...` }, true);
+      addFB({ t: 'pass', s: `Heard "${heard}" - scoring audio...` }, true);
       return;
     }
     if (asrPass && heard.trim() && dsp.dspPass) {
@@ -720,7 +729,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       addFB(
         {
           t: 'pass',
-          s: `DSP and ASR agree on "${heard}" " saved for training.`,
+          s: `DSP and ASR agree on "${heard}" - saved for training.`,
         },
         true,
       );
@@ -730,7 +739,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       addFB(
         {
           t: 'pass',
-          s: `ASR correct, DSP missed " pass; saved for training.`,
+          s: `ASR correct, DSP missed - pass; saved for training.`,
         },
         true,
       );
@@ -794,7 +803,7 @@ async function onTeacherJudgment(j: {
 function applyModelLoadStatus(load: TfInitResult): void {
   if (load.publishLoadFailed && load.availablePublishVersion != null) {
     setModelLoadStatus(
-      `Could not load shared model v${load.availablePublishVersion} " using local`,
+      `Could not load shared model v${load.availablePublishVersion} - using local`,
       'warn',
     );
     return;
@@ -834,7 +843,7 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
     const sharedTag = shared ? ` | shared v${load.publishedVersion}` : '';
     $('netTxt').textContent = `TensorFlow.js WASM | ${getStage(stageId).label}${sharedTag}`;
   } else {
-    $('netTxt').textContent = 'Heuristics only " publish or record teacher voice seed';
+    $('netTxt').textContent = 'Heuristics only - publish or record teacher voice seed';
   }
 
   void refreshCloudStats(stageId, getVoiceBankQueueLength());
@@ -1044,7 +1053,7 @@ async function toggleRec(): Promise<void> {
           if (endingTake || !listening || lockedEeTailAsr) {
             return;
           }
-          $('btnLbl').textContent = `heard "${heardOnEnd}" " keep going...`;
+          $('btnLbl').textContent = `heard "${heardOnEnd}" - keep going...`;
         }
         if (!listening || endingTake || lockedEeTailAsr) {
           return;
