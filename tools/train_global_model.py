@@ -154,7 +154,16 @@ def apply_base_weights(model: tf.keras.Model, base_path: Path) -> None:
     import numpy as np
 
     for layer, weights in zip(dense_layers, exported, strict=True):
-        layer.set_weights([np.array(weights["kernel"]), np.array(weights["bias"])])
+        kernel = np.array(weights["kernel"])
+        bias = np.array(weights["bias"])
+        target_k, target_b = layer.get_weights()
+        if kernel.shape != target_k.shape or bias.shape != target_b.shape:
+            print(
+                f"  skip {layer.name}: checkpoint {kernel.shape}/{bias.shape} "
+                f"!= model {target_k.shape}/{target_b.shape}",
+            )
+            continue
+        layer.set_weights([kernel, bias])
 
 
 def build_model(num_classes: int) -> tf.keras.Model:

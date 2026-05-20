@@ -98,8 +98,9 @@ export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<Tf
   const manifestAfterPublish = await fetchPublishedManifest(stageId);
   try {
     model = await tf.loadLayersModel(url);
-    ensureModelCompiled();
-    ready = true;
+    if (!(await reconcileModelWithVocab(stageId))) {
+      return noneResult();
+    }
     const cached = await publishedCachedResult(stageId);
     if (
       cached.source === 'local' &&
@@ -164,6 +165,45 @@ function ensureModelCompiled(): void {
   });
 }
 
+function getModelClassCount(): number | null {
+  if (!model) return null;
+  const shape = model.outputs[0]?.shape;
+  if (!shape?.length) return null;
+  const n = shape[shape.length - 1];
+  return typeof n === 'number' ? n : null;
+}
+
+function modelMatchesVocab(): boolean {
+  const vocabSize = getVocabWords().length;
+  if (!vocabSize) return false;
+  const n = getModelClassCount();
+  return n !== null && n === vocabSize;
+}
+
+function disposeCurrentModel(): void {
+  model?.dispose();
+  model = null;
+  ready = false;
+}
+
+/** Drop stale checkpoints (e.g. 26-class model after silence class added). */
+async function reconcileModelWithVocab(stageId: CurriculumStageId): Promise<boolean> {
+  if (!model) return false;
+  if (modelMatchesVocab()) {
+    ensureModelCompiled();
+    ready = true;
+    return true;
+  }
+  const classes = getModelClassCount();
+  const vocabSize = getVocabWords().length;
+  console.warn(`EARLY: model has ${classes} classes but vocab has ${vocabSize} — retraining`);
+  disposeCurrentModel();
+  if (isVoiceBankComplete(stageId)) {
+    return runBootstrapTraining(stageId);
+  }
+  return false;
+}
+
 async function runBootstrapTraining(stageId: CurriculumStageId): Promise<boolean> {
   const dataset = buildBootstrapDataset(stageId, 4);
   if (!dataset) return false;
@@ -225,12 +265,15 @@ export async function retrainFromVoiceBank(stageId: CurriculumStageId): Promise<
 
 async function fitBatch(x: number[][], y: number[], epochs: number, batchSize: number): Promise<void> {
   if (!model || x.length === 0) return;
+  if (!modelMatchesVocab()) return;
   ensureModelCompiled();
   const vocabSize = getVocabWords().length;
   const xs = tf.tensor2d(x);
   const ys = tf.oneHot(tf.tensor1d(y, 'int32'), vocabSize);
   try {
     await model.fit(xs, ys, { epochs, batchSize, shuffle: true, verbose: 0 });
+  } catch (err) {
+    console.warn('EARLY: model.fit failed', err);
   } finally {
     xs.dispose();
     ys.dispose();
@@ -254,10 +297,20 @@ async function tryLoadPublishedModel(
     model?.dispose();
     model = loaded;
     activeStage = stageId;
-    ensureModelCompiled();
+    if (!(await reconcileModelWithVocab(stageId))) {
+      if (isVoiceBankComplete(stageId)) {
+        const bootstrapped = await runBootstrapTraining(stageId);
+        if (bootstrapped) {
+          setStoredPublishedVersion(stageId, manifest.version);
+          return manifest;
+        }
+      }
+      model = null;
+      ready = false;
+      return null;
+    }
     await model.save(modelStorageUrl(stageId));
     setStoredPublishedVersion(stageId, manifest.version);
-    ready = true;
     return manifest;
   } catch (err) {
     console.warn('EARLY: failed to load published model', manifest.modelUrl, err);
@@ -341,7 +394,11 @@ export interface CalibrationTrainInput {
 }
 
 export async function trainCalibrationSample(input: CalibrationTrainInput): Promise<void> {
-  if (!model || trainingBusy) return;
+  if (trainingBusy) return;
+  if (!model || !modelMatchesVocab()) {
+    const ok = await reconcileModelWithVocab(activeStage);
+    if (!ok || !model) return;
+  }
 
   trainingBusy = true;
   try {

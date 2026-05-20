@@ -1,4 +1,4 @@
-import {
+﻿import {
   createSpeechRecognition,
   eventHasFinalTranscript,
   fullTranscriptFromEvent,
@@ -115,7 +115,7 @@ const MIN_TAKE_MS = 350;
 const EE_TAIL_MIN_TAKE_MS = 850;
 /** Chrome ends continuous ASR often; restart in the same take (not a second tap). */
 const ASR_MAX_RESTARTS_PER_TAKE = 24;
-/** Hard cap per tap (was 12s — too long when Chrome never returns onresult). */
+/** Hard cap per tap (was 12s â€” too long when Chrome never returns onresult). */
 const MAX_TAKE_MS = 4000;
 /** Ignore phantom ASR / auto-end until the mic has been open this long. */
 const MIN_RECORDING_MS = 600;
@@ -123,7 +123,7 @@ const MIN_RECORDING_MS = 600;
 const SPEECH_RMS_THRESHOLD = 0.028;
 let stopWave: (() => void) | null = null;
 let speechCheckInterval: ReturnType<typeof setInterval> | null = null;
-/** Set when mic energy exceeds threshold — lone "b" ASR is ignored until then. */
+/** Set when mic energy exceeds threshold â€” lone "b" ASR is ignored until then. */
 let speechDetectedThisTake = false;
 let lastDsp: DspPrediction | null = null;
 let pendingHeard: string | null = null;
@@ -136,34 +136,6 @@ const history: { w: string; h: string; pass: boolean }[] = [];
 
 let curStageId: CurriculumStageId = settings.curriculumStage;
 let curItem: CurriculumItem = getStage(curStageId).items[0];
-
-function takeSnapshot(extra?: Record<string, unknown>): Record<string, unknown> {
-  return {
-    session: takeSessionId,
-    letter: curItem.display,
-    listening,
-    endingTake,
-    asrEnded,
-    attemptFinalized,
-    dspProcessed,
-    restarts: asrRestartsThisTake,
-    chromeAteTail: sawIncompleteEeOnEnd,
-    pendingHeard,
-    pendingAsrPass,
-    lockedHeard: lockedEeTailAsr?.heard ?? null,
-    accum: takeAsrAccum,
-    mediaState: mediaRec?.state ?? 'none',
-    recChunks: recChunks.length,
-    pauseTimer: !!asrPauseTimer,
-    asrWaitTimer: !!asrWaitTimer,
-    takeMs: takeStartedAt ? Date.now() - takeStartedAt : 0,
-    ...extra,
-  };
-}
-
-function takeLog(event: string, extra?: Record<string, unknown>): void {
-  console.log('[TAKE]', event, takeSnapshot(extra));
-}
 
 function getAudioContext(): AudioContext {
   if (!audioCtx) {
@@ -179,7 +151,7 @@ function setTargetItem(item: CurriculumItem): void {
   curItem = item;
   const stage = getStage(curStageId);
   $('tWord').textContent = item.display;
-  $('tPhon').textContent = `say: ${item.spokenName} · ${item.phonemeNote}`;
+  $('tPhon').textContent = `say: ${item.spokenName} Â· ${item.phonemeNote}`;
   $('stageSubtitle').textContent = stage.subtitle;
   clearFB();
   hide('hmWrap');
@@ -198,20 +170,16 @@ function displayFeedback(items: DspPrediction['heuristicItems']): void {
 
 async function processAudio(dspBackfill = false): Promise<void> {
   if (mediaProcessInFlight) {
-    takeLog('processAudio skip in flight', { dspBackfill });
     return;
   }
   if (dspBackfill) {
     if (!attemptFinalized) {
-      takeLog('processAudio backfill skip (not finalized yet)');
       return;
     }
   } else if (attemptFinalized) {
-    takeLog('processAudio skip (already finalized)');
     return;
   }
   mediaProcessInFlight = true;
-  takeLog('processAudio start', { dspBackfill });
   const ctx = getAudioContext();
   if (ctx.state === 'suspended') {
     try {
@@ -221,7 +189,6 @@ async function processAudio(dspBackfill = false): Promise<void> {
     }
   }
   if (!recChunks.length || !audioCtx) {
-    takeLog('processAudio abort empty', { chunks: recChunks.length });
     mediaProcessInFlight = false;
     return;
   }
@@ -234,9 +201,8 @@ async function processAudio(dspBackfill = false): Promise<void> {
     const frames = extractFrames(audio, aB.sampleRate);
 
     if (frames.length < 4) {
-      takeLog('processAudio too short', { frames: frames.length, locked: !!lockedEeTailAsr });
       if (!lockedEeTailAsr) {
-        displayFeedback([{ t: 'warn', s: 'Recording too short — try again' }]);
+        displayFeedback([{ t: 'warn', s: 'Recording too short â€” try again' }]);
         pendingHeard = null;
         pendingAsrPass = null;
         attemptFinalized = true;
@@ -273,7 +239,6 @@ async function processAudio(dspBackfill = false): Promise<void> {
   }
 
   dspProcessed = true;
-  takeLog('processAudio done', { frames: lastDsp ? 'ok' : 'no-dsp', dspBackfill });
   mediaProcessInFlight = false;
   if (dspBackfill) {
     backfillEeTailCollector();
@@ -298,7 +263,6 @@ function resetListenUi(): void {
 }
 
 function resetTakeState(): void {
-  takeLog('resetTakeState');
   attemptFinalized = false;
   dspProcessed = false;
   asrEnded = false;
@@ -389,7 +353,6 @@ function forceEeLetterNameEndTake(caller: string): boolean {
     heard: resolved,
     pass: transcriptMatchesItemForScoring(curStageId, resolved, curItem),
   };
-  takeLog('forceEeLetterNameEndTake', { caller, resolved });
   endTake(caller);
   return true;
 }
@@ -417,7 +380,6 @@ function scheduleAsrNoResultWatchdog(session: number): void {
 
 function stopMediaRecorderNow(): void {
   if (!mediaRec || mediaRec.state === 'inactive') return;
-  takeLog('stopMediaRecorderNow', { state: mediaRec.state });
   try {
     if (mediaRec.state === 'recording') mediaRec.requestData();
   } catch {
@@ -426,13 +388,11 @@ function stopMediaRecorderNow(): void {
   try {
     mediaRec.stop();
   } catch (err) {
-    takeLog('stopMediaRecorderNow threw', { err: String(err) });
   }
 }
 
 function stopMicTracksNow(): void {
   if (!recStream) return;
-  takeLog('stopMicTracksNow');
   recStream.getTracks().forEach((t) => t.stop());
 }
 
@@ -443,7 +403,6 @@ function finalizeEeTailImmediately(): void {
   pendingHeard = eeTailBackfill.heard;
   pendingAsrPass = eeTailBackfill.asrPass;
   dspProcessed = true;
-  takeLog('finalizeEeTailImmediately');
   finalizeAttempt();
 }
 
@@ -452,18 +411,17 @@ function backfillEeTailCollector(): void {
   const { heard, asrPass } = eeTailBackfill;
   const attempt = loadAttempts().find((a) => a.id === lastLoggedAttemptId);
   if (!attempt) return;
-  takeLog('backfillEeTailCollector', { dspPass: lastDsp.dspPass });
   if (asrPass && heard.trim() && lastDsp.dspPass) {
     const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: false });
     addFB(
-      { t: 'pass', s: `DSP and ASR agree on “${heard}” — saved for training.` },
+      { t: 'pass', s: `DSP and ASR agree on â€œ${heard}â€ â€” saved for training.` },
       true,
     );
     void onTeacherJudgment(judgment);
   } else if (asrPass && heard.trim() && !lastDsp.dspPass) {
     const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: true });
     addFB(
-      { t: 'pass', s: `ASR correct, DSP missed — pass; saved for training.` },
+      { t: 'pass', s: `ASR correct, DSP missed â€” pass; saved for training.` },
       true,
     );
     void onTeacherJudgment(judgment);
@@ -475,7 +433,6 @@ function backfillEeTailCollector(): void {
 
 /** Run DSP after immediate finalize (mic already released). */
 async function runEeTailDspBackfill(): Promise<void> {
-  takeLog('eeTailDspBackfill start');
   for (const delay of [0, 60, 200, 500, 1000]) {
     if (delay) await new Promise((r) => setTimeout(r, delay));
     if (mediaRec?.state === 'recording') stopMediaRecorderNow();
@@ -484,7 +441,6 @@ async function runEeTailDspBackfill(): Promise<void> {
       return;
     }
   }
-  takeLog('eeTailDspBackfill gave up (no chunks)');
 }
 
 function endEeTailCapture(): void {
@@ -500,27 +456,22 @@ function endEeTailCapture(): void {
 /** Stop recorder after ASR has time to deliver late transcripts. */
 function scheduleMediaStop(): void {
   if (attemptFinalized) {
-    takeLog('scheduleMediaStop skip (attempt finalized)');
     return;
   }
   clearAsrWait();
   const hasTranscript = pendingHeard !== null && pendingHeard.length > 0;
-  if (!hasTranscript) setAsrWaitStatus('checking speech…');
+  if (!hasTranscript) setAsrWaitStatus('checking speechâ€¦');
 
   const ms = lockedEeTailAsr ? 0 : hasTranscript ? 650 : 800;
-  takeLog('scheduleMediaStop', { delayMs: ms, hasTranscript, immediate: !!lockedEeTailAsr });
   asrWaitTimer = setTimeout(() => {
     asrWaitTimer = null;
-    takeLog('scheduleMediaStop fire');
     if (pendingHeard === null) {
       pendingHeard = '';
       pendingAsrPass = false;
     }
     if (mediaRec && mediaRec.state !== 'inactive') {
-      takeLog('mediaRec.stop()');
       mediaRec.stop();
     } else {
-      takeLog('mediaRec already inactive', { dspProcessed });
       if (dspProcessed) scheduleAttemptFinalize();
     }
   }, ms);
@@ -528,17 +479,13 @@ function scheduleMediaStop(): void {
 
 function markAsrEnded(): void {
   if (asrEnded) {
-    takeLog('markAsrEnded noop (already ended)');
     return;
   }
   asrEnded = true;
-  takeLog('markAsrEnded');
   if (attemptFinalized) {
-    takeLog('markAsrEnded skip schedule (attempt finalized)');
     return;
   }
   if (lockedEeTailAsr) {
-    takeLog('markAsrEnded ee-tail (recorder stop already requested)');
     return;
   }
   scheduleMediaStop();
@@ -549,10 +496,8 @@ function tearDownRecognition(): void {
   activeRecognition = null;
   if (!rec) return;
   try {
-    takeLog('recognition.abort()');
     rec.abort();
   } catch (err) {
-    takeLog('recognition.abort() threw', { err: String(err) });
     try {
       rec.stop();
     } catch {
@@ -571,27 +516,22 @@ function releaseMic(): void {
 }
 
 function scheduleAttemptFinalize(): void {
-  takeLog('scheduleAttemptFinalize enter');
   if (attemptFinalized) {
-    takeLog('scheduleAttemptFinalize noop already finalized');
     return;
   }
 
   if (pendingHeard !== null && pendingAsrPass !== null) {
-    takeLog('scheduleAttemptFinalize → finalize (pending ready)');
     finalizeAttempt();
     return;
   }
 
   if (!dspProcessed || !endingTake) {
-    takeLog('scheduleAttemptFinalize wait', { dspProcessed, endingTake });
     return;
   }
 
   clearAsrWait();
 
   if (!asrEnded) {
-    takeLog('scheduleAttemptFinalize wait asrEnded 2500ms');
     asrWaitTimer = setTimeout(() => {
       asrWaitTimer = null;
       asrEnded = true;
@@ -605,13 +545,11 @@ function scheduleAttemptFinalize(): void {
     pendingAsrPass = false;
   }
 
-  takeLog('scheduleAttemptFinalize → finalize (fallback)');
   finalizeAttempt();
 }
 
 /** End speech recognition; keep recorder running until ASR transcript is collected. */
 function endTake(caller = 'unknown'): void {
-  takeLog('endTake called', { caller });
   if (maxTakeTimer) {
     clearTimeout(maxTakeTimer);
     maxTakeTimer = null;
@@ -621,7 +559,6 @@ function endTake(caller = 'unknown'): void {
   clearSpeechCheckInterval();
 
   if (endingTake) {
-    takeLog('endTake reentrant');
     if (listening) resetListenUi();
     markAsrEnded();
     return;
@@ -634,15 +571,13 @@ function endTake(caller = 'unknown'): void {
   if (lockedEeTailAsr) {
     endEeTailCapture();
   } else {
-    setAsrWaitStatus('checking…');
+    setAsrWaitStatus('checkingâ€¦');
     markAsrEnded();
   }
 }
 
 function finalizeAttempt(): void {
-  takeLog('finalizeAttempt');
   if (attemptFinalized) {
-    takeLog('finalizeAttempt noop');
     return;
   }
   attemptFinalized = true;
@@ -662,13 +597,11 @@ function finalizeAttempt(): void {
   ) {
     heard = normalizeHeardLabel(curItem.spokenName);
     asrPass = transcriptMatchesItemForScoring(curStageId, heard, curItem);
-    takeLog('finalize infer heard from dsp', { heard, asrPass });
   }
   lockedEeTailAsr = null;
   pendingHeard = null;
   pendingAsrPass = null;
 
-  takeLog('finalizeAttempt → finishAttempt', { heard, asrPass });
   finishAttempt(heard, asrPass);
 }
 
@@ -686,15 +619,6 @@ function applyAsrTranscript(heard: string): void {
   if (!heard.trim()) return;
   const resolved = resolveHeardForEeChromeTail(heard, curItem, sawIncompleteEeOnEnd);
   pendingAsrPass = transcriptMatchesItemForScoring(curStageId, resolved, curItem);
-  takeLog('applyAsrTranscript', {
-    raw: heard,
-    resolved,
-    match: transcriptMatchesItem(curStageId, heard, curItem),
-    score: pendingAsrPass,
-    incomplete: isIncompleteEeNamePrefix(heard, curItem),
-    autofillReady: shouldEndTakeFromEeTailAutofill(resolved),
-    takeMs: takeStartedAt ? Date.now() - takeStartedAt : 0,
-  });
   pendingHeard = resolved;
   takeAsrAccum = resolved;
   if (listening) {
@@ -709,7 +633,6 @@ function applyAsrTranscript(heard: string): void {
     takeElapsedMs() >= EE_TAIL_MIN_TAKE_MS &&
     shouldEndTakeFromEeTailAutofill(resolved)
   ) {
-    takeLog('ee-tail autofill → endTake');
     lockedEeTailAsr = { heard: resolved, pass: true };
     clearAsrPauseTimer();
     endTake('ee-tail-autofill');
@@ -729,7 +652,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       heuristicPass: null,
       tf: null,
       guessedWord: null,
-      dspGuessDisplay: '—',
+      dspGuessDisplay: 'â€”',
       guessConfidence: 0,
       targetProbability: 0,
       summary: 'DSP not run',
@@ -754,8 +677,8 @@ function finishAttempt(heard: string, asrPass: boolean): void {
     : {
         t: appPass ? ('pass' as const) : ('fail' as const),
         s:
-          `app ${appPass ? 'pass' : 'fail'} (${basis}) · DSP “${dsp.dspGuessDisplay}” · ` +
-          `ASR “${heard}”`,
+          `app ${appPass ? 'pass' : 'fail'} (${basis}) Â· DSP â€œ${dsp.dspGuessDisplay}â€ Â· ` +
+          `ASR â€œ${heard}â€`,
       };
   addFB(studentMsg, true);
 
@@ -789,8 +712,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
     });
     lastLoggedAttemptId = attempt.id;
     if (eeTailBackfill && !dsp.embedding) {
-      takeLog('finishAttempt defer collector until ee-tail DSP backfill');
-      addFB({ t: 'pass', s: `Heard “${heard}” — scoring audio…` }, true);
+      addFB({ t: 'pass', s: `Heard â€œ${heard}â€ â€” scoring audioâ€¦` }, true);
       return;
     }
     if (asrPass && heard.trim() && dsp.dspPass) {
@@ -798,7 +720,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       addFB(
         {
           t: 'pass',
-          s: `DSP and ASR agree on “${heard}” — saved for training.`,
+          s: `DSP and ASR agree on â€œ${heard}â€ â€” saved for training.`,
         },
         true,
       );
@@ -808,7 +730,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       addFB(
         {
           t: 'pass',
-          s: `ASR correct, DSP missed — pass; saved for training.`,
+          s: `ASR correct, DSP missed â€” pass; saved for training.`,
         },
         true,
       );
@@ -872,7 +794,7 @@ async function onTeacherJudgment(j: {
 function applyModelLoadStatus(load: TfInitResult): void {
   if (load.publishLoadFailed && load.availablePublishVersion != null) {
     setModelLoadStatus(
-      `Could not load shared model v${load.availablePublishVersion} — using local`,
+      `Could not load shared model v${load.availablePublishVersion} â€” using local`,
       'warn',
     );
     return;
@@ -898,8 +820,8 @@ function applyModelLoadStatus(load: TfInitResult): void {
 
 async function prepareStage(stageId: CurriculumStageId): Promise<void> {
   resetMelFilterbank();
-  setModelLoadStatus('Loading classroom model…', 'neutral');
-  $('netTxt').textContent = 'Loading classroom model…';
+  setModelLoadStatus('Loading classroom modelâ€¦', 'neutral');
+  $('netTxt').textContent = 'Loading classroom modelâ€¦';
   const load = await ensureDspEngine(stageId);
 
   setTargetItem(getStage(stageId).items[0] ?? curItem);
@@ -909,10 +831,10 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
     const shared =
       load.publishedVersion != null &&
       (load.source === 'published_fresh' || load.source === 'published_cached');
-    const sharedTag = shared ? ` · shared v${load.publishedVersion}` : '';
-    $('netTxt').textContent = `TensorFlow.js WASM · ${getStage(stageId).label}${sharedTag}`;
+    const sharedTag = shared ? ` Â· shared v${load.publishedVersion}` : '';
+    $('netTxt').textContent = `TensorFlow.js WASM Â· ${getStage(stageId).label}${sharedTag}`;
   } else {
-    $('netTxt').textContent = 'Heuristics only — publish or record teacher voice seed';
+    $('netTxt').textContent = 'Heuristics only â€” publish or record teacher voice seed';
   }
 
   void refreshCloudStats(stageId, getVoiceBankQueueLength());
@@ -938,7 +860,6 @@ function onVoiceBootstrapComplete(): void {
 
 async function toggleRec(): Promise<void> {
   if (listening) {
-    takeLog('toggleRec manual stop');
     endTake('manual-toggle');
     return;
   }
@@ -953,7 +874,6 @@ async function toggleRec(): Promise<void> {
   }
 
   const session = ++takeSessionId;
-  takeLog('toggleRec start take', { session });
   resetTakeState();
 
   const ctx = getAudioContext();
@@ -973,7 +893,6 @@ async function toggleRec(): Promise<void> {
       if (e.data.size > 0) recChunks.push(e.data);
     };
     mediaRec.onstop = () => {
-      takeLog('mediaRec.onstop');
       void processAudio();
     };
 
@@ -1007,12 +926,10 @@ async function toggleRec(): Promise<void> {
 
       const scheduleAsrPauseEnd = (why: string) => {
         if (endingTake || lockedEeTailAsr || asrEnded) {
-          takeLog('scheduleAsrPauseEnd skipped', { why, endingTake, locked: !!lockedEeTailAsr, asrEnded });
           return;
         }
         const raw = pendingHeard ?? '';
         if (asrPauseTimer && sawIncompleteEeOnEnd && isIncompleteEeNamePrefix(raw, curItem)) {
-          takeLog('scheduleAsrPauseEnd held (ee-tail locked)', { why });
           return;
         }
         clearAsrPauseTimer();
@@ -1022,19 +939,9 @@ async function toggleRec(): Promise<void> {
           incomplete || (raw && isIncompleteEeNamePrefix(raw, curItem))
             ? ASR_EE_TAIL_MS
             : ASR_PAUSE_MS;
-        takeLog('scheduleAsrPauseEnd', { why, delayMs: ms, incomplete, raw });
         asrPauseTimer = setTimeout(() => {
           asrPauseTimer = null;
-          takeLog('pauseTimer fire', { why });
-          if (!listening || session !== takeSessionId || endingTake) {
-            takeLog('pauseTimer bail', {
-              listening,
-              sessionOk: session === takeSessionId,
-              endingTake,
-              pendingHeard,
-            });
-            return;
-          }
+          if (!listening || session !== takeSessionId || endingTake) return;
           if (!canAutoEndTake()) {
             scheduleAsrPauseEnd('pause-wait-min-recording');
             return;
@@ -1044,11 +951,9 @@ async function toggleRec(): Promise<void> {
           if (isIncompleteEeNamePrefix(h, curItem)) {
             if (sawIncompleteEeOnEnd && speechDetectedThisTake) {
               const resolved = normalizeHeardLabel(curItem.spokenName);
-              takeLog('pauseTimer pause-ee-forced', { resolved });
               lockedEeTailAsr = { heard: resolved, pass: true };
               endTake('pause-ee-forced');
             } else {
-              takeLog('pauseTimer force ee-tail autofill (no onend)');
               sawIncompleteEeOnEnd = true;
               applyAsrTranscript(h);
             }
@@ -1064,18 +969,15 @@ async function toggleRec(): Promise<void> {
 
       recognition.onresult = (e: SpeechRecognitionEvent) => {
         if (session !== takeSessionId) {
-          takeLog('onresult stale session');
           return;
         }
         if (endingTake) {
-          takeLog('onresult ignored (endingTake)');
           return;
         }
         const eventText = fullTranscriptFromEvent(e);
         if (!eventText) return;
         const heard = mergeTakeTranscript(takeAsrAccum, eventText, curItem);
         if (isPhantomKeyTranscript(heard)) {
-          takeLog('onresult ignore phantom key', { heard, takeMs: takeElapsedMs() });
           return;
         }
         takeAsrAccum = heard;
@@ -1109,25 +1011,14 @@ async function toggleRec(): Promise<void> {
       recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
         if (session !== takeSessionId) return;
         if (e.error === 'no-speech' || e.error === 'aborted') return;
-        takeLog('onerror', { error: e.error });
       };
       recognition.onend = () => {
         const heardOnEnd = pendingHeard ?? '';
-        takeLog('onend', { heardOnEnd });
         if (session !== takeSessionId) {
-          takeLog('onend stale session');
           return;
         }
-        if (endingTake || asrEnded || lockedEeTailAsr) {
-          takeLog('onend bail (take finishing)', {
-            endingTake,
-            asrEnded,
-            locked: lockedEeTailAsr?.heard,
-          });
-          return;
-        }
+        if (endingTake || asrEnded || lockedEeTailAsr) return;
         if (!listening) {
-          takeLog('onend bail (!listening)');
           return;
         }
         if (
@@ -1137,15 +1028,12 @@ async function toggleRec(): Promise<void> {
           takeElapsedMs() >= MIN_TAKE_MS &&
           transcriptMatchesItemForSessionEnd(curStageId, heardOnEnd, curItem)
         ) {
-          takeLog('onend → endTake session match');
           clearAsrPauseTimer();
           endTake('onend-session-match');
           return;
         }
         if (isIncompleteEeNamePrefix(heardOnEnd, curItem)) {
-          takeLog('onend incomplete');
           if (isPhantomKeyTranscript(heardOnEnd)) {
-            takeLog('onend ignore phantom key');
             return;
           }
           if (speechDetectedThisTake && takeElapsedMs() >= EE_TAIL_MIN_TAKE_MS) {
@@ -1154,24 +1042,20 @@ async function toggleRec(): Promise<void> {
           clearAsrPauseTimer();
           if (!isPhantomKeyTranscript(heardOnEnd)) applyAsrTranscript(heardOnEnd);
           if (endingTake || !listening || lockedEeTailAsr) {
-            takeLog('onend incomplete → take ended (no restart)');
             return;
           }
-          $('btnLbl').textContent = `heard "${heardOnEnd}" — keep going…`;
+          $('btnLbl').textContent = `heard "${heardOnEnd}" â€” keep goingâ€¦`;
         }
         if (!listening || endingTake || lockedEeTailAsr) {
-          takeLog('onend bail before restart');
           return;
         }
         if (asrRestartsThisTake < ASR_MAX_RESTARTS_PER_TAKE) {
           asrRestartsThisTake++;
-          takeLog('onend → recognition.start() restart', { restart: asrRestartsThisTake });
           try {
             recognition.start();
             scheduleAsrPauseEnd('onend-restart');
             return;
           } catch (err) {
-            takeLog('onend recognition.start() failed', { err: String(err) });
           }
         }
         if (pendingHeard && !asrPauseTimer) {
@@ -1194,7 +1078,7 @@ async function toggleRec(): Promise<void> {
     }
   } catch (e) {
     resetListenUi();
-    showErr(`Mic denied — ${e instanceof Error ? e.message : String(e)}`);
+    showErr(`Mic denied â€” ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
