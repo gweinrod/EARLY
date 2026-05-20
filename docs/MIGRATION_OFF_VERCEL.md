@@ -51,7 +51,7 @@ To point the app at a new API host, add a single base URL in settings or build-t
 
 3. **Deploy static files** to the new host. Devices load `/models/alphabet/manifest.json` and upgrade when `version` increases.
 
-Archive on disk: `data/training-archive/` (kept across pulls; survives clearing Blob). Pull output: `data/calibration/` (gitignored).
+Archive in repo: `data/training-archive/` (kept across pulls; survives clearing Blob; committed for backup). Pull output: `data/calibration/` (gitignored, ephemeral).
 
 ## Static hosting checklist
 
@@ -85,7 +85,7 @@ On a self-hosted API, use your provider’s SDK instead of `@vercel/blob` in `ap
 ## Repo artifacts after publish
 
 - **`public/models/alphabet/`** — TensorFlow.js model + `manifest.json` (version, `sampleCount`, `trainedAt`). This is what every device loads.
-- **`data/training-archive/`** — local deduped training corpus for the next train run (not required on the CDN).
+- **`data/training-archive/`** — deduped judgment + voice JSON corpus for retraining (in Git; not required on the CDN).
 
 ## Current publish (alphabet)
 
