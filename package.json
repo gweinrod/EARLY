@@ -19,7 +19,8 @@
     "training:export-base": "node tools/export_base_weights.mjs",
     "seed:blob-counts": "node tools/seed-blob-counts.mjs",
     "calibration:train": "python tools/train_global_model.py",
-    "publish:model": "scripts\\publish-shared-model.bat"
+    "publish:model": "scripts\\publish-shared-model.bat",
+    "publish:model:postgres": "scripts\\publish-shared-model-postgres.bat"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

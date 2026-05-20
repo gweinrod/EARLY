@@ -431,19 +431,86 @@ Static app only: `/app/deploy-early.sh` (no API restart needed unless `server/` 
 
 ---
 
-## Phase 6 — Training pipeline (recommended hybrid)
+## Phase 6 — Training pipeline (Postgres → model → Git → VPS)
 
-Uses `data/training-archive/` in Git (647 files).
+After more classroom judgments on the server, run this on **your PC** (quiet enough for voice seed if re-recording; judgments are embeddings only).
 
-- [ ] On PC or VPS:
+### One-time setup
 
-  ```bash
-  pip install -r tools/requirements-train.txt
-  python tools/train_global_model.py --stage alphabet
-  ```
+```powershell
+cd C:\EARLY
+pip install -r tools\requirements-train.txt
+npm install
+```
 
-- [ ] Commit/push `public/models/alphabet/` or copy into `/app/early/dist/models/alphabet/` after build.
-- [ ] Optional cron: pull samples (once API exists) → train → `/app/deploy-early.sh`
+In repo `.env` (see `.env.example`):
+
+```env
+DATABASE_URL=postgresql://earlyuser:YOUR_PASSWORD@127.0.0.1:5433/earlydb
+```
+
+### Each retrain (recommended: one script)
+
+**Terminal 1 — SSH tunnel** (leave open):
+
+```powershell
+ssh -L 5433:127.0.0.1:5432 early@YOUR_VPS_HOST
+```
+
+**Terminal 2 — publish** (train only, then commit yourself):
+
+```powershell
+cd C:\EARLY
+npm run publish:model:postgres
+```
+
+**Or train + commit + push `vps`:**
+
+```powershell
+scripts\publish-shared-model-postgres.bat alphabet deploy
+```
+
+| Step | What it does |
+|------|----------------|
+| 1 | `calibration:pull:postgres` → `data/calibration/`, `data/voice-bank/` |
+| 2 | `training:archive` → merge into `data/training-archive/` (Git backup) |
+| 3 | `train_global_model.py` → `public/models/alphabet/` (manifest version +1) |
+| 4 | `version:bump` → `package.json`, `src/version.ts` |
+| 5 | `deploy` arg → `git push origin vps` |
+
+**Deploy on VPS** (build copies `public/models/` into `dist/`):
+
+```bash
+ssh early@YOUR_VPS /app/deploy-early.sh
+```
+
+iPad: reload `https://early.gregtutors.com` — footer version bumps; model line shows new manifest **v6+**.
+
+### Manual steps (same as script)
+
+```powershell
+npm run calibration:pull:postgres
+npm run training:archive
+python tools/train_global_model.py --stage alphabet
+npm run version:bump
+git add public/models/alphabet data/training-archive src/version.ts package.json
+git commit -m "Publish alphabet model vN from Postgres"
+git push origin vps
+```
+
+### Checklist
+
+- [ ] SSH tunnel + `DATABASE_URL` in `.env`
+- [ ] `npm run publish:model:postgres` (or `.bat deploy`)
+- [ ] Commit includes `public/models/alphabet/` and `data/training-archive/` if archive grew
+- [ ] `/app/deploy-early.sh` on VPS
+- [ ] iPad: new model version loads (teacher panel / footer)
+
+### Notes
+
+- Trainer reads **archive + pulled** folders; dedupes by embedding (619 files can be ~291 unique judgments).
+- Current committed model: check `public/models/alphabet/manifest.json` (`version`, `sampleCount`).
+- Optional cron on VPS later: pull → train → deploy (usually train on PC with GPU/TF).
 
 ---
 

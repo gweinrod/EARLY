@@ -11,9 +11,24 @@ import { fileURLToPath } from 'url';
 import pg from 'pg';
 
 const root = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..');
-const url = process.env.DATABASE_URL;
+
+function loadDatabaseUrl() {
+  if (process.env.DATABASE_URL) return process.env.DATABASE_URL;
+  const envPath = path.join(root, '.env');
+  if (!fs.existsSync(envPath)) return null;
+  for (const line of fs.readFileSync(envPath, 'utf8').split('\n')) {
+    const t = line.trim();
+    if (!t || t.startsWith('#')) continue;
+    const i = t.indexOf('=');
+    if (i < 0) continue;
+    if (t.slice(0, i).trim() === 'DATABASE_URL') return t.slice(i + 1).trim();
+  }
+  return null;
+}
+
+const url = loadDatabaseUrl();
 if (!url) {
-  console.error('Set DATABASE_URL');
+  console.error('Set DATABASE_URL in environment or repo .env');
   process.exit(1);
 }
 
@@ -24,8 +39,16 @@ const OUT = {
   voice_bank: path.join(root, 'data', 'voice-bank'),
 };
 
+function clearJsonDir(dir) {
+  if (!fs.existsSync(dir)) return;
+  for (const name of fs.readdirSync(dir)) {
+    if (name.endsWith('.json')) fs.unlinkSync(path.join(dir, name));
+  }
+}
+
 async function exportKind(kind) {
   const outDir = OUT[kind];
+  clearJsonDir(outDir);
   fs.mkdirSync(outDir, { recursive: true });
   const { rows } = await pool.query(
     `SELECT id, stage_id, payload FROM training_samples WHERE kind = $1 ORDER BY created_at`,
