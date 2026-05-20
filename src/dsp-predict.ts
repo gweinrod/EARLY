@@ -19,6 +19,8 @@ export interface DspPrediction {
   heuristicPass: boolean | null;
   tf: TfWordPrediction | null;
   guessedWord: string | null;
+  /** For UI — never use raw guessedKey with ?? (empty string is valid silence). */
+  dspGuessDisplay: string;
   guessConfidence: number;
   targetProbability: number;
   summary: string;
@@ -26,8 +28,15 @@ export interface DspPrediction {
 }
 
 const TF_CONFIDENCE_MIN = 0.22;
-/** Below this peak frame RMS, treat as silence (skip TF letter guess). */
-const PEAK_RMS_SILENCE_MAX = 0.014;
+
+export function dspGuessDisplay(
+  tf: TfWordPrediction | null,
+  quietTake: boolean,
+): string {
+  if (quietTake) return '""';
+  if (tf) return formatVocabKeyForDisplay(tf.guessedKey);
+  return '—';
+}
 
 function formatTfLine(tf: TfWordPrediction, targetKey: string): string {
   const guessLabel = formatVocabKeyForDisplay(tf.guessedKey);
@@ -69,22 +78,23 @@ export function runDspPrediction(
   groupKey: string,
 ): DspPrediction {
   const peakRms = peakFrameRms(frames);
-  const likelySilence = peakRms < PEAK_RMS_SILENCE_MAX;
-
-  const embedding = likelySilence ? extractSilenceEmbedding(frames) : extractEmbedding(frames);
+  const embedding = extractEmbedding(frames) ?? extractSilenceEmbedding(frames);
   const heuristicItems = heuristicFeedback(frames, targetKey, groupKey);
   const heuristicPass = heuristicVerdict(heuristicItems);
 
   let tf: TfWordPrediction | null = null;
-  if (embedding && isTfReady() && !isTfPredictBusy() && !likelySilence) {
+  if (embedding && isTfReady() && !isTfPredictBusy()) {
     tf = predictWordForTarget(embedding, targetKey);
   }
 
   const quietTake =
-    likelySilence ||
-    (tf !== null && isSilenceVocabKey(tf.guessedKey) && tf.confidence >= TF_CONFIDENCE_MIN);
+    (tf !== null &&
+      isSilenceVocabKey(tf.guessedKey) &&
+      tf.confidence >= TF_CONFIDENCE_MIN) ||
+    (!tf && peakRms < 0.008);
 
   const guessedWord = quietTake ? '' : (tf?.guessedKey ?? null);
+  const guessDisplay = dspGuessDisplay(tf, quietTake);
   const guessConfidence = quietTake ? 0 : (tf?.confidence ?? 0);
   const targetProbability = quietTake ? 0 : (tf?.targetProbability ?? 0);
 
@@ -139,6 +149,7 @@ export function runDspPrediction(
     heuristicPass,
     tf,
     guessedWord,
+    dspGuessDisplay: guessDisplay,
     guessConfidence,
     targetProbability,
     summary: parts.join('\n'),

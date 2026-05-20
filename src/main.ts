@@ -729,6 +729,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       heuristicPass: null,
       tf: null,
       guessedWord: null,
+      dspGuessDisplay: '—',
       guessConfidence: 0,
       targetProbability: 0,
       summary: 'DSP not run',
@@ -753,7 +754,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
     : {
         t: appPass ? ('pass' as const) : ('fail' as const),
         s:
-          `app ${appPass ? 'pass' : 'fail'} (${basis}) · DSP “${dsp.tf?.guessedKey ?? '—'}” · ` +
+          `app ${appPass ? 'pass' : 'fail'} (${basis}) · DSP “${dsp.dspGuessDisplay}” · ` +
           `ASR “${heard}”`,
       };
   addFB(studentMsg, true);
