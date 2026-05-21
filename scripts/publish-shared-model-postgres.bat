@@ -102,6 +102,13 @@ echo   ssh early@YOUR_VPS /app/deploy-early.sh
 goto :eof
 
 :deploy_only
+echo Running build check before commit/push...
+call npm run build
+if errorlevel 1 (
+  echo BUILD FAILED — fix errors before pushing.
+  exit /b 1
+)
+
 echo Committing and pushing to %GIT_BRANCH%...
 git add public/models/%STAGE% data/training-archive src/version.ts package.json
 git commit -m "Publish shared %STAGE% model from Postgres calibration"

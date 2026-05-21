@@ -11,6 +11,7 @@
     "dev": "vite",
     "dev:lan": "vite --host",
     "build": "tsc && vite build",
+    "verify": "npm run build",
     "preview": "vite preview",
     "calibration:pull": "node tools/pull_calibration_samples.mjs",
     "calibration:pull:postgres": "node tools/pull_calibration_from_postgres.mjs",

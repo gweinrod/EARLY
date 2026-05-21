@@ -461,9 +461,10 @@ cd C:\EARLY
 npm run publish:model:postgres
 ```
 
-**Then commit + push (does not train again):**
+**Then commit + push (does not train again; runs `npm run build` first):**
 
 ```powershell
+npm run build
 scripts\publish-shared-model-postgres.bat alphabet deploy
 ```
 
@@ -477,10 +478,10 @@ Do **not** run `deploy` right after `npm run publish:model:postgres` without mea
 | 4 | `version:bump` → `package.json`, `src/version.ts` |
 | 5 | `deploy` → `git commit` + `git push origin vps` only |
 
-**Deploy on VPS** (build copies `public/models/` into `dist/`):
+**Deploy on VPS** — one command (pull + build; see Phase 4):
 
 ```bash
-ssh early@YOUR_VPS /app/deploy-early.sh
+/app/deploy-early.sh
 ```
 
 iPad: reload `https://early.gregtutors.com` — footer version bumps; model line shows new manifest **v6+**.
