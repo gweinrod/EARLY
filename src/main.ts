@@ -247,11 +247,10 @@ async function processAudio(dspBackfill = false): Promise<void> {
 
   dspProcessed = true;
   mediaProcessInFlight = false;
-  if (dspBackfill) {
-    if (eeTailBackfill) {
-      finishAttempt(eeTailBackfill.heard, eeTailBackfill.asrPass);
-    }
-    backfillEeTailCollector();
+  if (dspBackfill && eeTailBackfill) {
+    const { heard, asrPass } = eeTailBackfill;
+    eeTailBackfill = null;
+    finishAttempt(heard, asrPass);
     return;
   }
   scheduleAttemptFinalize();
@@ -414,31 +413,6 @@ function finalizeEeTailImmediately(): void {
   pendingAsrPass = eeTailBackfill.asrPass;
   dspProcessed = true;
   finalizeAttempt({ deferScoring: true });
-}
-
-function backfillEeTailCollector(): void {
-  if (!eeTailBackfill || !settings.collectorMode || !lastDsp?.embedding) return;
-  const { heard, asrPass } = eeTailBackfill;
-  const attempt = loadAttempts().find((a) => a.id === lastLoggedAttemptId);
-  if (!attempt) return;
-  if (asrPass && heard.trim() && lastDsp.dspPass) {
-    const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: false });
-    addFB(
-      { t: 'pass', s: `DSP and ASR agree on "${heard}" - saved for training.` },
-      true,
-    );
-    void onTeacherJudgment(judgment);
-  } else if (asrPass && heard.trim() && !lastDsp.dspPass) {
-    const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: true });
-    addFB(
-      { t: 'pass', s: `ASR correct, DSP missed - pass; saved for training.` },
-      true,
-    );
-    void onTeacherJudgment(judgment);
-  } else {
-    promptTeacherJudgment(attempt, curStageId);
-  }
-  eeTailBackfill = null;
 }
 
 /** Run DSP after immediate finalize (mic already released). */
@@ -728,25 +702,15 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       return;
     }
     if (asrPass && heard.trim() && dsp.dspPass) {
-      const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: false });
-      addFB(
-        {
-          t: 'pass',
-          s: `DSP and ASR agree on "${heard}" - saved for training.`,
-        },
-        true,
-      );
-      void onTeacherJudgment(judgment);
+      autoConfirmAsrPass(attempt, curStageId, heard, {
+        dspFailed: false,
+        statusMessage: `DSP and ASR agree on "${heard}" - saved for training.`,
+      });
     } else if (asrPass && heard.trim() && !dsp.dspPass) {
-      const judgment = autoConfirmAsrPass(attempt, curStageId, heard, { dspFailed: true });
-      addFB(
-        {
-          t: 'pass',
-          s: `ASR correct, DSP missed - pass; saved for training.`,
-        },
-        true,
-      );
-      void onTeacherJudgment(judgment);
+      autoConfirmAsrPass(attempt, curStageId, heard, {
+        dspFailed: true,
+        statusMessage: `ASR correct, DSP missed - pass; saved for training.`,
+      });
     } else {
       promptTeacherJudgment(attempt, curStageId);
     }
