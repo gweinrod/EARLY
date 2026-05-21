@@ -40,7 +40,7 @@ const ALPHABET_ITEMS: CurriculumItem[] = [
   { key: 'k', display: 'K', spokenName: 'kay', phonemeNote: 'name contains /k/', aliases: ['k', 'kay', 'cae'] },
   { key: 'l', display: 'L', spokenName: 'el', phonemeNote: 'name contains /l/', aliases: ['l', 'el', 'ell'] },
   { key: 'm', display: 'M', spokenName: 'em', phonemeNote: 'name contains /m/', aliases: ['m', 'em'] },
-  { key: 'n', display: 'N', spokenName: 'en', phonemeNote: 'name contains /n/', aliases: ['n', 'en'] },
+  { key: 'n', display: 'N', spokenName: 'en', phonemeNote: 'name contains /n/', aliases: ['n', 'en', 'in', 'inn'] },
   { key: 'o', display: 'O', spokenName: 'oh', phonemeNote: 'vowel name = long /o?/ sound', aliases: ['o', 'oh', 'owe'] },
   { key: 'p', display: 'P', spokenName: 'pee', phonemeNote: 'name contains /p/', aliases: ['p', 'pee', 'pea'] },
   { key: 'q', display: 'Q', spokenName: 'cue', phonemeNote: 'name contains /k/', aliases: ['q', 'cue', 'que', 'kyu', 'queue'] },
@@ -142,16 +142,66 @@ export function letterNameIsKeyPlusEe(item: CurriculumItem): boolean {
 }
 
 /**
+ * Short names where the spoken label does not start with the letter key (en, em, el, ar, eff).
+ * Chrome often returns nothing, only the key, or a near-homophone ("in" for "en").
+ */
+export function spokenNameIsSchwaStyle(item: CurriculumItem): boolean {
+  const sn = normalizeHeardLabel(item.spokenName).replace(/\s+/g, '');
+  if (sn.length < 2 || sn.length > 3) return false;
+  if (letterNameIsKeyPlusEe(item) || spokenNameIsDoubledLetter(item)) return false;
+  return sn[0] !== item.key;
+}
+
+/** Partial transcript while the student is still saying en / em / el (or only the key). */
+export function isIncompleteSchwaNamePrefix(heard: string, item: CurriculumItem): boolean {
+  if (!spokenNameIsSchwaStyle(item)) return false;
+  const sn = normalizeHeardLabel(item.spokenName).replace(/\s+/g, '');
+  const h = normalizeHeardLabel(heard).replace(/\s+/g, '');
+  if (!h || h.length >= sn.length) return false;
+  if (sn.startsWith(h)) return true;
+  return h === item.key;
+}
+
+/** Incomplete bee/dee tail or incomplete en/em/el-style name. */
+export function isIncompleteLetterNamePrefix(heard: string, item: CurriculumItem): boolean {
+  return isIncompleteEeNamePrefix(heard, item) || isIncompleteSchwaNamePrefix(heard, item);
+}
+
+/** Common Chrome mis-hearings for a specific letter (only when transcript does not already match). */
+const ASR_MISHEAR_BY_KEY: Partial<Record<string, Record<string, string>>> = {
+  n: { in: 'en', inn: 'en' },
+  m: { am: 'em', im: 'em' },
+  l: { al: 'el', ill: 'el' },
+};
+
+export function remapAsrMishearForItem(
+  stageId: CurriculumStageId,
+  heard: string,
+  item: CurriculumItem,
+): string {
+  const label = normalizeHeardLabel(heard);
+  if (!label || transcriptMatchesItem(stageId, heard, item)) return heard;
+  const mapped = ASR_MISHEAR_BY_KEY[item.key]?.[label];
+  return mapped ? normalizeHeardLabel(mapped) : heard;
+}
+
+/**
  * Chrome onend often fires after only "b"; the student already said "ee" but ASR missed it.
+ * Same idea for "en" / "em" / "el" when only "e", "n", etc. appear.
  */
 export function resolveHeardForEeChromeTail(
   heard: string,
   item: CurriculumItem,
   chromeAteEeTail: boolean,
 ): string {
-  if (!chromeAteEeTail || !letterNameIsKeyPlusEe(item)) return heard;
-  if (!isIncompleteEeNamePrefix(heard, item)) return heard;
-  return normalizeHeardLabel(item.spokenName);
+  if (!chromeAteEeTail) return heard;
+  if (letterNameIsKeyPlusEe(item) && isIncompleteEeNamePrefix(heard, item)) {
+    return normalizeHeardLabel(item.spokenName);
+  }
+  if (spokenNameIsSchwaStyle(item) && isIncompleteSchwaNamePrefix(heard, item)) {
+    return normalizeHeardLabel(item.spokenName);
+  }
+  return heard;
 }
 
 /**
@@ -259,7 +309,7 @@ export function transcriptMatchesItemForSessionEnd(
   item: CurriculumItem,
 ): boolean {
   if (!transcriptMatchesItemForScoring(stageId, heard, item)) return false;
-  if (isIncompleteEeNamePrefix(heard, item)) return false;
+  if (isIncompleteLetterNamePrefix(heard, item)) return false;
   return true;
 }
 

@@ -23,10 +23,12 @@ import {
   transcriptMatchesItemForAutoStop,
   transcriptMatchesItemForScoring,
   transcriptMatchesItemForSessionEnd,
-  isIncompleteEeNamePrefix,
+  isIncompleteLetterNamePrefix,
   letterNameIsKeyPlusEe,
   normalizeHeardLabel,
+  remapAsrMishearForItem,
   resolveHeardForEeChromeTail,
+  spokenNameIsSchwaStyle,
 } from './curriculum';
 import {
   ensureDspEngine,
@@ -341,18 +343,18 @@ function canAutoEndTake(): boolean {
   return takeElapsedMs() >= MIN_RECORDING_MS;
 }
 
-/** Lone key on bee/dee letters without mic speech energy is almost always Chrome noise. */
+/** Lone key on bee/dee or en/em/el letters without mic speech energy is almost always Chrome noise. */
 function isPhantomKeyTranscript(heard: string): boolean {
-  if (!letterNameIsKeyPlusEe(curItem)) return false;
+  if (!letterNameIsKeyPlusEe(curItem) && !spokenNameIsSchwaStyle(curItem)) return false;
   if (speechDetectedThisTake) return false;
   const tokens = normalizeHeardLabel(heard).split(/\s+/).filter(Boolean);
   return tokens.length === 1 && tokens[0] === curItem.key;
 }
 
-/** When Chrome never delivers onresult, still end bee/dee letters with full spoken name. */
+/** When Chrome never delivers onresult, still end with full spoken name (bee/dee or en/em/el). */
 function forceEeLetterNameEndTake(caller: string): boolean {
   if (endingTake || lockedEeTailAsr || attemptFinalized) return false;
-  if (!letterNameIsKeyPlusEe(curItem)) return false;
+  if (!letterNameIsKeyPlusEe(curItem) && !spokenNameIsSchwaStyle(curItem)) return false;
   if (!canAutoEndTake() || takeElapsedMs() < EE_TAIL_MIN_TAKE_MS) return false;
   if (!speechDetectedThisTake) return false;
   if (takeAsrAccum.trim() || (pendingHeard ?? '').trim()) return false;
@@ -367,7 +369,7 @@ function forceEeLetterNameEndTake(caller: string): boolean {
 
 function scheduleAsrNoResultWatchdog(session: number): void {
   clearAsrNoResultTimer();
-  if (!letterNameIsKeyPlusEe(curItem)) return;
+  if (!letterNameIsKeyPlusEe(curItem) && !spokenNameIsSchwaStyle(curItem)) return;
   const ms = EE_TAIL_MIN_TAKE_MS + ASR_EE_TAIL_MS;
   asrNoResultTimer = setTimeout(() => {
     asrNoResultTimer = null;
@@ -376,7 +378,7 @@ function scheduleAsrNoResultWatchdog(session: number): void {
     const raw = pendingHeard ?? '';
     const accum = takeAsrAccum.trim();
     if (raw || accum) {
-      if (raw && speechDetectedThisTake && isIncompleteEeNamePrefix(raw, curItem)) {
+      if (raw && speechDetectedThisTake && isIncompleteLetterNamePrefix(raw, curItem)) {
         sawIncompleteEeOnEnd = true;
         applyAsrTranscript(raw);
       }
@@ -598,7 +600,7 @@ function finalizeAttempt(opts?: { deferScoring?: boolean }): void {
   let asrPass = lockedEeTailAsr?.pass ?? pendingAsrPass ?? false;
   if (
     !heard.trim() &&
-    letterNameIsKeyPlusEe(curItem) &&
+    (letterNameIsKeyPlusEe(curItem) || spokenNameIsSchwaStyle(curItem)) &&
     lastDsp?.tf?.guessedKey === curItem.key &&
     takeElapsedMs() >= EE_TAIL_MIN_TAKE_MS &&
     speechDetectedThisTake
@@ -618,7 +620,7 @@ function shouldEndTakeFromEeTailAutofill(resolved: string): boolean {
   return (
     speechDetectedThisTake &&
     sawIncompleteEeOnEnd &&
-    letterNameIsKeyPlusEe(curItem) &&
+    (letterNameIsKeyPlusEe(curItem) || spokenNameIsSchwaStyle(curItem)) &&
     pendingAsrPass === true &&
     normalizeHeardLabel(resolved) === normalizeHeardLabel(curItem.spokenName)
   );
@@ -626,7 +628,8 @@ function shouldEndTakeFromEeTailAutofill(resolved: string): boolean {
 
 function applyAsrTranscript(heard: string): void {
   if (!heard.trim()) return;
-  const resolved = resolveHeardForEeChromeTail(heard, curItem, sawIncompleteEeOnEnd);
+  const remapped = remapAsrMishearForItem(curStageId, heard, curItem);
+  const resolved = resolveHeardForEeChromeTail(remapped, curItem, sawIncompleteEeOnEnd);
   pendingAsrPass = transcriptMatchesItemForScoring(curStageId, resolved, curItem);
   pendingHeard = resolved;
   takeAsrAccum = resolved;
@@ -938,14 +941,14 @@ async function toggleRec(): Promise<void> {
           return;
         }
         const raw = pendingHeard ?? '';
-        if (asrPauseTimer && sawIncompleteEeOnEnd && isIncompleteEeNamePrefix(raw, curItem)) {
+        if (asrPauseTimer && sawIncompleteEeOnEnd && isIncompleteLetterNamePrefix(raw, curItem)) {
           return;
         }
         clearAsrPauseTimer();
         const incomplete =
-          !!raw && isIncompleteEeNamePrefix(raw, curItem) && !sawIncompleteEeOnEnd;
+          !!raw && isIncompleteLetterNamePrefix(raw, curItem) && !sawIncompleteEeOnEnd;
         const ms =
-          incomplete || (raw && isIncompleteEeNamePrefix(raw, curItem))
+          incomplete || (raw && isIncompleteLetterNamePrefix(raw, curItem))
             ? ASR_EE_TAIL_MS
             : ASR_PAUSE_MS;
         asrPauseTimer = setTimeout(() => {
@@ -957,7 +960,7 @@ async function toggleRec(): Promise<void> {
           }
           const h = pendingHeard ?? '';
           if (!h) return;
-          if (isIncompleteEeNamePrefix(h, curItem)) {
+          if (isIncompleteLetterNamePrefix(h, curItem)) {
             if (sawIncompleteEeOnEnd && speechDetectedThisTake) {
               const resolved = normalizeHeardLabel(curItem.spokenName);
               lockedEeTailAsr = { heard: resolved, pass: true };
@@ -968,7 +971,11 @@ async function toggleRec(): Promise<void> {
             }
             return;
           }
-          if (pendingAsrPass && sawIncompleteEeOnEnd && letterNameIsKeyPlusEe(curItem)) {
+          if (
+            pendingAsrPass &&
+            sawIncompleteEeOnEnd &&
+            (letterNameIsKeyPlusEe(curItem) || spokenNameIsSchwaStyle(curItem))
+          ) {
             endTake('pause-ee-scored');
             return;
           }
@@ -992,11 +999,11 @@ async function toggleRec(): Promise<void> {
         takeAsrAccum = heard;
         const isFinal = eventHasFinalTranscript(e);
 
-        // Chrome marks "b" before "ee"; after MIN_TAKE_MS treat as missed tail (not only isFinal).
+        // Chrome marks "b" before "ee" or drops "en"/"em"; after MIN_TAKE_MS treat as missed tail.
         if (
           speechDetectedThisTake &&
-          letterNameIsKeyPlusEe(curItem) &&
-          isIncompleteEeNamePrefix(heard, curItem) &&
+          (letterNameIsKeyPlusEe(curItem) || spokenNameIsSchwaStyle(curItem)) &&
+          isIncompleteLetterNamePrefix(heard, curItem) &&
           takeElapsedMs() >= EE_TAIL_MIN_TAKE_MS
         ) {
           sawIncompleteEeOnEnd = true;
@@ -1032,7 +1039,7 @@ async function toggleRec(): Promise<void> {
         }
         if (
           heardOnEnd &&
-          !isIncompleteEeNamePrefix(heardOnEnd, curItem) &&
+          !isIncompleteLetterNamePrefix(heardOnEnd, curItem) &&
           canAutoEndTake() &&
           takeElapsedMs() >= MIN_TAKE_MS &&
           transcriptMatchesItemForSessionEnd(curStageId, heardOnEnd, curItem)
@@ -1041,7 +1048,7 @@ async function toggleRec(): Promise<void> {
           endTake('onend-session-match');
           return;
         }
-        if (isIncompleteEeNamePrefix(heardOnEnd, curItem)) {
+        if (isIncompleteLetterNamePrefix(heardOnEnd, curItem)) {
           if (isPhantomKeyTranscript(heardOnEnd)) {
             return;
           }
