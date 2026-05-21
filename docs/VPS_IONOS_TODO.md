@@ -464,11 +464,13 @@ cd C:\EARLY
 npm run publish:model:postgres
 ```
 
-**Or train + commit + push `vps`:**
+**Then commit + push (does not train again):**
 
 ```powershell
 scripts\publish-shared-model-postgres.bat alphabet deploy
 ```
+
+Do **not** run `deploy` right after `npm run publish:model:postgres` without meaning to — the old script re-ran pull+train and bumped model/app versions twice (v5→v7, 0.68→0.70). `deploy` / `deploy-only` are now **git only**.
 
 | Step | What it does |
 |------|----------------|
@@ -476,7 +478,7 @@ scripts\publish-shared-model-postgres.bat alphabet deploy
 | 2 | `training:archive` → merge into `data/training-archive/` (Git backup) |
 | 3 | `train_global_model.py` → `public/models/alphabet/` (manifest version +1) |
 | 4 | `version:bump` → `package.json`, `src/version.ts` |
-| 5 | `deploy` arg → `git push origin vps` |
+| 5 | `deploy` → `git commit` + `git push origin vps` only |
 
 **Deploy on VPS** (build copies `public/models/` into `dist/`):
 
@@ -501,7 +503,7 @@ git push origin vps
 ### Checklist
 
 - [ ] SSH tunnel + `DATABASE_URL` in `.env`
-- [ ] `npm run publish:model:postgres` (or `.bat deploy`)
+- [ ] `npm run publish:model:postgres`, then `.bat alphabet deploy` (git only)
 - [ ] Commit includes `public/models/alphabet/` and `data/training-archive/` if archive grew
 - [ ] `/app/deploy-early.sh` on VPS
 - [ ] iPad: new model version loads (teacher panel / footer)

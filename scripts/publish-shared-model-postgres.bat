@@ -9,18 +9,21 @@ cd /d "%~dp0.."
 
 set "STAGE=alphabet"
 set "GIT_BRANCH=vps"
-set "DO_DEPLOY=0"
+set "DEPLOY_ONLY=0"
 set "API_HOST=https://early.gregtutors.com"
 
 :parse_args
 if "%~1"=="" goto args_done
-if /i "%~1"=="deploy" set "DO_DEPLOY=1" & shift & goto parse_args
-if /i "%~1"=="--deploy" set "DO_DEPLOY=1" & shift & goto parse_args
+if /i "%~1"=="deploy" set "DEPLOY_ONLY=1" & shift & goto parse_args
+if /i "%~1"=="--deploy" set "DEPLOY_ONLY=1" & shift & goto parse_args
+if /i "%~1"=="deploy-only" set "DEPLOY_ONLY=1" & shift & goto parse_args
 set "STAGE=%~1"
 shift
 goto parse_args
 
 :args_done
+
+if "%DEPLOY_ONLY%"=="1" goto deploy_only
 
 if not defined DATABASE_URL if exist ".env" (
   for /f "usebackq eol=# tokens=1,* delims==" %%A in (".env") do (
@@ -93,17 +96,12 @@ echo [5/5] Model: public\models\%STAGE%\
 type public\models\%STAGE%\manifest.json 2>nul
 echo.
 
-if "%DO_DEPLOY%"=="0" (
-  echo Next: commit, push, deploy on VPS
-  echo   git add public/models/%STAGE% data/training-archive src/version.ts package.json
-  echo   git commit -m "Publish shared %STAGE% model from Postgres"
-  echo   git push origin %GIT_BRANCH%
-  echo   ssh early@YOUR_VPS /app/deploy-early.sh
-  echo.
-  echo Or: scripts\publish-shared-model-postgres.bat %STAGE% deploy
-  goto :eof
-)
+echo Next: commit and push ^(does not train again^)
+echo   scripts\publish-shared-model-postgres.bat %STAGE% deploy
+echo   ssh early@YOUR_VPS /app/deploy-early.sh
+goto :eof
 
+:deploy_only
 echo Committing and pushing to %GIT_BRANCH%...
 git add public/models/%STAGE% data/training-archive src/version.ts package.json
 git commit -m "Publish shared %STAGE% model from Postgres calibration"
@@ -119,3 +117,4 @@ echo Pushed. On VPS run:  ssh early@YOUR_VPS /app/deploy-early.sh
 echo Devices load the new model on next visit to %API_HOST%.
 
 endlocal
+exit /b 0
