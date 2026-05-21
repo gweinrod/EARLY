@@ -147,23 +147,21 @@ Works with **no** backend; uses committed model under `/models/alphabet/`.
 
 ## Phase 4 — Deploy script (repeatable updates)
 
-- [x] Create `/app/deploy-early.sh` on VPS:
+- [x] Create `/app/deploy-early.sh` on VPS (canonical copy: [scripts/deploy-early.sh](../scripts/deploy-early.sh))
+
+  **Includes `git fetch` + `checkout vps` + `git pull`** — no separate pull step before deploy.
 
   ```bash
-  #!/bin/bash
-  set -e
-  cd /app/early
-  git fetch origin
-  git checkout vps    # or main
-  git pull
-  npm ci
-  npm run build
-  # optional: sudo systemctl restart early-api   # after Phase 5
-  echo "Deployed $(git rev-parse --short HEAD) → /app/early/dist"
+  /app/deploy-early.sh
   ```
 
-- [x] `chmod +x /app/deploy-early.sh`
-- [x] From PC: `ssh root@early.gregtutors.com /app/deploy-early.sh`
+  From PC: `ssh early@69.48.207.4 /app/deploy-early.sh`
+
+  If pull aborts on local `package-lock.json` edits on the server:
+
+  ```bash
+  cd /app/early && git checkout -- package-lock.json && /app/deploy-early.sh
+  ```
 
 ---
 
@@ -421,13 +419,12 @@ On iPad: teacher panel → **Cloud training: 26 voice · 291 judgments** (no Ver
 
 #### 6c — After server code changes
 
+`/app/deploy-early.sh` already pulls and rebuilds the static app. If `server/` changed, also:
+
 ```bash
-cd /app/early && git pull origin vps
-cd server && npm install
+cd /app/early/server && npm install
 sudo systemctl restart early-api
 ```
-
-Static app only: `/app/deploy-early.sh` (no API restart needed unless `server/` changed).
 
 ---
 
