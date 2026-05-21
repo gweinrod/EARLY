@@ -206,6 +206,7 @@ const ASR_MISHEAR_BY_KEY: Partial<Record<string, Record<string, string>>> = {
   m: { am: 'em', im: 'em' },
   l: { al: 'el', ill: 'el' },
   j: { jae: 'jay' },
+};
 
 export function remapAsrMishearForItem(
   stageId: CurriculumStageId,
