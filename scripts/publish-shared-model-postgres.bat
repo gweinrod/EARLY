@@ -43,6 +43,12 @@ if errorlevel 1 (
   exit /b 1
 )
 
+if not exist "node_modules\pg\package.json" (
+  echo Installing npm dependencies ^(pg, etc.^)...
+  call npm install
+  if errorlevel 1 exit /b 1
+)
+
 echo.
 echo EARLY publish shared model ^(Postgres^)  stage=%STAGE%
 echo ========================================

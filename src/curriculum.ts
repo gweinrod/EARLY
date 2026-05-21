@@ -212,8 +212,10 @@ export function transcriptMatchesItem(
 }
 
 /**
- * Like transcriptMatchesItem but requires the full letter name for ee-sound letters
+ * Like transcriptMatchesItem but requires the full letter name for key+ee names
  * in the alphabet stage. "b" alone is not a pass for B — student must say "bee".
+ * Not applied to "see", "jee", "cue", etc. (spoken name does not start with the key);
+ * Chrome often returns just the letter (e.g. "g" for G / "jee") and that is a valid alias.
  */
 export function transcriptMatchesItemForScoring(
   stageId: CurriculumStageId,
@@ -221,7 +223,7 @@ export function transcriptMatchesItemForScoring(
   item: CurriculumItem,
 ): boolean {
   if (!transcriptMatchesItem(stageId, heard, item)) return false;
-  if (stageId === 'alphabet' && spokenNameEndsWithEeSound(item)) {
+  if (stageId === 'alphabet' && letterNameIsKeyPlusEe(item)) {
     const tokens = normalizeHeardLabel(heard).split(/\s+/).filter(Boolean);
     if (tokens.length === 1 && tokens[0] === item.key) return false;
   }
