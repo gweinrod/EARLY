@@ -36,7 +36,7 @@ const ALPHABET_ITEMS: CurriculumItem[] = [
   { key: 'g', display: 'G', spokenName: 'jee', phonemeNote: 'name contains /g/', aliases: ['g', 'jee', 'gee'] },
   { key: 'h', display: 'H', spokenName: 'aitch', phonemeNote: 'name contains /h/', aliases: ['h', 'aitch', 'haitch'] },
   { key: 'i', display: 'I', spokenName: 'eye', phonemeNote: 'vowel name = long /a?/ sound', aliases: ['i', 'eye', 'aye'] },
-  { key: 'j', display: 'J', spokenName: 'jay', phonemeNote: 'name contains /d?/', aliases: ['j', 'jay'] },
+  { key: 'j', display: 'J', spokenName: 'jay', phonemeNote: 'name contains /d?/', aliases: ['j', 'jay', 'jae'] },
   { key: 'k', display: 'K', spokenName: 'kay', phonemeNote: 'name contains /k/', aliases: ['k', 'kay', 'cae'] },
   { key: 'l', display: 'L', spokenName: 'el', phonemeNote: 'name contains /l/', aliases: ['l', 'el', 'ell'] },
   { key: 'm', display: 'M', spokenName: 'em', phonemeNote: 'name contains /m/', aliases: ['m', 'em'] },
@@ -162,9 +162,42 @@ export function isIncompleteSchwaNamePrefix(heard: string, item: CurriculumItem)
   return h === item.key;
 }
 
-/** Incomplete bee/dee tail or incomplete en/em/el-style name. */
+/**
+ * Spoken name starts with the letter key but is not key+ee (jay, kay).
+ * Chrome often returns only "j" or nothing while the student says "jay".
+ */
+export function letterNameIsKeyLedSpokenName(item: CurriculumItem): boolean {
+  if (item.key.length !== 1) return false;
+  const sn = normalizeHeardLabel(item.spokenName).replace(/\s+/g, '');
+  if (sn.length < 2 || sn.length > 4) return false;
+  if (letterNameIsKeyPlusEe(item) || spokenNameIsDoubledLetter(item)) return false;
+  return sn.startsWith(item.key);
+}
+
+export function isIncompleteKeyLedNamePrefix(heard: string, item: CurriculumItem): boolean {
+  if (!letterNameIsKeyLedSpokenName(item)) return false;
+  const sn = normalizeHeardLabel(item.spokenName).replace(/\s+/g, '');
+  const h = normalizeHeardLabel(heard).replace(/\s+/g, '');
+  if (!h || h.length >= sn.length) return false;
+  return sn.startsWith(h);
+}
+
+/** Letters that need no-result watchdog / chrome-tail recovery (bee, en, jay, …). */
+export function letterNameNeedsAsrRecovery(item: CurriculumItem): boolean {
+  return (
+    letterNameIsKeyPlusEe(item) ||
+    spokenNameIsSchwaStyle(item) ||
+    letterNameIsKeyLedSpokenName(item)
+  );
+}
+
+/** Incomplete bee/dee tail, en/em/el, or jay/kay prefix. */
 export function isIncompleteLetterNamePrefix(heard: string, item: CurriculumItem): boolean {
-  return isIncompleteEeNamePrefix(heard, item) || isIncompleteSchwaNamePrefix(heard, item);
+  return (
+    isIncompleteEeNamePrefix(heard, item) ||
+    isIncompleteSchwaNamePrefix(heard, item) ||
+    isIncompleteKeyLedNamePrefix(heard, item)
+  );
 }
 
 /** Common Chrome mis-hearings for a specific letter (only when transcript does not already match). */
@@ -172,7 +205,7 @@ const ASR_MISHEAR_BY_KEY: Partial<Record<string, Record<string, string>>> = {
   n: { in: 'en', inn: 'en' },
   m: { am: 'em', im: 'em' },
   l: { al: 'el', ill: 'el' },
-};
+  j: { jae: 'jay' },
 
 export function remapAsrMishearForItem(
   stageId: CurriculumStageId,
@@ -199,6 +232,9 @@ export function resolveHeardForEeChromeTail(
     return normalizeHeardLabel(item.spokenName);
   }
   if (spokenNameIsSchwaStyle(item) && isIncompleteSchwaNamePrefix(heard, item)) {
+    return normalizeHeardLabel(item.spokenName);
+  }
+  if (letterNameIsKeyLedSpokenName(item) && isIncompleteKeyLedNamePrefix(heard, item)) {
     return normalizeHeardLabel(item.spokenName);
   }
   return heard;
