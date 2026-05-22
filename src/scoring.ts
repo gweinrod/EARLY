@@ -2,7 +2,7 @@ import type { CurriculumStageId } from './curriculum';
 import type { DspPrediction } from './dsp-predict';
 import type { FeedbackItem } from './feedback';
 
-export type ScoringBasis = 'dsp_tf' | 'heuristic' | 'asr' | 'asr_only';
+export type ScoringBasis = 'dsp_tf' | 'heuristic';
 
 /** Any explicit pass/fail from DSP heuristics (not info/warn). */
 export function heuristicVerdict(items: FeedbackItem[]): boolean | null {
@@ -12,11 +12,8 @@ export function heuristicVerdict(items: FeedbackItem[]): boolean | null {
   return true;
 }
 
-/**
- * Student pass/fail: DSP match wins; if DSP fails but ASR heard the target, count as pass and train from that.
- */
+/** Student pass/fail from DSP only (speech-to-text disabled). */
 export function deriveAppPass(
-  asrPass: boolean,
   dsp: Pick<DspPrediction, 'dspPass' | 'heuristicPass' | 'tf'> & { guessedKey?: string | null },
   targetKey: string,
   _stageId: CurriculumStageId = 'alphabet',
@@ -31,15 +28,11 @@ export function deriveAppPass(
     return { appPass: true, basis: 'heuristic' };
   }
 
-  if (asrPass) {
-    return { appPass: true, basis: 'asr' };
-  }
-
   if (dsp.tf && dsp.tf.confidence >= 0.22) {
     return { appPass: guess === t, basis: 'dsp_tf' };
   }
   if (dsp.heuristicPass !== null) {
     return { appPass: dsp.dspPass, basis: 'heuristic' };
   }
-  return { appPass: false, basis: 'asr' };
+  return { appPass: false, basis: 'dsp_tf' };
 }

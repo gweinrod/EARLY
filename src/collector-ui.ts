@@ -113,49 +113,13 @@ export function promptTeacherJudgment(attempt: AttemptLog, stageId: CurriculumSt
   $('judgmentBlock').scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 }
 
-/** DSP/ASR pass — same as teacher tapping accept (logs judgment + trains). */
-export function autoConfirmAsrPass(
-  attempt: AttemptLog,
-  stageId: CurriculumStageId,
-  heard: string,
-  opts?: { dspFailed?: boolean; statusMessage?: string },
-): JudgmentResult {
-  pendingAttemptId = attempt.id;
-  pendingAttempt = attempt;
-  pendingStageId = stageId;
-
-  const item = targetItemForAttempt(attempt, stageId);
-  const teacherHeard = heard.trim() || item?.spokenName || attempt.targetKey || '';
-  const teacherHeardKey =
-    resolveItemKey(stageId, teacherHeard) ?? attempt.targetKey ?? null;
-
-  const dspFailed = opts?.dspFailed ?? false;
-  const defaultMsg = dspFailed
-    ? `Accepted “${teacherHeard}” — DSP missed; training updated.`
-    : `Accepted “${teacherHeard}” — DSP and ASR agree; training updated.`;
-  commitJudgment(true, false, dspFailed, teacherHeard, {
-    statusMessage: opts?.statusMessage ?? defaultMsg,
-  });
-
-  return {
-    agrees: true,
-    asrWrong: false,
-    dspWrong: dspFailed,
-    teacherHeard,
-    teacherHeardKey,
-  };
-}
-
 function submitHeSaidTarget(): void {
   if (!pendingAttempt) return;
   const item = targetItemForAttempt(pendingAttempt, pendingStageId);
   const teacherHeard = item?.spokenName ?? pendingAttempt.targetKey ?? '';
-
-  const heard = (pendingAttempt.heard ?? '').trim();
-  const asrWrong = heard.length > 0 && !pendingAttempt.asrPass;
   const dspWrong = !pendingAttempt.dspPass;
 
-  commitJudgment(true, asrWrong, dspWrong, teacherHeard, {
+  commitJudgment(true, false, dspWrong, teacherHeard, {
     statusMessage: `Judgment saved — “${teacherHeard}” accepted.`,
   });
 }

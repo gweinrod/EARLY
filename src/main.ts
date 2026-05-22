@@ -1,13 +1,5 @@
-import { asrLog, asrWarn, dumpSpeechResultEvent, formatAsrLogTail } from './asr-debug';
-import {
-  createSpeechRecognition,
-  eventHasFinalTranscript,
-  fullTranscriptFromEvent,
-  mergeTakeTranscript,
-} from './asr';
 import { APP_VERSION } from './version';
 import {
-  autoConfirmAsrPass,
   initCollectorPanel,
   promptTeacherJudgment,
   setCloudRefreshHandler,
@@ -20,15 +12,6 @@ import {
   getStage,
   pickNextItemInOrder,
   STAGE_ORDER,
-  transcriptMatchesItem,
-  transcriptMatchesItemForAutoStop,
-  transcriptMatchesItemForScoring,
-  transcriptMatchesItemForSessionEnd,
-  isIncompleteLetterNamePrefix,
-  letterNameNeedsAsrRecovery,
-  normalizeHeardLabel,
-  remapAsrMishearForItem,
-  resolveHeardForEeChromeTail,
 } from './curriculum';
 import {
   ensureDspEngine,
@@ -90,52 +73,26 @@ let audioCtx: AudioContext | null = null;
 let recChunks: Blob[] = [];
 let mediaRec: MediaRecorder | null = null;
 let recStream: MediaStream | null = null;
-let activeRecognition: SpeechRecognition | null = null;
-let asrWaitTimer: ReturnType<typeof setTimeout> | null = null;
 let attemptFinalized = false;
-let dspProcessed = false;
-let asrEnded = false;
-let endingTake = false;
+let endingRecording = false;
 let takeSessionId = 0;
 let takeStartedAt = 0;
 let maxTakeTimer: ReturnType<typeof setTimeout> | null = null;
-let asrPauseTimer: ReturnType<typeof setTimeout> | null = null;
 let listening = false;
-let asrRestartsThisTake = 0;
-/** Cumulative ASR text across Chrome recognition restarts within one tap. */
-let takeAsrAccum = '';
-/** Chrome onend fired while heard was an incomplete bee/dee prefix (consonant only). */
-let sawIncompleteEeOnEnd = false;
-/** ASR result locked when ee-tail autofill ends take (survives short-recording clear). */
-let lockedEeTailAsr: { heard: string; pass: boolean } | null = null;
 let mediaProcessInFlight = false;
-/** Heard/asrPass after immediate ee-tail finalize; DSP backfill may add collector training lines. */
-let eeTailBackfill: { heard: string; asrPass: boolean } | null = null;
-/** End take after speech pauses (post-speech tail). */
-const ASR_PAUSE_MS = 1400;
-/** Extra wait when Chrome only heard the consonant of bee/dee before onend. */
-const ASR_EE_TAIL_MS = 900;
-/** Extra time to collect ASR when the mic heard speech but transcript is still empty. */
-const ASR_EMPTY_WAIT_MS = 2200;
-/** Brief floor so auto-stop does not fire on the first syllable. */
-const MIN_TAKE_MS = 350;
-/** Min time for full "bee" before ee-tail autofill ends the take (one utterance). */
-const EE_TAIL_MIN_TAKE_MS = 850;
-/** Chrome ends continuous ASR often; restart in the same take (not a second tap). */
-const ASR_MAX_RESTARTS_PER_TAKE = 24;
-/** Hard cap per tap (was 12s " too long when Chrome never returns onresult). */
-const MAX_TAKE_MS = 4000;
-/** Ignore phantom ASR / auto-end until the mic has been open this long. */
+/** End recording after speech pauses (post-speech tail). */
+const RECORD_PAUSE_MS = 1400;
+/** Hard cap per tap. */
+const MAX_RECORD_MS = 4000;
+/** Do not auto-end until the mic has been open this long. */
 const MIN_RECORDING_MS = 600;
-/** Analyser RMS above this counts as the student actually speaking (not room noise). */
+/** Analyser RMS above this counts as the student actually speaking. */
 const SPEECH_RMS_THRESHOLD = 0.028;
 let stopWave: (() => void) | null = null;
 let speechCheckInterval: ReturnType<typeof setInterval> | null = null;
-/** Set when mic energy exceeds threshold " lone "b" ASR is ignored until then. */
 let speechDetectedThisTake = false;
+let lastSpeechMs = 0;
 let lastDsp: DspPrediction | null = null;
-let pendingHeard: string | null = null;
-let pendingAsrPass: boolean | null = null;
 let lastLoggedAttemptId: string | null = null;
 
 let correct = 0;
@@ -176,15 +133,8 @@ function displayFeedback(items: DspPrediction['heuristicItems']): void {
   for (const fb of shown) addFB(fb);
 }
 
-async function processAudio(dspBackfill = false): Promise<void> {
-  if (mediaProcessInFlight) {
-    return;
-  }
-  if (dspBackfill) {
-    if (!attemptFinalized) {
-      return;
-    }
-  } else if (attemptFinalized) {
+async function processAudio(): Promise<void> {
+  if (mediaProcessInFlight || attemptFinalized) {
     return;
   }
   mediaProcessInFlight = true;
@@ -209,15 +159,9 @@ async function processAudio(dspBackfill = false): Promise<void> {
     const frames = extractFrames(audio, aB.sampleRate);
 
     if (frames.length < 4) {
-      if (!lockedEeTailAsr) {
-        displayFeedback([{ t: 'warn', s: 'Recording too short - try again' }]);
-        pendingHeard = null;
-        pendingAsrPass = null;
-        attemptFinalized = true;
-        clearAsrWait();
-        releaseMic();
-      }
-      dspProcessed = false;
+      displayFeedback([{ t: 'warn', s: 'Recording too short ? try again' }]);
+      attemptFinalized = true;
+      releaseMic();
       mediaProcessInFlight = false;
       return;
     }
@@ -230,38 +174,17 @@ async function processAudio(dspBackfill = false): Promise<void> {
     if (settings.showMlDebug && lastDsp.tf) {
       showTfWordBars(lastDsp.tf.top3, lastDsp.tf.confidence);
     }
-
   } catch {
-    if (!lockedEeTailAsr) {
-      displayFeedback([{ t: 'warn', s: 'Could not decode audio' }]);
-      pendingHeard = null;
-      pendingAsrPass = null;
-      attemptFinalized = true;
-      clearAsrWait();
-      releaseMic();
-    }
+    displayFeedback([{ t: 'warn', s: 'Could not decode audio' }]);
     lastDsp = null;
-    dspProcessed = false;
+    attemptFinalized = true;
+    releaseMic();
     mediaProcessInFlight = false;
     return;
   }
 
-  dspProcessed = true;
   mediaProcessInFlight = false;
-  if (dspBackfill && eeTailBackfill) {
-    const { heard, asrPass } = eeTailBackfill;
-    eeTailBackfill = null;
-    finishAttempt(heard, asrPass);
-    return;
-  }
-  scheduleAttemptFinalize();
-}
-
-function clearAsrWait(): void {
-  if (asrWaitTimer) {
-    clearTimeout(asrWaitTimer);
-    asrWaitTimer = null;
-  }
+  finishAttempt();
 }
 
 function resetListenUi(): void {
@@ -274,37 +197,13 @@ function resetListenUi(): void {
 
 function resetTakeState(): void {
   attemptFinalized = false;
-  dspProcessed = false;
-  asrEnded = false;
-  endingTake = false;
-  asrRestartsThisTake = 0;
-  takeAsrAccum = '';
-  sawIncompleteEeOnEnd = false;
-  lockedEeTailAsr = null;
-  eeTailBackfill = null;
+  endingRecording = false;
   speechDetectedThisTake = false;
+  lastSpeechMs = 0;
   clearSpeechCheckInterval();
-  clearAsrWait();
-  pendingHeard = null;
-  pendingAsrPass = null;
   if (maxTakeTimer) {
     clearTimeout(maxTakeTimer);
     maxTakeTimer = null;
-  }
-  if (asrPauseTimer) {
-    clearTimeout(asrPauseTimer);
-    asrPauseTimer = null;
-  }
-}
-
-function setAsrWaitStatus(msg: string): void {
-  $('btnLbl').textContent = msg;
-}
-
-function clearAsrPauseTimer(): void {
-  if (asrPauseTimer) {
-    clearTimeout(asrPauseTimer);
-    asrPauseTimer = null;
   }
 }
 
@@ -315,7 +214,7 @@ function clearSpeechCheckInterval(): void {
   }
 }
 
-function noteSpeechEnergy(an: AnalyserNode): void {
+function noteSpeechEnergy(an: AnalyserNode, session: number): void {
   const buf = new Uint8Array(an.fftSize);
   an.getByteTimeDomainData(buf);
   let sum = 0;
@@ -324,45 +223,28 @@ function noteSpeechEnergy(an: AnalyserNode): void {
     sum += x * x;
   }
   const rms = Math.sqrt(sum / buf.length);
-  if (rms >= SPEECH_RMS_THRESHOLD) speechDetectedThisTake = true;
+  const now = Date.now();
+  if (rms >= SPEECH_RMS_THRESHOLD) {
+    speechDetectedThisTake = true;
+    lastSpeechMs = now;
+    return;
+  }
+  if (
+    !listening ||
+    session !== takeSessionId ||
+    endingRecording ||
+    !speechDetectedThisTake ||
+    takeElapsedMs() < MIN_RECORDING_MS
+  ) {
+    return;
+  }
+  if (lastSpeechMs > 0 && now - lastSpeechMs >= RECORD_PAUSE_MS) {
+    endRecording('silence');
+  }
 }
 
 function takeElapsedMs(): number {
   return takeStartedAt ? Date.now() - takeStartedAt : 0;
-}
-
-function asrTakeSnapshot(extra?: Record<string, unknown>): Record<string, unknown> {
-  return {
-    session: takeSessionId,
-    target: curItem.key,
-    spokenName: curItem.spokenName,
-    listening,
-    endingTake,
-    asrEnded,
-    attemptFinalized,
-    speechDetected: speechDetectedThisTake,
-    pendingHeard,
-    pendingAsrPass,
-    takeAsrAccum,
-    asrRestarts: asrRestartsThisTake,
-    elapsedMs: takeElapsedMs(),
-    hasRecognition: !!activeRecognition,
-    recorderState: mediaRec?.state ?? 'none',
-    sawIncompleteEeOnEnd,
-    ...extra,
-  };
-}
-
-function canAutoEndTake(): boolean {
-  return takeElapsedMs() >= MIN_RECORDING_MS;
-}
-
-/** Lone key on bee/dee or en/em/el letters without mic speech energy is almost always Chrome noise. */
-function isPhantomKeyTranscript(heard: string): boolean {
-  if (!letterNameNeedsAsrRecovery(curItem)) return false;
-  if (speechDetectedThisTake) return false;
-  const tokens = normalizeHeardLabel(heard).split(/\s+/).filter(Boolean);
-  return tokens.length === 1 && tokens[0] === curItem.key;
 }
 
 function stopMediaRecorderNow(): void {
@@ -374,251 +256,41 @@ function stopMediaRecorderNow(): void {
   }
   try {
     mediaRec.stop();
-  } catch (err) {
-  }
-}
-
-function stopMicTracksNow(): void {
-  if (!recStream) return;
-  recStream.getTracks().forEach((t) => t.stop());
-}
-
-/** End take from locked ASR now; do not wait for MediaRecorder onstop / decodeAudioData. */
-function finalizeEeTailImmediately(): void {
-  if (attemptFinalized || !lockedEeTailAsr) return;
-  eeTailBackfill = { heard: lockedEeTailAsr.heard, asrPass: lockedEeTailAsr.pass };
-  pendingHeard = eeTailBackfill.heard;
-  pendingAsrPass = eeTailBackfill.asrPass;
-  dspProcessed = true;
-  finalizeAttempt({ deferScoring: true });
-}
-
-/** Run DSP after immediate finalize (mic already released). */
-async function runEeTailDspBackfill(): Promise<void> {
-  for (const delay of [0, 60, 200, 500, 1000]) {
-    if (delay) await new Promise((r) => setTimeout(r, delay));
-    if (mediaRec?.state === 'recording') stopMediaRecorderNow();
-    if (recChunks.length) {
-      await processAudio(true);
-      return;
-    }
-  }
-}
-
-function endEeTailCapture(): void {
-  stopMediaRecorderNow();
-  stopMicTracksNow();
-  finalizeEeTailImmediately();
-  asrEnded = true;
-  clearAsrWait();
-  $('btnLbl').textContent = 'tap to speak';
-  void runEeTailDspBackfill();
-}
-
-/** Stop recorder after ASR has time to deliver late transcripts. */
-function scheduleMediaStop(): void {
-  if (attemptFinalized) {
-    return;
-  }
-  clearAsrWait();
-  const hasTranscript = pendingHeard !== null && pendingHeard.length > 0;
-  if (!hasTranscript) setAsrWaitStatus('checking speech...');
-
-  const ms = lockedEeTailAsr
-    ? 0
-    : hasTranscript
-      ? 650
-      : speechDetectedThisTake
-        ? ASR_EMPTY_WAIT_MS
-        : 800;
-  asrLog('scheduleMediaStop', { waitMs: ms, hasTranscript, ...asrTakeSnapshot() });
-  asrWaitTimer = setTimeout(() => {
-    asrWaitTimer = null;
-    asrLog('scheduleMediaStop.fire', asrTakeSnapshot());
-    if (pendingHeard === null) {
-      pendingHeard = '';
-      pendingAsrPass = false;
-      asrLog('scheduleMediaStop.blankPending', asrTakeSnapshot());
-    }
-    if (mediaRec && mediaRec.state !== 'inactive') {
-      mediaRec.stop();
-    } else {
-      dspProcessed = true;
-      scheduleAttemptFinalize();
-    }
-  }, ms);
-}
-
-function markAsrEnded(): void {
-  if (asrEnded) {
-    return;
-  }
-  asrLog('markAsrEnded', asrTakeSnapshot());
-  asrEnded = true;
-  if (attemptFinalized) {
-    return;
-  }
-  if (lockedEeTailAsr) {
-    return;
-  }
-  scheduleMediaStop();
-}
-
-function tearDownRecognition(): void {
-  const rec = activeRecognition;
-  activeRecognition = null;
-  if (!rec) return;
-  try {
-    rec.abort();
   } catch {
-    try {
-      rec.stop();
-    } catch {
-      /* already dead */
-    }
+    /* already stopped */
   }
 }
 
 function releaseMic(): void {
-  tearDownRecognition();
   if (recStream) {
     recStream.getTracks().forEach((t) => t.stop());
     recStream = null;
   }
-  endingTake = false;
+  endingRecording = false;
 }
 
-function scheduleAttemptFinalize(): void {
-  if (attemptFinalized) {
-    return;
-  }
-
-  if (pendingHeard !== null && pendingAsrPass !== null) {
-    finalizeAttempt();
-    return;
-  }
-
-  if (!dspProcessed || !endingTake) {
-    return;
-  }
-
-  clearAsrWait();
-
-  if (!asrEnded) {
-    asrWaitTimer = setTimeout(() => {
-      asrWaitTimer = null;
-      asrEnded = true;
-      scheduleAttemptFinalize();
-    }, 2500);
-    return;
-  }
-
-  if (pendingHeard === null) {
-    pendingHeard = '';
-    pendingAsrPass = false;
-  }
-
-  finalizeAttempt();
-}
-
-/** End speech recognition; keep recorder running until ASR transcript is collected. */
-function endTake(caller = 'unknown'): void {
-  asrLog('endTake', { caller, ...asrTakeSnapshot() });
+/** Stop recording and run DSP when MediaRecorder finishes. */
+function endRecording(_caller = 'unknown'): void {
+  if (endingRecording || attemptFinalized) return;
+  endingRecording = true;
   if (maxTakeTimer) {
     clearTimeout(maxTakeTimer);
     maxTakeTimer = null;
   }
-  clearAsrPauseTimer();
   clearSpeechCheckInterval();
-
-  if (endingTake) {
-    if (listening) resetListenUi();
-    markAsrEnded();
-    return;
-  }
-
-  endingTake = true;
-  takeSessionId++;
   resetListenUi();
-  tearDownRecognition();
-  if (lockedEeTailAsr) {
-    endEeTailCapture();
-  } else {
-    setAsrWaitStatus('checking...');
-    markAsrEnded();
+  $('btnLbl').textContent = 'checking...';
+  stopMediaRecorderNow();
+  if (!mediaRec || mediaRec.state === 'inactive') {
+    if (!attemptFinalized) void processAudio();
   }
 }
 
-function finalizeAttempt(opts?: { deferScoring?: boolean }): void {
-  if (attemptFinalized) {
-    return;
-  }
+function finishAttempt(): void {
+  if (attemptFinalized) return;
   attemptFinalized = true;
-  dspProcessed = false;
-  clearAsrWait();
   resetListenUi();
   releaseMic();
-
-  const heard = lockedEeTailAsr?.heard ?? pendingHeard ?? '';
-  const asrPass = lockedEeTailAsr?.pass ?? pendingAsrPass ?? false;
-  lockedEeTailAsr = null;
-  pendingHeard = null;
-  pendingAsrPass = null;
-
-  if (opts?.deferScoring) return;
-  finishAttempt(heard, asrPass);
-}
-
-function shouldEndTakeFromEeTailAutofill(resolved: string): boolean {
-  return (
-    speechDetectedThisTake &&
-    sawIncompleteEeOnEnd &&
-    letterNameNeedsAsrRecovery(curItem) &&
-    pendingAsrPass === true &&
-    normalizeHeardLabel(resolved) === normalizeHeardLabel(curItem.spokenName)
-  );
-}
-
-function applyAsrTranscript(heard: string): void {
-  if (!heard.trim()) {
-    asrLog('applyAsrTranscript.skipEmpty', asrTakeSnapshot({ raw: heard }));
-    return;
-  }
-  const remapped = remapAsrMishearForItem(curStageId, heard, curItem);
-  const resolved = resolveHeardForEeChromeTail(remapped, curItem, sawIncompleteEeOnEnd);
-  pendingAsrPass = transcriptMatchesItemForScoring(curStageId, resolved, curItem);
-  pendingHeard = resolved;
-  takeAsrAccum = resolved;
-  asrLog('applyAsrTranscript', {
-    heard,
-    remapped,
-    resolved,
-    pass: pendingAsrPass,
-    ...asrTakeSnapshot(),
-  });
-  if (listening) {
-    $('btnLbl').textContent =
-      resolved !== heard ? `heard: ${resolved}` : `heard: ${heard}`;
-  }
-
-  if (
-    listening &&
-    !endingTake &&
-    canAutoEndTake() &&
-    takeElapsedMs() >= EE_TAIL_MIN_TAKE_MS &&
-    shouldEndTakeFromEeTailAutofill(resolved)
-  ) {
-    lockedEeTailAsr = { heard: resolved, pass: true };
-    clearAsrPauseTimer();
-    endTake('ee-tail-autofill');
-    return;
-  }
-
-  if (endingTake && !attemptFinalized) scheduleMediaStop();
-  else if (!listening) scheduleAttemptFinalize();
-}
-
-function finishAttempt(heard: string, asrPass: boolean): void {
   const dsp =
     lastDsp ??
     ({
@@ -635,42 +307,26 @@ function finishAttempt(heard: string, asrPass: boolean): void {
     } satisfies DspPrediction);
 
   const { appPass, basis } = deriveAppPass(
-    asrPass,
     { ...dsp, guessedKey: dsp.tf?.guessedKey },
     curItem.key,
     curStageId,
   );
 
+  const heardDisplay = dsp.tf?.guessedKey ?? '?';
+
   total++;
   if (appPass) correct++;
   updateScores(correct, total);
-  addHistory(curItem.display, heard, appPass, history);
+  addHistory(curItem.display, heardDisplay, appPass, history);
   showResultBanner(appPass);
 
   const studentMsg = settings.collectorMode && !settings.showMlDebug
     ? acousticStudentMessage(appPass)
     : {
         t: appPass ? ('pass' as const) : ('fail' as const),
-        s:
-          `app ${appPass ? 'pass' : 'fail'} (${basis}) | DSP ${formatDspGuessForSummary(dsp)} | ` +
-          `ASR "${heard}"`,
+        s: `app ${appPass ? 'pass' : 'fail'} (${basis}) | DSP ${formatDspGuessForSummary(dsp)}`,
       };
   addFB(studentMsg, true);
-
-  if (!heard.trim() && speechDetectedThisTake) {
-    const snap = asrTakeSnapshot({ asrPass, appPass, basis });
-    asrWarn('finishAttempt.emptyAsrWithSpeech', snap);
-    const trace = formatAsrLogTail(8);
-    addFB(
-      {
-        t: 'warn',
-        s:
-          'Speech-to-text did not catch a word ? try again (we never guess the target name).' +
-          (trace ? ` Trace: ${trace}` : ''),
-      },
-      true,
-    );
-  }
 
   if (settings.collectorMode) {
     const sidInput = $('studentId') as HTMLInputElement;
@@ -681,8 +337,8 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       group: getStage(curStageId).label,
       word: curItem.display,
       targetKey: curItem.key,
-      heard,
-      asrPass,
+      heard: '',
+      asrPass: false,
       appPass,
       scoringBasis: basis,
       heuristicFlags: flagsFromFeedback(dsp.heuristicItems),
@@ -701,23 +357,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       curriculumStage: curStageId,
     });
     lastLoggedAttemptId = attempt.id;
-    if (eeTailBackfill && !dsp.embedding) {
-      addFB({ t: 'pass', s: `Heard "${heard}" - scoring audio...` }, true);
-      return;
-    }
-    if (asrPass && heard.trim() && dsp.dspPass) {
-      autoConfirmAsrPass(attempt, curStageId, heard, {
-        dspFailed: false,
-        statusMessage: `DSP and ASR agree on "${heard}" - saved for training.`,
-      });
-    } else if (asrPass && heard.trim() && !dsp.dspPass) {
-      autoConfirmAsrPass(attempt, curStageId, heard, {
-        dspFailed: true,
-        statusMessage: `ASR correct, DSP missed - pass; saved for training.`,
-      });
-    } else {
-      promptTeacherJudgment(attempt, curStageId);
-    }
+    promptTeacherJudgment(attempt, curStageId);
   }
 }
 
@@ -840,17 +480,8 @@ function onVoiceBootstrapComplete(): void {
 
 async function toggleRec(): Promise<void> {
   if (listening) {
-    endTake('manual-toggle');
+    endRecording('manual-toggle');
     return;
-  }
-
-  if (activeRecognition) {
-    try {
-      activeRecognition.abort();
-    } catch {
-      /* previous session */
-    }
-    activeRecognition = null;
   }
 
   const session = ++takeSessionId;
@@ -860,7 +491,6 @@ async function toggleRec(): Promise<void> {
   if (ctx.state === 'suspended') await ctx.resume();
 
   try {
-    asrLog('toggleRec.start', { session, ...asrTakeSnapshot() });
     recChunks = [];
 
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
@@ -893,242 +523,22 @@ async function toggleRec(): Promise<void> {
         clearSpeechCheckInterval();
         return;
       }
-      noteSpeechEnergy(an);
+      noteSpeechEnergy(an, session);
     }, 50);
 
     maxTakeTimer = setTimeout(() => {
       maxTakeTimer = null;
       if (!listening || session !== takeSessionId) return;
-      endTake('max-take');
-    }, MAX_TAKE_MS);
+      endRecording('max-record');
+    }, MAX_RECORD_MS);
 
-    activeRecognition = createSpeechRecognition();
-    if (activeRecognition) {
-      const recognition = activeRecognition;
-
-      const scheduleAsrPauseEnd = (why: string) => {
-        if (endingTake || lockedEeTailAsr || asrEnded) {
-          return;
-        }
-        const raw = pendingHeard ?? '';
-        if (asrPauseTimer && sawIncompleteEeOnEnd && isIncompleteLetterNamePrefix(raw, curItem)) {
-          return;
-        }
-        clearAsrPauseTimer();
-        const incomplete =
-          !!raw && isIncompleteLetterNamePrefix(raw, curItem) && !sawIncompleteEeOnEnd;
-        const ms =
-          incomplete || (raw && isIncompleteLetterNamePrefix(raw, curItem))
-            ? ASR_EE_TAIL_MS
-            : ASR_PAUSE_MS;
-        asrLog('scheduleAsrPauseEnd', { why, ms, raw, incomplete, ...asrTakeSnapshot() });
-        asrPauseTimer = setTimeout(() => {
-          asrPauseTimer = null;
-          asrLog('scheduleAsrPauseEnd.fire', { why, ...asrTakeSnapshot() });
-          if (!listening || session !== takeSessionId || endingTake) return;
-          if (!canAutoEndTake()) {
-            scheduleAsrPauseEnd('pause-wait-min-recording');
-            return;
-          }
-          const h = pendingHeard ?? '';
-          if (!h) {
-            asrWarn('pause.noTranscript', asrTakeSnapshot({ why }));
-            if (!speechDetectedThisTake && takeElapsedMs() < MAX_TAKE_MS - 300) {
-              asrLog('pause.waitForSpeech', asrTakeSnapshot({ why }));
-              return;
-            }
-            if (speechDetectedThisTake && tryRestartRecognition('pause-empty')) return;
-            endTake('pause-empty-no-asr');
-            return;
-          }
-          if (isIncompleteLetterNamePrefix(h, curItem)) {
-            if (sawIncompleteEeOnEnd && speechDetectedThisTake) {
-              const resolved = normalizeHeardLabel(curItem.spokenName);
-              lockedEeTailAsr = { heard: resolved, pass: true };
-              endTake('pause-ee-forced');
-            } else {
-              sawIncompleteEeOnEnd = true;
-              applyAsrTranscript(h);
-            }
-            return;
-          }
-          if (
-            pendingAsrPass &&
-            sawIncompleteEeOnEnd &&
-            letterNameNeedsAsrRecovery(curItem)
-          ) {
-            endTake('pause-ee-scored');
-            return;
-          }
-          endTake('pause-default');
-        }, ms);
-      };
-
-      const tryRestartRecognition = (why: string): boolean => {
-        if (session !== takeSessionId || endingTake || lockedEeTailAsr || !listening) {
-          asrLog('tryRestartRecognition.skip', { why, ...asrTakeSnapshot() });
-          return false;
-        }
-        if (asrRestartsThisTake >= ASR_MAX_RESTARTS_PER_TAKE) {
-          asrLog('tryRestartRecognition.max', { why, ...asrTakeSnapshot() });
-          return false;
-        }
-        asrRestartsThisTake++;
-        try {
-          recognition.start();
-          asrLog('tryRestartRecognition.ok', { why, restarts: asrRestartsThisTake, ...asrTakeSnapshot() });
-          scheduleAsrPauseEnd(`restart-${why}`);
-          if (listening) $('btnLbl').textContent = 'listening?';
-          return true;
-        } catch (err) {
-          asrLog('tryRestartRecognition.fail', {
-            why,
-            err: err instanceof Error ? err.message : String(err),
-            ...asrTakeSnapshot(),
-          });
-          return false;
-        }
-      };
-
-      recognition.onresult = (e: SpeechRecognitionEvent) => {
-        if (session !== takeSessionId) {
-          asrLog('onresult.staleSession', { hookSession: session, ...asrTakeSnapshot() });
-          return;
-        }
-        if (endingTake) {
-          return;
-        }
-        const eventText = fullTranscriptFromEvent(e);
-        if (!eventText) return;
-        const dump = dumpSpeechResultEvent(e);
-        const heard = mergeTakeTranscript(takeAsrAccum, eventText, curItem);
-        if (isPhantomKeyTranscript(heard)) {
-          asrLog('onresult.phantom', { eventText, heard, dump, ...asrTakeSnapshot() });
-          return;
-        }
-        asrLog('onresult', {
-          eventText,
-          heard,
-          isFinal: eventHasFinalTranscript(e),
-          dump,
-          ...asrTakeSnapshot(),
-        });
-        takeAsrAccum = heard;
-        const isFinal = eventHasFinalTranscript(e);
-
-        // Chrome marks "b" before "ee" or drops "en"/"em"; after MIN_TAKE_MS treat as missed tail.
-        if (
-          speechDetectedThisTake &&
-          letterNameNeedsAsrRecovery(curItem) &&
-          isIncompleteLetterNamePrefix(heard, curItem) &&
-          takeElapsedMs() >= EE_TAIL_MIN_TAKE_MS
-        ) {
-          sawIncompleteEeOnEnd = true;
-        }
-
-        applyAsrTranscript(heard);
-        if (!listening || endingTake) return;
-
-        if (
-          canAutoEndTake() &&
-          takeElapsedMs() >= MIN_TAKE_MS &&
-          transcriptMatchesItemForAutoStop(curStageId, heard, curItem, isFinal)
-        ) {
-          clearAsrPauseTimer();
-          endTake('auto-stop-match');
-          return;
-        }
-
-        scheduleAsrPauseEnd('onresult');
-      };
-      recognition.onerror = (e: SpeechRecognitionErrorEvent) => {
-        if (session !== takeSessionId) return;
-        if (e.error === 'aborted') return;
-        asrLog('recognition.onerror', { error: e.error, message: e.message, ...asrTakeSnapshot() });
-        if (e.error === 'no-speech') {
-          if (tryRestartRecognition('no-speech')) return;
-          return;
-        }
-        if (e.error === 'network' && tryRestartRecognition('network')) return;
-      };
-      recognition.onnomatch = () => {
-        if (session !== takeSessionId || endingTake || !listening) return;
-        asrLog('recognition.onnomatch', asrTakeSnapshot());
-        if (speechDetectedThisTake && tryRestartRecognition('nomatch')) return;
-      };
-      recognition.onend = () => {
-        const heardOnEnd = pendingHeard ?? '';
-        if (session !== takeSessionId) {
-          asrLog('onend.staleSession', { hookSession: session, ...asrTakeSnapshot() });
-          return;
-        }
-        asrLog('recognition.onend', { heardOnEnd, ...asrTakeSnapshot() });
-        if (endingTake || asrEnded || lockedEeTailAsr) return;
-        if (!listening) {
-          return;
-        }
-        if (
-          heardOnEnd &&
-          !isIncompleteLetterNamePrefix(heardOnEnd, curItem) &&
-          canAutoEndTake() &&
-          takeElapsedMs() >= MIN_TAKE_MS &&
-          transcriptMatchesItemForSessionEnd(curStageId, heardOnEnd, curItem)
-        ) {
-          clearAsrPauseTimer();
-          endTake('onend-session-match');
-          return;
-        }
-        if (isIncompleteLetterNamePrefix(heardOnEnd, curItem)) {
-          if (isPhantomKeyTranscript(heardOnEnd)) {
-            return;
-          }
-          if (speechDetectedThisTake && takeElapsedMs() >= EE_TAIL_MIN_TAKE_MS) {
-            sawIncompleteEeOnEnd = true;
-          }
-          clearAsrPauseTimer();
-          if (!isPhantomKeyTranscript(heardOnEnd)) applyAsrTranscript(heardOnEnd);
-          if (endingTake || !listening || lockedEeTailAsr) {
-            return;
-          }
-          $('btnLbl').textContent = `heard "${heardOnEnd}" - keep going...`;
-        }
-        if (!listening || endingTake || lockedEeTailAsr) {
-          return;
-        }
-        if (!heardOnEnd.trim() && speechDetectedThisTake && tryRestartRecognition('onend-empty')) {
-          return;
-        }
-        if (tryRestartRecognition('onend-restart')) {
-          return;
-        }
-        if (pendingHeard && !asrPauseTimer) {
-          scheduleAsrPauseEnd('onend-fallback');
-        }
-      };
-      try {
-        recognition.start();
-        asrLog('recognition.start', asrTakeSnapshot());
-        scheduleAsrPauseEnd('start');
-      } catch (err) {
-        asrWarn('recognition.start.fail', {
-          err: err instanceof Error ? err.message : String(err),
-          ...asrTakeSnapshot(),
-        });
-        activeRecognition = null;
-        asrEnded = true;
-      }
-    } else {
-      asrLog('toggleRec.noSpeechApi', asrTakeSnapshot());
-      asrEnded = true;
-    }
-
-    if (mediaRec && mediaRec.state === 'inactive') {
-      asrLog('mediaRecorder.start', asrTakeSnapshot());
+    if (mediaRec.state === 'inactive') {
       mediaRec.start(100);
     }
   } catch (e) {
     resetListenUi();
-    showErr(`Mic denied " ${e instanceof Error ? e.message : String(e)}`);
+    releaseMic();
+    showErr(`Mic denied ? ${e instanceof Error ? e.message : String(e)}`);
   }
 }
 
@@ -1169,10 +579,6 @@ function applySettingsUi(): void {
 function init(): void {
   $('appTitle').textContent = 'EARLY';
   $('appVersion').textContent = `v${APP_VERSION}`;
-  asrWarn('init', {
-    version: APP_VERSION,
-    hint: "Console: filter '[EARLY ASR]' or type __earlyAsrLog; disable logs: localStorage early.asrDebug=0",
-  });
 
   settings = loadSettings();
   curStageId = settings.curriculumStage;
