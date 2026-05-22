@@ -83,22 +83,15 @@ export function isChromiumSpeechRecognition(): boolean {
 }
 
 export type RecorderStartMode = 'immediate' | 'after-first-asr';
-export type MicCaptureMode = 'immediate' | 'asr-first';
 
 export interface SpeechRecognitionProfile {
   continuous: boolean;
-  /** Delay MediaRecorder (immediate mode only). */
   mediaRecorderDelayMs: number;
   restartOnEnd: boolean;
-  /**
-   * Desktop Chrome: MediaRecorder + SpeechRecognition on the same mic yields no onresult.
-   * Start recording only after the first ASR transcript (or at endTake fallback).
-   */
+  /** Defer MediaRecorder until first ASR text (desktop Chrome). */
   recorderStartMode: RecorderStartMode;
-  /**
-   * Desktop Chrome: open getUserMedia during ASR blocks onresult; acquire mic after first transcript.
-   */
-  micCaptureMode: MicCaptureMode;
+  /** Mute local getUserMedia tracks while SpeechRecognition runs (desktop Chrome). */
+  releaseLocalMicForAsr: boolean;
 }
 
 function isMobileWebKit(): boolean {
@@ -108,11 +101,11 @@ function isMobileWebKit(): boolean {
 export function getSpeechRecognitionProfile(): SpeechRecognitionProfile {
   if (isChromiumSpeechRecognition() && !isMobileWebKit()) {
     return {
-      continuous: true,
+      continuous: false,
       mediaRecorderDelayMs: 0,
-      restartOnEnd: false,
+      restartOnEnd: true,
       recorderStartMode: 'after-first-asr',
-      micCaptureMode: 'asr-first',
+      releaseLocalMicForAsr: true,
     };
   }
   return {
@@ -120,7 +113,7 @@ export function getSpeechRecognitionProfile(): SpeechRecognitionProfile {
     mediaRecorderDelayMs: 0,
     restartOnEnd: false,
     recorderStartMode: 'immediate',
-    micCaptureMode: 'immediate',
+    releaseLocalMicForAsr: false,
   };
 }
 
@@ -140,7 +133,7 @@ export function createSpeechRecognition(): SpeechRecognition | null {
   asrLog('createSpeechRecognition', {
     continuous: profile.continuous,
     recorderStartMode: profile.recorderStartMode,
-    micCaptureMode: profile.micCaptureMode,
+    releaseLocalMicForAsr: profile.releaseLocalMicForAsr,
     mediaRecorderDelayMs: profile.mediaRecorderDelayMs,
     safari: isSafariSpeechRecognition(),
     chromium: isChromiumSpeechRecognition(),

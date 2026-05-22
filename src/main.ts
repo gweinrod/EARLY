@@ -142,7 +142,7 @@ let speechDetectedThisTake = false;
 let recognitionListening = false;
 /** MediaRecorder started for this tap (Chrome defers until first ASR). */
 let takeRecorderStarted = false;
-let micAcquireInFlight = false;
+let takeMicTracks: MediaStreamTrack[] = [];
 let lastDsp: DspPrediction | null = null;
 let pendingHeard: string | null = null;
 let pendingAsrPass: boolean | null = null;
@@ -295,7 +295,7 @@ function resetTakeState(): void {
   speechDetectedThisTake = false;
   recognitionListening = false;
   takeRecorderStarted = false;
-  micAcquireInFlight = false;
+  takeMicTracks = [];
   clearSpeechCheckInterval();
   clearAsrWait();
   pendingHeard = null;
@@ -375,61 +375,11 @@ function startTakeRecorder(caller: string): void {
   mediaRec.start(100);
 }
 
-async function ensureTakeMicrophone(
-  session: number,
-  asrProfile: SpeechRecognitionProfile,
-  caller: string,
-): Promise<boolean> {
-  if (recStream && mediaRec) return true;
-  if (micAcquireInFlight || session !== takeSessionId || !listening) return false;
-  micAcquireInFlight = true;
-  try {
-    const ctx = getAudioContext();
-    if (ctx.state === 'suspended') await ctx.resume();
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    if (session !== takeSessionId || !listening) {
-      stream.getTracks().forEach((t) => t.stop());
-      return false;
-    }
-    recStream = stream;
-    recChunks = [];
-    const recordStream = typeof stream.clone === 'function' ? stream.clone() : stream;
-    mediaRec = createMediaRecorder(recordStream);
-    mediaRec.ondataavailable = (e) => {
-      if (e.data.size > 0) recChunks.push(e.data);
-    };
-    mediaRec.onstop = () => {
-      void processAudio();
-    };
-    const src = ctx.createMediaStreamSource(stream);
-    const an = ctx.createAnalyser();
-    an.fftSize = 2048;
-    src.connect(an);
-    stopWave?.();
-    stopWave = drawWave(an, () => listening && session === takeSessionId);
-    clearSpeechCheckInterval();
-    speechCheckInterval = setInterval(() => {
-      if (!listening || session !== takeSessionId) {
-        clearSpeechCheckInterval();
-        return;
-      }
-      noteSpeechEnergy(an);
-    }, 50);
-    asrLog('ensureTakeMicrophone.ok', asrTakeSnapshot({ caller }));
-    if (asrProfile.recorderStartMode === 'after-first-asr') {
-      startTakeRecorder(`mic-${caller}`);
-    }
-    return true;
-  } catch (e) {
-    asrWarn('ensureTakeMicrophone.fail', {
-      caller,
-      err: e instanceof Error ? e.message : String(e),
-      ...asrTakeSnapshot(),
-    });
-    return false;
-  } finally {
-    micAcquireInFlight = false;
+function setTakeMicEnabled(enabled: boolean, why: string): void {
+  for (const t of takeMicTracks) {
+    if (t.readyState === 'live') t.enabled = enabled;
   }
+  asrLog('setTakeMicEnabled', { enabled, why, trackCount: takeMicTracks.length });
 }
 
 function canAutoEndTake(): boolean {
@@ -522,7 +472,8 @@ function scheduleMediaStop(): void {
     if (mediaRec && mediaRec.state !== 'inactive') {
       mediaRec.stop();
     } else {
-      if (dspProcessed) scheduleAttemptFinalize();
+      dspProcessed = true;
+      scheduleAttemptFinalize();
     }
   }, ms);
 }
@@ -565,6 +516,8 @@ function tearDownRecognition(forceAbort = true): void {
 
 function releaseMic(): void {
   tearDownRecognition();
+  setTakeMicEnabled(true, 'releaseMic');
+  takeMicTracks = [];
   if (recStream) {
     recStream.getTracks().forEach((t) => t.stop());
     recStream = null;
@@ -629,12 +582,9 @@ function endTake(caller = 'unknown'): void {
 
   const completeAsrShutdown = () => {
     asrLog('completeAsrShutdown', asrTakeSnapshot());
-    const shutdownSession = takeSessionId;
-    const profile = getSpeechRecognitionProfile();
-    if (!takeRecorderStarted && speechDetectedThisTake) {
-      void ensureTakeMicrophone(shutdownSession, profile, 'endTake-fallback').then((ok) => {
-        if (ok && !takeRecorderStarted) startTakeRecorder('endTake-fallback');
-      });
+    setTakeMicEnabled(true, 'endTake');
+    if (!takeRecorderStarted && speechDetectedThisTake && mediaRec) {
+      startTakeRecorder('endTake-fallback');
     }
     takeSessionId++;
     if (lockedEeTailAsr) {
@@ -992,26 +942,21 @@ async function toggleRec(): Promise<void> {
     });
     recChunks = [];
 
-    let takeAnalyser: AnalyserNode | null = null;
-    if (asrProfile.micCaptureMode === 'asr-first') {
-      asrLog('toggleRec.asrFirstMicDeferred', asrTakeSnapshot());
-    } else {
-      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-      recStream = stream;
-      const src = ctx.createMediaStreamSource(stream);
-      const an = ctx.createAnalyser();
-      an.fftSize = 2048;
-      src.connect(an);
-      takeAnalyser = an;
-      const recordStream = typeof stream.clone === 'function' ? stream.clone() : stream;
-      mediaRec = createMediaRecorder(recordStream);
-      mediaRec.ondataavailable = (e) => {
-        if (e.data.size > 0) recChunks.push(e.data);
-      };
-      mediaRec.onstop = () => {
-        void processAudio();
-      };
-    }
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    recStream = stream;
+    takeMicTracks = [...stream.getAudioTracks()];
+    const src = ctx.createMediaStreamSource(stream);
+    const takeAnalyser = ctx.createAnalyser();
+    takeAnalyser.fftSize = 2048;
+    src.connect(takeAnalyser);
+    const recordStream = typeof stream.clone === 'function' ? stream.clone() : stream;
+    mediaRec = createMediaRecorder(recordStream);
+    mediaRec.ondataavailable = (e) => {
+      if (e.data.size > 0) recChunks.push(e.data);
+    };
+    mediaRec.onstop = () => {
+      void processAudio();
+    };
 
     listening = true;
     takeStartedAt = Date.now();
@@ -1021,17 +966,15 @@ async function toggleRec(): Promise<void> {
     hide('hmWrap');
     hide('pbWrap');
     hide('resultBanner');
-    if (takeAnalyser) {
-      stopWave = drawWave(takeAnalyser, () => listening && session === takeSessionId);
-      clearSpeechCheckInterval();
-      speechCheckInterval = setInterval(() => {
-        if (!listening || session !== takeSessionId) {
-          clearSpeechCheckInterval();
-          return;
-        }
-        noteSpeechEnergy(takeAnalyser!);
-      }, 50);
-    }
+    stopWave = drawWave(takeAnalyser, () => listening && session === takeSessionId);
+    clearSpeechCheckInterval();
+    speechCheckInterval = setInterval(() => {
+      if (!listening || session !== takeSessionId) {
+        clearSpeechCheckInterval();
+        return;
+      }
+      noteSpeechEnergy(takeAnalyser);
+    }, 50);
 
     maxTakeTimer = setTimeout(() => {
       maxTakeTimer = null;
@@ -1042,11 +985,12 @@ async function toggleRec(): Promise<void> {
     activeRecognition = createSpeechRecognition();
     if (activeRecognition) {
       const recognition = activeRecognition;
-      const { restartOnEnd } = asrProfile;
+      const { restartOnEnd, releaseLocalMicForAsr } = asrProfile;
 
       recognition.onstart = () => {
         if (session !== takeSessionId) return;
         recognitionListening = true;
+        if (releaseLocalMicForAsr) setTakeMicEnabled(false, 'recognition.onstart');
         asrLog('recognition.onstart', asrTakeSnapshot({ restarts: asrRestartsThisTake }));
       };
       recognition.onspeechstart = () => {
@@ -1175,7 +1119,8 @@ async function toggleRec(): Promise<void> {
           const flushText = fullTranscriptFromEvent(e);
           asrLog('onresult.flush', { flushText, dump, ...asrTakeSnapshot() });
           if (flushText.trim()) {
-            void ensureTakeMicrophone(session, asrProfile, 'flush-asr');
+            setTakeMicEnabled(true, 'flush-asr');
+            startTakeRecorder('flush-asr');
             const flushed = mergeTakeTranscript(takeAsrAccum, flushText, curItem);
             if (!isPhantomKeyTranscript(flushed)) {
               takeAsrAccum = flushed;
@@ -1197,7 +1142,10 @@ async function toggleRec(): Promise<void> {
           asrLog('onresult.emptyText', { dump, hasContent, ...asrTakeSnapshot() });
           return;
         }
-        void ensureTakeMicrophone(session, asrProfile, 'first-asr');
+        setTakeMicEnabled(true, 'first-asr');
+        if (asrProfile.recorderStartMode === 'after-first-asr') {
+          startTakeRecorder('first-asr');
+        }
         const heard = mergeTakeTranscript(takeAsrAccum, eventText, curItem);
         if (isPhantomKeyTranscript(heard)) {
           asrLog('onresult.phantom', { eventText, heard, dump, ...asrTakeSnapshot() });
@@ -1255,6 +1203,7 @@ async function toggleRec(): Promise<void> {
       };
       recognition.onend = () => {
         recognitionListening = false;
+        if (releaseLocalMicForAsr && !endingTake) setTakeMicEnabled(true, 'onend');
         const heardOnEnd = pendingHeard ?? '';
         if (session !== takeSessionId) {
           asrLog('onend.staleSession', { hookSession: session, ...asrTakeSnapshot() });
@@ -1314,6 +1263,7 @@ async function toggleRec(): Promise<void> {
         }
       };
       try {
+        if (releaseLocalMicForAsr) setTakeMicEnabled(false, 'pre-start');
         recognition.start();
         recognitionListening = true;
         asrLog('recognition.start', asrTakeSnapshot({ profile: asrProfile }));
@@ -1344,8 +1294,6 @@ async function toggleRec(): Promise<void> {
       } else {
         startImmediate();
       }
-    } else if (asrProfile.micCaptureMode === 'asr-first') {
-      asrLog('mediaRecorder.deferred', asrTakeSnapshot({ until: 'first-asr', mic: 'asr-first' }));
     } else {
       asrLog('mediaRecorder.deferred', asrTakeSnapshot({ until: 'first-asr' }));
     }
