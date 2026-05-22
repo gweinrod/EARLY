@@ -1,4 +1,4 @@
-ï»¿import { asrLog, asrWarn, dumpSpeechResultEvent, formatAsrLogTail } from './asr-debug';
+import { asrLog, asrWarn, dumpSpeechResultEvent, formatAsrLogTail } from './asr-debug';
 import {
   createSpeechRecognition,
   eventHasFinalTranscript,
@@ -140,8 +140,6 @@ let speechCheckInterval: ReturnType<typeof setInterval> | null = null;
 let speechDetectedThisTake = false;
 /** SpeechRecognition session is running (do not call start() again until onend). */
 let recognitionListening = false;
-/** MediaRecorder started for this tap (Chrome defers until first ASR). */
-let takeRecorderStarted = false;
 let lastDsp: DspPrediction | null = null;
 let pendingHeard: string | null = null;
 let pendingAsrPass: boolean | null = null;
@@ -293,7 +291,6 @@ function resetTakeState(): void {
   eeTailBackfill = null;
   speechDetectedThisTake = false;
   recognitionListening = false;
-  takeRecorderStarted = false;
   clearSpeechCheckInterval();
   clearAsrWait();
   pendingHeard = null;
@@ -359,18 +356,10 @@ function asrTakeSnapshot(extra?: Record<string, unknown>): Record<string, unknow
     elapsedMs: takeElapsedMs(),
     hasRecognition: !!activeRecognition,
     recorderState: mediaRec?.state ?? 'none',
-    takeRecorderStarted,
     recognitionListening,
     sawIncompleteEeOnEnd,
     ...extra,
   };
-}
-
-function startTakeRecorder(caller: string): void {
-  if (takeRecorderStarted || !mediaRec || mediaRec.state !== 'inactive') return;
-  takeRecorderStarted = true;
-  asrLog('mediaRecorder.start', asrTakeSnapshot({ caller }));
-  mediaRec.start(100);
 }
 
 function canAutoEndTake(): boolean {
@@ -571,9 +560,6 @@ function endTake(caller = 'unknown'): void {
 
   const completeAsrShutdown = () => {
     asrLog('completeAsrShutdown', asrTakeSnapshot());
-    if (!takeRecorderStarted && mediaRec) {
-      startTakeRecorder('endTake-fallback');
-    }
     takeSessionId++;
     if (lockedEeTailAsr) {
       endEeTailCapture();
@@ -730,7 +716,7 @@ function finishAttempt(heard: string, asrPass: boolean): void {
       {
         t: 'warn',
         s:
-          'Speech-to-text did not catch a word â€” try again (we never guess the target name).' +
+          'Speech-to-text did not catch a word — try again (we never guess the target name).' +
           (trace ? ` Trace: ${trace}` : ''),
       },
       true,
@@ -932,12 +918,7 @@ async function toggleRec(): Promise<void> {
 
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     recStream = stream;
-    const src = ctx.createMediaStreamSource(stream);
-    const takeAnalyser = ctx.createAnalyser();
-    takeAnalyser.fftSize = 2048;
-    src.connect(takeAnalyser);
-    const recordStream = typeof stream.clone === 'function' ? stream.clone() : stream;
-    mediaRec = createMediaRecorder(recordStream);
+    mediaRec = createMediaRecorder(stream);
     mediaRec.ondataavailable = (e) => {
       if (e.data.size > 0) recChunks.push(e.data);
     };
@@ -948,20 +929,30 @@ async function toggleRec(): Promise<void> {
     listening = true;
     takeStartedAt = Date.now();
     $('btnRec').classList.add('on');
-    $('btnLbl').textContent = 'listening...';
+    $('btnLbl').textContent = asrProfile.skipAnalyser ? 'listening (speech)…' : 'listening...';
     clearFB();
     hide('hmWrap');
     hide('pbWrap');
     hide('resultBanner');
-    stopWave = drawWave(takeAnalyser, () => listening && session === takeSessionId);
-    clearSpeechCheckInterval();
-    speechCheckInterval = setInterval(() => {
-      if (!listening || session !== takeSessionId) {
-        clearSpeechCheckInterval();
-        return;
-      }
-      noteSpeechEnergy(takeAnalyser);
-    }, 50);
+
+    if (!asrProfile.skipAnalyser) {
+      const src = ctx.createMediaStreamSource(stream);
+      const takeAnalyser = ctx.createAnalyser();
+      takeAnalyser.fftSize = 2048;
+      src.connect(takeAnalyser);
+      stopWave = drawWave(takeAnalyser, () => listening && session === takeSessionId);
+      clearSpeechCheckInterval();
+      speechCheckInterval = setInterval(() => {
+        if (!listening || session !== takeSessionId) {
+          clearSpeechCheckInterval();
+          return;
+        }
+        noteSpeechEnergy(takeAnalyser);
+      }, 50);
+    } else {
+      asrLog('toggleRec.skipAnalyser', asrTakeSnapshot());
+      stopWave = null;
+    }
 
     maxTakeTimer = setTimeout(() => {
       maxTakeTimer = null;
@@ -981,14 +972,12 @@ async function toggleRec(): Promise<void> {
         if (session === takeSessionId) {
           speechDetectedThisTake = true;
           asrLog('recognition.onspeechstart', asrTakeSnapshot());
-          scheduleAsrPauseEnd('speech-start');
         }
       };
       recognition.onsoundstart = () => {
         if (session === takeSessionId) {
           speechDetectedThisTake = true;
           asrLog('recognition.onsoundstart', asrTakeSnapshot());
-          if (!asrPauseTimer) scheduleAsrPauseEnd('sound-start');
         }
       };
 
@@ -1019,19 +1008,7 @@ async function toggleRec(): Promise<void> {
           const h = pendingHeard ?? '';
           if (!h) {
             asrWarn('pause.noTranscript', asrTakeSnapshot({ why, recognitionListening }));
-            if (recognitionListening) {
-              if (takeElapsedMs() < MAX_TAKE_MS - 200) {
-                scheduleAsrPauseEnd('pause-wait-asr-active');
-              }
-              return;
-            }
-            if (speechDetectedThisTake && tryRestartRecognition('pause-empty')) {
-              return;
-            }
-            if (speechDetectedThisTake && takeElapsedMs() < MAX_TAKE_MS - 600) {
-              scheduleAsrPauseEnd('pause-empty-wait');
-              return;
-            }
+            if (speechDetectedThisTake && tryRestartRecognition('pause-empty')) return;
             endTake('pause-empty-no-asr');
             return;
           }
@@ -1077,7 +1054,7 @@ async function toggleRec(): Promise<void> {
           recognitionListening = true;
           asrLog('tryRestartRecognition.ok', { why, restarts: asrRestartsThisTake, ...asrTakeSnapshot() });
           scheduleAsrPauseEnd(`restart-${why}`);
-          if (listening) $('btnLbl').textContent = 'listeningâ€¦';
+          if (listening) $('btnLbl').textContent = 'listening…';
           return true;
         } catch (err) {
           asrLog('tryRestartRecognition.fail', {
@@ -1229,10 +1206,7 @@ async function toggleRec(): Promise<void> {
         recognition.start();
         recognitionListening = true;
         asrLog('recognition.start', asrTakeSnapshot({ profile: asrProfile }));
-        setTimeout(() => {
-          if (session !== takeSessionId || endingTake || !listening || asrPauseTimer) return;
-          if (!speechDetectedThisTake) scheduleAsrPauseEnd('idle-no-speech');
-        }, 3200);
+        scheduleAsrPauseEnd('start');
       } catch (err) {
         asrWarn('recognition.start.fail', {
           err: err instanceof Error ? err.message : String(err),
@@ -1246,15 +1220,9 @@ async function toggleRec(): Promise<void> {
       asrEnded = true;
     }
 
-    const startRecorder = () => {
-      if (!listening || session !== takeSessionId) return;
-      startTakeRecorder(asrProfile.mediaRecorderDelayMs > 0 ? 'delayed' : 'immediate');
-    };
-    if (asrProfile.mediaRecorderDelayMs > 0) {
-      asrLog('mediaRecorder.scheduled', asrTakeSnapshot({ delayMs: asrProfile.mediaRecorderDelayMs }));
-      setTimeout(startRecorder, asrProfile.mediaRecorderDelayMs);
-    } else {
-      startRecorder();
+    if (mediaRec && mediaRec.state === 'inactive') {
+      asrLog('mediaRecorder.start', asrTakeSnapshot());
+      mediaRec.start(100);
     }
   } catch (e) {
     resetListenUi();

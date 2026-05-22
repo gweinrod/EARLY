@@ -69,10 +69,6 @@ export function isSafariSpeechRecognition(): boolean {
   return /Safari/i.test(ua) && !/Chrome|Chromium|Edg|OPR|CriOS/i.test(ua);
 }
 
-/**
- * Chromium desktop/Android: often returns no transcript when sharing the mic with
- * MediaRecorder, and abort() drops pending results. Use shorter utterance sessions.
- */
 export function isChromiumSpeechRecognition(): boolean {
   if (isSafariSpeechRecognition()) return false;
   const w = window as Window & {
@@ -82,21 +78,24 @@ export function isChromiumSpeechRecognition(): boolean {
   return !!(w.SpeechRecognition ?? w.webkitSpeechRecognition);
 }
 
-export interface SpeechRecognitionProfile {
-  continuous: boolean;
-  /** Desktop Chrome: delay MediaRecorder so SpeechRecognition gets the mic first. */
-  mediaRecorderDelayMs: number;
-}
-
 function isMobileWebKit(): boolean {
   return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 }
 
+export interface SpeechRecognitionProfile {
+  continuous: boolean;
+  /**
+   * Desktop Chrome: connecting MediaStreamSource + Analyser often blocks onresult.
+   * Record with MediaRecorder on the same stream; waveform uses speech API events only.
+   */
+  skipAnalyser: boolean;
+}
+
 export function getSpeechRecognitionProfile(): SpeechRecognitionProfile {
   if (isChromiumSpeechRecognition() && !isMobileWebKit()) {
-    return { continuous: true, mediaRecorderDelayMs: 1800 };
+    return { continuous: true, skipAnalyser: true };
   }
-  return { continuous: true, mediaRecorderDelayMs: 0 };
+  return { continuous: true, skipAnalyser: false };
 }
 
 export function createSpeechRecognition(): SpeechRecognition | null {
@@ -111,13 +110,12 @@ export function createSpeechRecognition(): SpeechRecognition | null {
   recognition.continuous = profile.continuous;
   recognition.interimResults = true;
   recognition.lang = 'en-US';
-  recognition.maxAlternatives = 3;
+  recognition.maxAlternatives = 1;
   asrLog('createSpeechRecognition', {
     continuous: profile.continuous,
-    mediaRecorderDelayMs: profile.mediaRecorderDelayMs,
+    skipAnalyser: profile.skipAnalyser,
     safari: isSafariSpeechRecognition(),
     chromium: isChromiumSpeechRecognition(),
-    ua: typeof navigator !== 'undefined' ? navigator.userAgent : '',
   });
   return recognition;
 }
@@ -198,25 +196,12 @@ export function collapseRepeatedTokens(heard: string): string {
   return out.join(' ');
 }
 
-/** Best transcript string from a result event (copy immediately — list is live in Chrome). */
+/** Full cumulative transcript (all result segments in this event). */
 export function fullTranscriptFromEvent(e: SpeechRecognitionEvent): string {
-  const results = e.results;
-  if (!results.length) return '';
-
   let text = '';
-  for (let i = 0; i < results.length; i++) {
-    const alt = results[i]?.[0];
-    if (alt?.transcript) text += alt.transcript;
+  for (let i = 0; i < e.results.length; i++) {
+    text += e.results[i][0].transcript;
   }
-
-  if (!text.trim() && isChromiumSpeechRecognition()) {
-    const idx = Math.max(0, Math.min(e.resultIndex ?? results.length - 1, results.length - 1));
-    for (let a = 0; a < (results[idx]?.length ?? 0); a++) {
-      const t = results[idx]?.[a]?.transcript;
-      if (t) text += t;
-    }
-  }
-
   return collapseRepeatedTokens(text);
 }
 
