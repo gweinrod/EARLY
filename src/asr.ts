@@ -83,6 +83,7 @@ export function isChromiumSpeechRecognition(): boolean {
 }
 
 export type RecorderStartMode = 'immediate' | 'after-first-asr';
+export type MicCaptureMode = 'immediate' | 'asr-first';
 
 export interface SpeechRecognitionProfile {
   continuous: boolean;
@@ -94,6 +95,10 @@ export interface SpeechRecognitionProfile {
    * Start recording only after the first ASR transcript (or at endTake fallback).
    */
   recorderStartMode: RecorderStartMode;
+  /**
+   * Desktop Chrome: open getUserMedia during ASR blocks onresult; acquire mic after first transcript.
+   */
+  micCaptureMode: MicCaptureMode;
 }
 
 function isMobileWebKit(): boolean {
@@ -107,6 +112,7 @@ export function getSpeechRecognitionProfile(): SpeechRecognitionProfile {
       mediaRecorderDelayMs: 0,
       restartOnEnd: false,
       recorderStartMode: 'after-first-asr',
+      micCaptureMode: 'asr-first',
     };
   }
   return {
@@ -114,6 +120,7 @@ export function getSpeechRecognitionProfile(): SpeechRecognitionProfile {
     mediaRecorderDelayMs: 0,
     restartOnEnd: false,
     recorderStartMode: 'immediate',
+    micCaptureMode: 'immediate',
   };
 }
 
@@ -133,6 +140,7 @@ export function createSpeechRecognition(): SpeechRecognition | null {
   asrLog('createSpeechRecognition', {
     continuous: profile.continuous,
     recorderStartMode: profile.recorderStartMode,
+    micCaptureMode: profile.micCaptureMode,
     mediaRecorderDelayMs: profile.mediaRecorderDelayMs,
     safari: isSafariSpeechRecognition(),
     chromium: isChromiumSpeechRecognition(),

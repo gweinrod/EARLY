@@ -8,6 +8,7 @@ import {
   isSafariSpeechRecognition,
   mergeTakeTranscript,
   speechResultEventHasContent,
+  type SpeechRecognitionProfile,
 } from './asr';
 import { APP_VERSION } from './version';
 import {
@@ -141,6 +142,7 @@ let speechDetectedThisTake = false;
 let recognitionListening = false;
 /** MediaRecorder started for this tap (Chrome defers until first ASR). */
 let takeRecorderStarted = false;
+let micAcquireInFlight = false;
 let lastDsp: DspPrediction | null = null;
 let pendingHeard: string | null = null;
 let pendingAsrPass: boolean | null = null;
@@ -293,6 +295,7 @@ function resetTakeState(): void {
   speechDetectedThisTake = false;
   recognitionListening = false;
   takeRecorderStarted = false;
+  micAcquireInFlight = false;
   clearSpeechCheckInterval();
   clearAsrWait();
   pendingHeard = null;
@@ -370,6 +373,63 @@ function startTakeRecorder(caller: string): void {
   takeRecorderStarted = true;
   asrLog('mediaRecorder.start', asrTakeSnapshot({ caller }));
   mediaRec.start(100);
+}
+
+async function ensureTakeMicrophone(
+  session: number,
+  asrProfile: SpeechRecognitionProfile,
+  caller: string,
+): Promise<boolean> {
+  if (recStream && mediaRec) return true;
+  if (micAcquireInFlight || session !== takeSessionId || !listening) return false;
+  micAcquireInFlight = true;
+  try {
+    const ctx = getAudioContext();
+    if (ctx.state === 'suspended') await ctx.resume();
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+    if (session !== takeSessionId || !listening) {
+      stream.getTracks().forEach((t) => t.stop());
+      return false;
+    }
+    recStream = stream;
+    recChunks = [];
+    const recordStream = typeof stream.clone === 'function' ? stream.clone() : stream;
+    mediaRec = createMediaRecorder(recordStream);
+    mediaRec.ondataavailable = (e) => {
+      if (e.data.size > 0) recChunks.push(e.data);
+    };
+    mediaRec.onstop = () => {
+      void processAudio();
+    };
+    const src = ctx.createMediaStreamSource(stream);
+    const an = ctx.createAnalyser();
+    an.fftSize = 2048;
+    src.connect(an);
+    stopWave?.();
+    stopWave = drawWave(an, () => listening && session === takeSessionId);
+    clearSpeechCheckInterval();
+    speechCheckInterval = setInterval(() => {
+      if (!listening || session !== takeSessionId) {
+        clearSpeechCheckInterval();
+        return;
+      }
+      noteSpeechEnergy(an);
+    }, 50);
+    asrLog('ensureTakeMicrophone.ok', asrTakeSnapshot({ caller }));
+    if (asrProfile.recorderStartMode === 'after-first-asr') {
+      startTakeRecorder(`mic-${caller}`);
+    }
+    return true;
+  } catch (e) {
+    asrWarn('ensureTakeMicrophone.fail', {
+      caller,
+      err: e instanceof Error ? e.message : String(e),
+      ...asrTakeSnapshot(),
+    });
+    return false;
+  } finally {
+    micAcquireInFlight = false;
+  }
 }
 
 function canAutoEndTake(): boolean {
@@ -569,8 +629,12 @@ function endTake(caller = 'unknown'): void {
 
   const completeAsrShutdown = () => {
     asrLog('completeAsrShutdown', asrTakeSnapshot());
+    const shutdownSession = takeSessionId;
+    const profile = getSpeechRecognitionProfile();
     if (!takeRecorderStarted && speechDetectedThisTake) {
-      startTakeRecorder('endTake-fallback');
+      void ensureTakeMicrophone(shutdownSession, profile, 'endTake-fallback').then((ok) => {
+        if (ok && !takeRecorderStarted) startTakeRecorder('endTake-fallback');
+      });
     }
     takeSessionId++;
     if (lockedEeTailAsr) {
@@ -918,14 +982,6 @@ async function toggleRec(): Promise<void> {
   if (ctx.state === 'suspended') await ctx.resume();
 
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
-    recStream = stream;
-    const src = ctx.createMediaStreamSource(stream);
-    const an = ctx.createAnalyser();
-    an.fftSize = 2048;
-    src.connect(an);
-
-    recChunks = [];
     const asrProfile = getSpeechRecognitionProfile();
     asrLog('toggleRec.start', {
       session,
@@ -934,17 +990,28 @@ async function toggleRec(): Promise<void> {
       chromium: isChromiumSpeechRecognition(),
       ...asrTakeSnapshot(),
     });
-    const recordStream =
-      asrProfile.recorderStartMode === 'after-first-asr' && typeof stream.clone === 'function'
-        ? stream.clone()
-        : stream;
-    mediaRec = createMediaRecorder(recordStream);
-    mediaRec.ondataavailable = (e) => {
-      if (e.data.size > 0) recChunks.push(e.data);
-    };
-    mediaRec.onstop = () => {
-      void processAudio();
-    };
+    recChunks = [];
+
+    let takeAnalyser: AnalyserNode | null = null;
+    if (asrProfile.micCaptureMode === 'asr-first') {
+      asrLog('toggleRec.asrFirstMicDeferred', asrTakeSnapshot());
+    } else {
+      const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
+      recStream = stream;
+      const src = ctx.createMediaStreamSource(stream);
+      const an = ctx.createAnalyser();
+      an.fftSize = 2048;
+      src.connect(an);
+      takeAnalyser = an;
+      const recordStream = typeof stream.clone === 'function' ? stream.clone() : stream;
+      mediaRec = createMediaRecorder(recordStream);
+      mediaRec.ondataavailable = (e) => {
+        if (e.data.size > 0) recChunks.push(e.data);
+      };
+      mediaRec.onstop = () => {
+        void processAudio();
+      };
+    }
 
     listening = true;
     takeStartedAt = Date.now();
@@ -954,15 +1021,17 @@ async function toggleRec(): Promise<void> {
     hide('hmWrap');
     hide('pbWrap');
     hide('resultBanner');
-    stopWave = drawWave(an, () => listening && session === takeSessionId);
-    clearSpeechCheckInterval();
-    speechCheckInterval = setInterval(() => {
-      if (!listening || session !== takeSessionId) {
-        clearSpeechCheckInterval();
-        return;
-      }
-      noteSpeechEnergy(an);
-    }, 50);
+    if (takeAnalyser) {
+      stopWave = drawWave(takeAnalyser, () => listening && session === takeSessionId);
+      clearSpeechCheckInterval();
+      speechCheckInterval = setInterval(() => {
+        if (!listening || session !== takeSessionId) {
+          clearSpeechCheckInterval();
+          return;
+        }
+        noteSpeechEnergy(takeAnalyser!);
+      }, 50);
+    }
 
     maxTakeTimer = setTimeout(() => {
       maxTakeTimer = null;
@@ -1022,11 +1091,13 @@ async function toggleRec(): Promise<void> {
           const h = pendingHeard ?? '';
           if (!h) {
             asrWarn('pause.noTranscript', asrTakeSnapshot({ why, recognitionListening }));
-            if (recognitionListening && takeElapsedMs() < MAX_TAKE_MS - 400) {
-              scheduleAsrPauseEnd('pause-wait-asr-active');
+            if (recognitionListening) {
+              if (takeElapsedMs() < MAX_TAKE_MS - 200) {
+                scheduleAsrPauseEnd('pause-wait-asr-active');
+              }
               return;
             }
-            if (speechDetectedThisTake && !recognitionListening && tryRestartRecognition('pause-empty')) {
+            if (speechDetectedThisTake && tryRestartRecognition('pause-empty')) {
               return;
             }
             if (speechDetectedThisTake && takeElapsedMs() < MAX_TAKE_MS - 600) {
@@ -1104,7 +1175,7 @@ async function toggleRec(): Promise<void> {
           const flushText = fullTranscriptFromEvent(e);
           asrLog('onresult.flush', { flushText, dump, ...asrTakeSnapshot() });
           if (flushText.trim()) {
-            startTakeRecorder('flush-asr');
+            void ensureTakeMicrophone(session, asrProfile, 'flush-asr');
             const flushed = mergeTakeTranscript(takeAsrAccum, flushText, curItem);
             if (!isPhantomKeyTranscript(flushed)) {
               takeAsrAccum = flushed;
@@ -1126,9 +1197,7 @@ async function toggleRec(): Promise<void> {
           asrLog('onresult.emptyText', { dump, hasContent, ...asrTakeSnapshot() });
           return;
         }
-        if (asrProfile.recorderStartMode === 'after-first-asr') {
-          startTakeRecorder('first-asr');
-        }
+        void ensureTakeMicrophone(session, asrProfile, 'first-asr');
         const heard = mergeTakeTranscript(takeAsrAccum, eventText, curItem);
         if (isPhantomKeyTranscript(heard)) {
           asrLog('onresult.phantom', { eventText, heard, dump, ...asrTakeSnapshot() });
@@ -1275,6 +1344,8 @@ async function toggleRec(): Promise<void> {
       } else {
         startImmediate();
       }
+    } else if (asrProfile.micCaptureMode === 'asr-first') {
+      asrLog('mediaRecorder.deferred', asrTakeSnapshot({ until: 'first-asr', mic: 'asr-first' }));
     } else {
       asrLog('mediaRecorder.deferred', asrTakeSnapshot({ until: 'first-asr' }));
     }
