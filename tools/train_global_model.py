@@ -66,7 +66,7 @@ def _add_sample(
         label_key = row.get("teacherHeardKey")
         if not label_key and row.get("agrees"):
             label_key = row.get("targetKey")
-    if not label_key or label_key not in vocab:
+    if label_key not in vocab:
         return False
 
     dedupe_key = f"{label_key}:{','.join(f'{float(x):.6f}' for x in emb)}"

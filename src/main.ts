@@ -44,7 +44,12 @@ import {
   getVoiceBankQueueLength,
   syncLocalVoiceBankToCloud,
 } from './cloud-voice-bank';
-import { isTfReady, trainCalibrationSample, type TfInitResult } from './tf-phoneme';
+import {
+  isTfReady,
+  retrainFromVoiceBank,
+  trainCalibrationSample,
+  type TfInitResult,
+} from './tf-phoneme';
 import { isVoiceBankComplete } from './voice-bank';
 import {
   initVoiceBootstrapUi,
@@ -478,6 +483,24 @@ function onVoiceBootstrapComplete(): void {
   })();
 }
 
+async function trainLocalFromVoiceBank(): Promise<void> {
+  if (!isVoiceBankComplete(curStageId)) {
+    showErr('Voice seed incomplete ? record all letters + silence first.');
+    return;
+  }
+  setModelLoadStatus('Training local model from voice seed?', 'neutral');
+  const ok = await retrainFromVoiceBank(curStageId);
+  await prepareStage(curStageId);
+  if (!ok) {
+    setModelLoadStatus('Local training failed ? check console', 'warn');
+    return;
+  }
+  setModelLoadStatus(
+    isTfReady() ? 'Local model ready (teacher voice seed)' : 'Training finished but model not ready',
+    isTfReady() ? 'ok' : 'warn',
+  );
+}
+
 async function toggleRec(): Promise<void> {
   if (listening) {
     endRecording('manual-toggle');
@@ -586,6 +609,9 @@ function init(): void {
   initStagePills();
   if (settings.collectorMode) {
     initCollectorPanel();
+    $('btnTrainLocalModel').addEventListener('click', () => {
+      void trainLocalFromVoiceBank();
+    });
     setJudgmentCompleteHandler((j) => {
       if (j.agrees) applyTeacherAcceptAsPass(j.teacherHeard);
       void onTeacherJudgment(j);
