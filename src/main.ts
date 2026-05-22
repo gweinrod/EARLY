@@ -1,4 +1,4 @@
-﻿import { asrLog, dumpSpeechResultEvent } from './asr-debug';
+﻿import { asrLog, asrWarn, dumpSpeechResultEvent, formatAsrLogTail } from './asr-debug';
 import {
   createSpeechRecognition,
   eventHasFinalTranscript,
@@ -702,16 +702,15 @@ function finishAttempt(heard: string, asrPass: boolean): void {
   addFB(studentMsg, true);
 
   if (!heard.trim() && speechDetectedThisTake) {
-    asrLog('finishAttempt.emptyAsrWithSpeech', {
-      asrPass,
-      appPass,
-      basis,
-      ...asrTakeSnapshot(),
-    });
+    const snap = asrTakeSnapshot({ asrPass, appPass, basis });
+    asrWarn('finishAttempt.emptyAsrWithSpeech', snap);
+    const trace = formatAsrLogTail(8);
     addFB(
       {
         t: 'warn',
-        s: 'Speech-to-text did not catch a word — try again (we never guess the target name).',
+        s:
+          'Speech-to-text did not catch a word — try again (we never guess the target name).' +
+          (trace ? ` Trace: ${trace}` : ''),
       },
       true,
     );
@@ -951,6 +950,7 @@ async function toggleRec(): Promise<void> {
     activeRecognition = createSpeechRecognition();
     if (activeRecognition) {
       const recognition = activeRecognition;
+      const { restartOnEnd } = asrProfile;
 
       recognition.onstart = () => {
         if (session !== takeSessionId) return;
@@ -960,12 +960,14 @@ async function toggleRec(): Promise<void> {
         if (session === takeSessionId) {
           speechDetectedThisTake = true;
           asrLog('recognition.onspeechstart', asrTakeSnapshot());
+          scheduleAsrPauseEnd('speech-start');
         }
       };
       recognition.onsoundstart = () => {
         if (session === takeSessionId) {
           speechDetectedThisTake = true;
           asrLog('recognition.onsoundstart', asrTakeSnapshot());
+          if (!asrPauseTimer) scheduleAsrPauseEnd('sound-start');
         }
       };
 
@@ -995,8 +997,12 @@ async function toggleRec(): Promise<void> {
           }
           const h = pendingHeard ?? '';
           if (!h) {
-            asrLog('pause.noTranscript', asrTakeSnapshot({ why }));
+            asrWarn('pause.noTranscript', asrTakeSnapshot({ why }));
             if (speechDetectedThisTake && tryRestartRecognition('pause-empty')) return;
+            if (speechDetectedThisTake && takeElapsedMs() < MAX_TAKE_MS - 600) {
+              scheduleAsrPauseEnd('pause-empty-wait');
+              return;
+            }
             endTake('pause-empty-no-asr');
             return;
           }
@@ -1178,22 +1184,35 @@ async function toggleRec(): Promise<void> {
         if (!listening || endingTake || lockedEeTailAsr) {
           return;
         }
-        if (!heardOnEnd.trim() && speechDetectedThisTake && tryRestartRecognition('onend-empty')) {
+        if (restartOnEnd) {
+          const deferRestart = (why: string) => {
+            setTimeout(() => {
+              if (session !== takeSessionId || endingTake || !listening) return;
+              tryRestartRecognition(why);
+            }, 120);
+          };
+          if (!heardOnEnd.trim() && speechDetectedThisTake) {
+            deferRestart('onend-empty');
+            return;
+          }
+          deferRestart('onend-restart');
           return;
         }
-        if (tryRestartRecognition('onend-restart')) {
-          return;
-        }
-        if (pendingHeard && !asrPauseTimer) {
+        if (!heardOnEnd.trim() && speechDetectedThisTake && !asrPauseTimer) {
+          scheduleAsrPauseEnd('onend-no-text');
+        } else if (pendingHeard && !asrPauseTimer) {
           scheduleAsrPauseEnd('onend-fallback');
         }
       };
       try {
         recognition.start();
         asrLog('recognition.start', asrTakeSnapshot({ profile: asrProfile }));
-        scheduleAsrPauseEnd('start');
+        setTimeout(() => {
+          if (session !== takeSessionId || endingTake || !listening || asrPauseTimer) return;
+          if (!speechDetectedThisTake) scheduleAsrPauseEnd('idle-no-speech');
+        }, 3200);
       } catch (err) {
-        asrLog('recognition.start.fail', {
+        asrWarn('recognition.start.fail', {
           err: err instanceof Error ? err.message : String(err),
           ...asrTakeSnapshot(),
         });
@@ -1260,10 +1279,9 @@ function applySettingsUi(): void {
 function init(): void {
   $('appTitle').textContent = 'EARLY';
   $('appVersion').textContent = `v${APP_VERSION}`;
-  asrLog('init', {
+  asrWarn('init', {
     version: APP_VERSION,
-    debug: true,
-    hint: "Filter console by '[EARLY ASR]'; disable with localStorage.setItem('early.asrDebug','0')",
+    hint: "Console: filter '[EARLY ASR]' or type __earlyAsrLog; disable logs: localStorage early.asrDebug=0",
     safari: isSafariSpeechRecognition(),
     chromium: isChromiumSpeechRecognition(),
     profile: getSpeechRecognitionProfile(),

@@ -83,17 +83,22 @@ export function isChromiumSpeechRecognition(): boolean {
 }
 
 export interface SpeechRecognitionProfile {
-  /** false = one utterance per session, restart onend while the take is open (Chrome). */
   continuous: boolean;
   /** Delay MediaRecorder so SpeechRecognition claims the mic first (ms). */
   mediaRecorderDelayMs: number;
+  /** Restart recognition.start() after onend (desktop Chrome utterance mode only). */
+  restartOnEnd: boolean;
+}
+
+function isMobileWebKit(): boolean {
+  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
 }
 
 export function getSpeechRecognitionProfile(): SpeechRecognitionProfile {
-  if (isChromiumSpeechRecognition()) {
-    return { continuous: false, mediaRecorderDelayMs: 280 };
+  if (isChromiumSpeechRecognition() && !isMobileWebKit()) {
+    return { continuous: true, mediaRecorderDelayMs: 280, restartOnEnd: false };
   }
-  return { continuous: true, mediaRecorderDelayMs: 0 };
+  return { continuous: true, mediaRecorderDelayMs: 0, restartOnEnd: false };
 }
 
 export function createSpeechRecognition(): SpeechRecognition | null {
