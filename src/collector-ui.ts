@@ -52,6 +52,7 @@ async function onClearServer(): Promise<void> {
       'Delete ALL voice samples and teacher judgments from the server (Vercel Blob)?\n\n' +
         'The shared classroom model on the app is NOT removed.\n' +
         'Run publish from your PC after new practice to add training data back into the model.\n\n' +
+        'Required after landmark embedding upgrade — old 13-D samples are invalid.\n' +
         'This cannot be undone.',
     )
   ) {
@@ -66,8 +67,8 @@ async function onClearServer(): Promise<void> {
 async function onClearLocal(): Promise<void> {
   if (
     !confirm(
-      'Clear on THIS device:\n• session log\n• voice bank\n• browser model cache\n• pending uploads\n\n' +
-        'The shared model (v3+) reloads from the app on refresh.\n' +
+      'Clear on THIS device:\n• session log\n• voice bank (v2 landmark embeddings)\n• local TF (early-tf-v2)\n• pending uploads\n\n' +
+        'After landmark DSP (v0.87+), re-record teacher voice seed per stage.\n' +
         'Local training archive on your PC is not affected.\n\nContinue?',
     )
   ) {

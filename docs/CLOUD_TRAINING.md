@@ -2,9 +2,9 @@
 
 **Moving off Vercel?** See [`MIGRATION_OFF_VERCEL.md`](MIGRATION_OFF_VERCEL.md). The shared model in `public/models/` works on any static host; Blob/API are optional for syncing new judgments.
 
-**Teacher (once):** use **record teacher voice (seed)** in the teacher panel — uploads to Blob when done.
+**Teacher (once per stage):** use **record teacher voice (seed)** in the teacher panel — uploads when done. After a **landmark embedding** app update (v0.87+), **re-record the seed** and **clear server + device training data** — old 13-D samples are incompatible with the new `EMBEDDING_DIM` vectors (~129-D from `src/dsp.ts`).
 
-**Each student session:** teacher **accept** (and ASR when DSP missed) uploads **judgments** only — students never record the 26-letter voice bootstrap. You periodically **train and deploy** a shared model; every device loads it on the next visit.
+**Each student session:** teacher **accept** uploads **judgments** only — students never record the voice bootstrap. You periodically **train and deploy** a shared model; every device loads it on the next visit.
 
 ## 1. Enable storage (once)
 
@@ -22,8 +22,8 @@ The teacher panel shows **Cloud training: N samples on server** when uploads wor
 
 | Event | Behavior |
 |--------|----------|
-| Voice setup (each letter) | POST `/api/voice-bank` with 13-D embedding + letter key |
-| Teacher confirms | POST `/api/calibration` with 13-D embedding + labels |
+| Voice setup (each letter) | POST `/api/voice-bank` with `EMBEDDING_DIM` landmark vector + letter key |
+| Teacher confirms | POST `/api/calibration` with same-length embedding + labels |
 | Offline | Queued in `localStorage`, retried on next load |
 | App start | Loads newest `public/models/<stage>/` if manifest version &gt; device version |
 | Local TF fit | Still runs for instant feedback on that device |
@@ -71,4 +71,4 @@ Publish pulls both into `data/voice-bank/` and `data/calibration/`; training use
 
 ## 5. Privacy
 
-Samples are MFCC embeddings, not raw audio. Blob is public-read per object URL (for pull script). Use a private Vercel team and do not share the token.
+Samples are landmark/MFCC-derived embeddings (`EMBEDDING_DIM` floats), not raw audio. Server validates length via `node tools/read_embedding_dim.mjs` (currently 129). Blob is public-read per object URL (for pull script). Use a private Vercel team and do not share the token.

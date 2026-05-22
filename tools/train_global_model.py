@@ -27,7 +27,19 @@ VOICE_BANK_DIR = ROOT / "data" / "voice-bank"
 ARCHIVE_CALIBRATION_DIR = ROOT / "data" / "training-archive" / "calibration"
 ARCHIVE_VOICE_BANK_DIR = ROOT / "data" / "training-archive" / "voice-bank"
 MODELS_DIR = ROOT / "public" / "models"
-EMBEDDING_LEN = 13
+
+
+def read_embedding_len() -> int:
+    """Keep in sync with export const EMBEDDING_DIM in src/dsp.ts."""
+    script = ROOT / "tools" / "read_embedding_dim.mjs"
+    out = subprocess.check_output(["node", str(script)], cwd=ROOT, text=True).strip()
+    n = int(out)
+    if n < 1:
+        raise SystemExit(f"Invalid EMBEDDING_DIM from dsp.ts: {out}")
+    return n
+
+
+EMBEDDING_LEN = read_embedding_len()
 
 # Alphabet stage keys (must match src/word-vocabulary.ts: a-z + silence "")
 SILENCE_KEY = ""
@@ -170,10 +182,10 @@ def build_model(num_classes: int) -> tf.keras.Model:
     return tf.keras.Sequential(
         [
             tf.keras.layers.Input(shape=(EMBEDDING_LEN,)),
-            tf.keras.layers.Dense(128, activation="relu"),
+            tf.keras.layers.Dense(256, activation="relu"),
             tf.keras.layers.Dropout(0.2),
+            tf.keras.layers.Dense(128, activation="relu"),
             tf.keras.layers.Dense(64, activation="relu"),
-            tf.keras.layers.Dense(32, activation="relu"),
             tf.keras.layers.Dense(num_classes, activation="softmax"),
         ]
     )

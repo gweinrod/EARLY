@@ -1,14 +1,14 @@
 import type { CurriculumStageId } from './curriculum';
 import { getStage } from './curriculum';
-import { NMCC } from './dsp';
+import { EMBEDDING_DIM } from './dsp';
 import { SILENCE_VOCAB_KEY } from './word-vocabulary';
 
-const BANK_KEY = 'early.voiceBank.v1';
+const BANK_KEY = 'early.voiceBank.v2';
 
 export interface VoiceBank {
-  version: 1;
+  version: 2;
   stageId: CurriculumStageId;
-  /** MFCC embedding per curriculum key (13 floats each). */
+  /** Landmark embedding per curriculum key. */
   samples: Record<string, number[][]>;
   updatedAt: string;
 }
@@ -29,9 +29,9 @@ function saveAll(data: Partial<Record<CurriculumStageId, VoiceBank>>): void {
 export function loadVoiceBank(stageId: CurriculumStageId): VoiceBank {
   const all = loadAll();
   const existing = all[stageId];
-  if (existing?.version === 1) return existing;
+  if (existing?.version === 2) return existing;
   return {
-    version: 1,
+    version: 2,
     stageId,
     samples: {},
     updatedAt: new Date().toISOString(),
@@ -39,7 +39,7 @@ export function loadVoiceBank(stageId: CurriculumStageId): VoiceBank {
 }
 
 export function addVoiceSample(stageId: CurriculumStageId, key: string, embedding: number[]): void {
-  if (embedding.length !== NMCC) return;
+  if (embedding.length !== EMBEDDING_DIM) return;
   const all = loadAll();
   const bank = loadVoiceBank(stageId);
   const list = bank.samples[key] ?? [];

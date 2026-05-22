@@ -1,8 +1,8 @@
 import type { CurriculumStageId } from './curriculum';
 import { APP_VERSION } from './version';
 
-const QUEUE_KEY = 'early.cloudQueue.v1';
-const UPLOADED_ATTEMPTS_KEY = 'early.cloudUploadedAttempts.v1';
+const QUEUE_KEY = 'early.cloudQueue.v2';
+const UPLOADED_ATTEMPTS_KEY = 'early.cloudUploadedAttempts.v2';
 /** Min interval between server stat fetches (each used to call Blob list). */
 const STATS_REFRESH_MS = 5 * 60 * 1000;
 let lastStatsRefreshAt = 0;
@@ -20,7 +20,7 @@ export interface CloudCalibrationUpload {
 }
 
 interface QueuedPayload extends CloudCalibrationUpload {
-  v: 1;
+  v: 2;
   createdAt: string;
   appVersion: string;
 }
@@ -99,7 +99,7 @@ export function countCalibrationQueueForStage(stageId: CurriculumStageId): numbe
 
 function toPayload(upload: CloudCalibrationUpload): QueuedPayload {
   return {
-    v: 1,
+    v: 2,
     ...upload,
     createdAt: new Date().toISOString(),
     appVersion: APP_VERSION,

@@ -8,8 +8,9 @@ import path from 'node:path';
 import express from 'express';
 import pg from 'pg';
 
-const SAMPLE_VERSION = 1;
-const EMBEDDING_LEN = 13;
+const SAMPLE_VERSION = 2;
+/** Must match EMBEDDING_DIM in src/dsp.ts (run: node tools/read_embedding_dim.mjs). */
+const EMBEDDING_LEN = 129;
 const STAGES = new Set(['alphabet', 'consonants', 'vowels', 'legacy-cvc']);
 
 const PORT = Number(process.env.PORT ?? 8787);

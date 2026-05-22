@@ -2,11 +2,19 @@
 /**
  * Extract dense weights from shipped TF.js model → base-weights.json for fine-tuning.
  */
+import { execSync } from 'child_process';
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
 const ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+
+function readEmbeddingDim() {
+  const out = execSync('node tools/read_embedding_dim.mjs', { cwd: ROOT, encoding: 'utf8' }).trim();
+  const n = parseInt(out, 10);
+  if (!Number.isFinite(n) || n < 1) throw new Error(`Invalid EMBEDDING_DIM: ${out}`);
+  return n;
+}
 
 function readWeights(stageDir) {
   const modelJson = JSON.parse(fs.readFileSync(path.join(stageDir, 'model.json'), 'utf8'));
@@ -42,7 +50,7 @@ function main() {
   const stageDir = path.join(ROOT, 'public', 'models', stageId);
   const dense = readWeights(stageDir);
   const spec = {
-    inputDim: 13,
+    inputDim: readEmbeddingDim(),
     numClasses: dense[dense.length - 1].bias.length,
     dense,
   };

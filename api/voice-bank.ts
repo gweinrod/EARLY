@@ -1,8 +1,9 @@
 import type { VercelRequest, VercelResponse } from '@vercel/node';
 import { list, put } from '@vercel/blob';
 
-const SAMPLE_VERSION = 1;
-const EMBEDDING_LEN = 13;
+const SAMPLE_VERSION = 2;
+/** Must match EMBEDDING_DIM in src/dsp.ts. */
+const EMBEDDING_LEN = 129;
 const STAGES = new Set(['alphabet', 'consonants', 'vowels', 'legacy-cvc']);
 const COUNTS_PATH = 'voice-bank/_meta/counts.json';
 

@@ -3,9 +3,9 @@ import { loadVoiceBank } from './voice-bank';
 import { APP_VERSION } from './version';
 import { notifyCloudSyncActivity } from './cloud-calibration';
 
-const QUEUE_KEY = 'early.cloudVoiceQueue.v1';
-const SYNCED_KEY = 'early.voiceBank.synced.v1';
-const CLOUD_INITIAL_SYNC_KEY = 'early.voiceBank.initialCloudSync.v1';
+const QUEUE_KEY = 'early.cloudVoiceQueue.v2';
+const SYNCED_KEY = 'early.voiceBank.synced.v2';
+const CLOUD_INITIAL_SYNC_KEY = 'early.voiceBank.initialCloudSync.v2';
 
 export interface VoiceBankUpload {
   stageId: CurriculumStageId;
@@ -14,7 +14,7 @@ export interface VoiceBankUpload {
 }
 
 interface QueuedVoicePayload {
-  v: 1;
+  v: 2;
   kind: 'voice_bank';
   stageId: CurriculumStageId;
   targetKey: string;
@@ -97,7 +97,7 @@ export function countVoiceQueueForStage(stageId: CurriculumStageId): number {
 
 function toPayload(upload: VoiceBankUpload): QueuedVoicePayload {
   return {
-    v: 1,
+    v: 2,
     kind: 'voice_bank',
     stageId: upload.stageId,
     targetKey: upload.targetKey,

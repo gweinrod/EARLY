@@ -3,7 +3,7 @@ import { setWasmPaths } from '@tensorflow/tfjs-backend-wasm';
 import '@tensorflow/tfjs-backend-wasm';
 import type { CurriculumStageId } from './curriculum';
 import { buildBootstrapDataset } from './bootstrap-embeddings';
-import { NMCC } from './dsp';
+import { EMBEDDING_DIM } from './dsp';
 import { getVocabWords, setVocabularyStage, wordIndex } from './word-vocabulary';
 import { isVoiceBankComplete } from './voice-bank';
 import {
@@ -13,7 +13,7 @@ import {
   type PublishedModelManifest,
 } from './published-model';
 
-const INPUT_DIM = NMCC;
+const INPUT_DIM = EMBEDDING_DIM;
 
 let model: tf.LayersModel | null = null;
 let ready = false;
@@ -30,6 +30,10 @@ function ensureWasmPaths(): void {
 }
 
 function modelStorageUrl(stageId: CurriculumStageId): string {
+  return `localstorage://early-tf-v2-${stageId}`;
+}
+
+function legacyModelStorageUrl(stageId: CurriculumStageId): string {
   return `localstorage://early-tf-${stageId}`;
 }
 
@@ -138,14 +142,14 @@ function createModel(numClasses: number): tf.LayersModel {
   m.add(
     tf.layers.dense({
       inputShape: [INPUT_DIM],
-      units: 128,
+      units: 256,
       activation: 'relu',
       kernelInitializer: 'glorotUniform',
     }),
   );
   m.add(tf.layers.dropout({ rate: 0.2 }));
+  m.add(tf.layers.dense({ units: 128, activation: 'relu' }));
   m.add(tf.layers.dense({ units: 64, activation: 'relu' }));
-  m.add(tf.layers.dense({ units: 32, activation: 'relu' }));
   m.add(tf.layers.dense({ units: numClasses, activation: 'softmax' }));
   m.compile({
     optimizer: tf.train.adamax(0.002),
@@ -173,11 +177,25 @@ function getModelClassCount(): number | null {
   return typeof n === 'number' ? n : null;
 }
 
+function getModelInputDim(): number | null {
+  if (!model?.layers.length) return null;
+  const first = model.layers[0];
+  const shape = first.batchInputShape ?? first.outputShape;
+  if (!shape || shape.length < 2) return null;
+  const dim = shape[shape.length - 1];
+  return typeof dim === 'number' && dim > 0 ? dim : null;
+}
+
 function modelMatchesVocab(): boolean {
   const vocabSize = getVocabWords().length;
   if (!vocabSize) return false;
   const n = getModelClassCount();
   return n !== null && n === vocabSize;
+}
+
+function modelMatchesInputDim(): boolean {
+  const dim = getModelInputDim();
+  return dim === INPUT_DIM;
 }
 
 function disposeCurrentModel(): void {
@@ -186,17 +204,20 @@ function disposeCurrentModel(): void {
   ready = false;
 }
 
-/** Drop stale checkpoints (e.g. 26-class model after silence class added). */
+/** Drop stale checkpoints (wrong class count or pre-landmark input dim). */
 async function reconcileModelWithVocab(stageId: CurriculumStageId): Promise<boolean> {
   if (!model) return false;
-  if (modelMatchesVocab()) {
+  if (modelMatchesVocab() && modelMatchesInputDim()) {
     ensureModelCompiled();
     ready = true;
     return true;
   }
   const classes = getModelClassCount();
   const vocabSize = getVocabWords().length;
-  console.warn(`EARLY: model has ${classes} classes but vocab has ${vocabSize} — retraining`);
+  const inputDim = getModelInputDim();
+  console.warn(
+    `EARLY: model mismatch (classes=${classes} vocab=${vocabSize}, input=${inputDim} expected=${INPUT_DIM}) — retraining`,
+  );
   disposeCurrentModel();
   if (isVoiceBankComplete(stageId)) {
     return runBootstrapTraining(stageId);
@@ -223,10 +244,12 @@ async function runBootstrapTraining(stageId: CurriculumStageId): Promise<boolean
 }
 
 export async function deleteStoredModel(stageId: CurriculumStageId): Promise<void> {
-  try {
-    await tf.io.removeModel(modelStorageUrl(stageId));
-  } catch {
-    /* not saved yet */
+  for (const url of [modelStorageUrl(stageId), legacyModelStorageUrl(stageId)]) {
+    try {
+      await tf.io.removeModel(url);
+    } catch {
+      /* not saved yet */
+    }
   }
   if (activeStage === stageId) {
     model?.dispose();
@@ -265,7 +288,8 @@ export async function retrainFromVoiceBank(stageId: CurriculumStageId): Promise<
 
 async function fitBatch(x: number[][], y: number[], epochs: number, batchSize: number): Promise<void> {
   if (!model || x.length === 0) return;
-  if (!modelMatchesVocab()) return;
+  if (!modelMatchesVocab() || !modelMatchesInputDim()) return;
+  if (x.some((row) => row.length !== INPUT_DIM)) return;
   ensureModelCompiled();
   const vocabSize = getVocabWords().length;
   const xs = tf.tensor2d(x);
@@ -395,7 +419,8 @@ export interface CalibrationTrainInput {
 
 export async function trainCalibrationSample(input: CalibrationTrainInput): Promise<void> {
   if (trainingBusy) return;
-  if (!model || !modelMatchesVocab()) {
+  if (input.embedding.length !== INPUT_DIM) return;
+  if (!model || !modelMatchesVocab() || !modelMatchesInputDim()) {
     const ok = await reconcileModelWithVocab(activeStage);
     if (!ok || !model) return;
   }

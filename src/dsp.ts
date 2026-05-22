@@ -1,7 +1,12 @@
 export const FSIZE = 512;
 export const HSIZE = 256;
-export const NMEL = 26;
-export const NMCC = 13;
+export const NMEL = 40;
+export const NMCC = 20;
+
+/** Landmark multi-region vector length (3×(MFCC+stats) + utterance MFCC + 2 region deltas). */
+export const EMBEDDING_DIM = 3 * (NMCC + 3) + 3 * NMCC;
+
+const PRE_EMPHASIS = 0.97;
 
 export interface Frame {
   mfcc: number[];
@@ -78,25 +83,23 @@ function fftMag(sig: number[]): number[] {
 
   for (let len = 2; len <= n; len <<= 1) {
     const ang = (-2 * Math.PI) / len;
-    const c0 = Math.cos(ang);
-    const s0 = Math.sin(ang);
+    const wlen_re = Math.cos(ang);
+    const wlen_im = Math.sin(ang);
     for (let i = 0; i < n; i += len) {
-      let cr = 1;
-      let ci = 0;
-      for (let j = 0; j < len >> 1; j++) {
-        const p = i + j;
-        const q = p + (len >> 1);
-        const uR = re[p];
-        const uI = im[p];
-        const vR = re[q] * cr - im[q] * ci;
-        const vI = re[q] * ci + im[q] * cr;
-        re[p] = uR + vR;
-        im[p] = uI + vI;
-        re[q] = uR - vR;
-        im[q] = uI - vI;
-        const nr = cr * c0 - ci * s0;
-        ci = cr * s0 + ci * c0;
-        cr = nr;
+      let wr = 1;
+      let wi = 0;
+      for (let j = 0; j < len / 2; j++) {
+        const u_re = re[i + j];
+        const u_im = im[i + j];
+        const v_re = re[i + j + len / 2] * wr - im[i + j + len / 2] * wi;
+        const v_im = re[i + j + len / 2] * wi + im[i + j + len / 2] * wr;
+        re[i + j] = u_re + v_re;
+        im[i + j] = u_im + v_im;
+        re[i + j + len / 2] = u_re - v_re;
+        im[i + j + len / 2] = u_im - v_im;
+        const next_wr = wr * wlen_re - wi * wlen_im;
+        wi = wr * wlen_im + wi * wlen_re;
+        wr = next_wr;
       }
     }
   }
@@ -121,10 +124,21 @@ function dct2(x: number[], n: number): number[] {
   return out;
 }
 
+function preEmphasize(samples: number[]): number[] {
+  if (samples.length < 2) return samples.slice();
+  const out = new Array<number>(samples.length);
+  out[0] = samples[0];
+  for (let i = 1; i < samples.length; i++) {
+    out[i] = samples[i] - PRE_EMPHASIS * samples[i - 1];
+  }
+  return out;
+}
+
 export function extractFrames(audio: number[] | Float32Array, sr: number): Frame[] {
   if (!melFB) melFB = buildMelFilterbank(sr);
+  const raw = Array.isArray(audio) ? audio : Array.from(audio);
+  const samples = preEmphasize(raw);
   const frames: Frame[] = [];
-  const samples = Array.isArray(audio) ? audio : Array.from(audio);
 
   for (let st = 0; st + FSIZE < samples.length; st += HSIZE) {
     const seg = samples.slice(st, st + FSIZE);
@@ -165,12 +179,47 @@ export function extractFrames(audio: number[] | Float32Array, sr: number): Frame
   return frames;
 }
 
-/** Voiced nucleus: RMS > 12% of peak; average MFCCs over middle 60% of voiced frames. */
-export function extractNucleusMfcc(frames: Frame[]): number[] | null {
+function voicedFrames(frames: Frame[], rmsRatio = 0.12): Frame[] {
   let mxR = 0;
   for (const f of frames) if (f.rms > mxR) mxR = f.rms;
-  const thr = mxR * 0.12;
+  const thr = mxR * rmsRatio;
   const vf = frames.filter((f) => f.rms > thr);
+  return vf.length >= 2 ? vf : frames;
+}
+
+function avgMfcc(slice: Frame[]): number[] {
+  const out: number[] = [];
+  for (let i = 0; i < NMCC; i++) {
+    let s = 0;
+    for (const f of slice) s += f.mfcc[i];
+    out.push(s / slice.length);
+  }
+  return out;
+}
+
+function avgStat(slice: Frame[], pick: (f: Frame) => number): number {
+  let s = 0;
+  for (const f of slice) s += pick(f);
+  return s / slice.length;
+}
+
+function pushRegion(out: number[], slice: Frame[]): void {
+  const mfcc = avgMfcc(slice);
+  for (const v of mfcc) out.push(v);
+  out.push(avgStat(slice, (f) => f.zcr));
+  out.push(avgStat(slice, (f) => f.rms));
+  out.push(avgStat(slice, (f) => f.cen));
+}
+
+function mfccDelta(a: number[], b: number[]): number[] {
+  const d: number[] = [];
+  for (let i = 0; i < NMCC; i++) d.push(a[i] - b[i]);
+  return d;
+}
+
+/** Voiced nucleus: RMS > 12% of peak; average MFCCs over middle 60% of voiced frames (heuristics). */
+export function extractNucleusMfcc(frames: Frame[]): number[] | null {
+  const vf = voicedFrames(frames, 0.12);
   if (vf.length < 3) return null;
 
   const nS = Math.floor(vf.length * 0.2);
@@ -178,28 +227,39 @@ export function extractNucleusMfcc(frames: Frame[]): number[] | null {
   const nuc = vf.slice(nS, Math.max(nS + 1, nE));
   if (nuc.length === 0) return null;
 
-  const nucM: number[] = [];
-  for (let i = 0; i < NMCC; i++) {
-    let s = 0;
-    for (const f of nuc) s += f.mfcc[i];
-    nucM.push(s / nuc.length);
-  }
-  return nucM;
+  return avgMfcc(nuc);
 }
 
-/** Fallback for short letter names: average MFCC over all voiced frames. */
-export function extractUtteranceMfcc(frames: Frame[]): number[] | null {
-  let mxR = 0;
-  for (const f of frames) if (f.rms > mxR) mxR = f.rms;
-  const thr = mxR * 0.08;
-  const vf = frames.filter((f) => f.rms > thr);
-  if (vf.length < 2) return null;
+/** Landmark embedding: onset / nucleus / coda + utterance + region MFCC deltas. */
+export function extractLandmarkEmbedding(frames: Frame[]): number[] | null {
+  const vf = voicedFrames(frames, 0.12);
+  if (vf.length < 3) return null;
+
+  const oEnd = Math.max(1, Math.floor(vf.length * 0.25));
+  const nS = Math.floor(vf.length * 0.2);
+  const nE = Math.floor(vf.length * 0.8);
+  const cStart = Math.max(0, vf.length - Math.floor(vf.length * 0.22));
+
+  const onset = vf.slice(0, oEnd);
+  const nucleus = vf.slice(nS, Math.max(nS + 1, nE));
+  const coda = vf.slice(cStart);
+
+  const onsetM = avgMfcc(onset);
+  const nucleusM = avgMfcc(nucleus);
+  const codaM = avgMfcc(coda);
+  const utterM = avgMfcc(vf);
 
   const out: number[] = [];
-  for (let i = 0; i < NMCC; i++) {
-    let s = 0;
-    for (const f of vf) s += f.mfcc[i];
-    out.push(s / vf.length);
+  pushRegion(out, onset);
+  pushRegion(out, nucleus);
+  pushRegion(out, coda);
+  for (const v of utterM) out.push(v);
+  for (const v of mfccDelta(onsetM, nucleusM)) out.push(v);
+  for (const v of mfccDelta(nucleusM, codaM)) out.push(v);
+
+  if (out.length !== EMBEDDING_DIM) {
+    console.warn(`EARLY: embedding length ${out.length} !== EMBEDDING_DIM ${EMBEDDING_DIM}`);
+    return null;
   }
   return out;
 }
@@ -207,15 +267,18 @@ export function extractUtteranceMfcc(frames: Frame[]): number[] | null {
 /** Average MFCC over every frame (quiet room / silence bootstrap). */
 export function extractSilenceEmbedding(frames: Frame[]): number[] | null {
   if (frames.length < 4) return null;
+  const emb = extractLandmarkEmbedding(frames);
+  if (emb) return emb;
   const out: number[] = [];
   for (let i = 0; i < NMCC; i++) {
     let s = 0;
     for (const f of frames) s += f.mfcc[i];
     out.push(s / frames.length);
   }
-  return out;
+  while (out.length < EMBEDDING_DIM) out.push(0);
+  return out.slice(0, EMBEDDING_DIM);
 }
 
 export function extractEmbedding(frames: Frame[]): number[] | null {
-  return extractNucleusMfcc(frames) ?? extractUtteranceMfcc(frames);
+  return extractLandmarkEmbedding(frames);
 }
