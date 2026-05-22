@@ -222,7 +222,18 @@ def main() -> None:
     stage_dir = MODELS_DIR / args.stage
     stage_dir.mkdir(parents=True, exist_ok=True)
     base_path = stage_dir / "base-weights.json"
-    finetune = base_path.is_file()
+    finetune = False
+    if base_path.is_file():
+        try:
+            base_spec = json.loads(base_path.read_text(encoding="utf-8"))
+            finetune = base_spec.get("inputDim") == EMBEDDING_LEN
+            if not finetune:
+                print(
+                    f"Ignoring {base_path.name} (inputDim {base_spec.get('inputDim')} "
+                    f"!= {EMBEDDING_LEN}) — training from scratch.",
+                )
+        except (json.JSONDecodeError, TypeError):
+            print(f"Ignoring unreadable {base_path.name} — training from scratch.")
 
     model = build_model(num_classes)
     if finetune:

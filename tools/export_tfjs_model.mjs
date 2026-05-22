@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Write TensorFlow.js LayersModel files from train-weights.json (see train_global_model.py).
- * Uses the same @tensorflow/tfjs as the app — no Python tensorflowjs package.
+ * Architecture must match tf-phoneme.ts createModel() and train_global_model.py build_model().
  */
 import * as tf from '@tensorflow/tfjs';
 import fs from 'fs/promises';
@@ -16,26 +16,38 @@ async function main() {
   const weightsPath = path.join(stageDir, 'train-weights.json');
   const spec = JSON.parse(await fs.readFile(weightsPath, 'utf8'));
 
+  const { dense, inputDim, numClasses } = spec;
+  if (!dense?.length || !inputDim || !numClasses) {
+    throw new Error('train-weights.json missing inputDim, numClasses, or dense[]');
+  }
+
   const model = tf.sequential();
-  model.add(
-    tf.layers.dense({
-      inputShape: [spec.inputDim],
-      units: 128,
-      activation: 'relu',
-      kernelInitializer: 'glorotUniform',
-    }),
-  );
-  model.add(tf.layers.dropout({ rate: 0.2 }));
-  model.add(tf.layers.dense({ units: 64, activation: 'relu' }));
-  model.add(tf.layers.dense({ units: 32, activation: 'relu' }));
-  model.add(tf.layers.dense({ units: spec.numClasses, activation: 'softmax' }));
+  for (let i = 0; i < dense.length; i++) {
+    const kernel = dense[i].kernel;
+    const units = kernel[0].length;
+    if (i === 0) {
+      model.add(
+        tf.layers.dense({
+          inputShape: [inputDim],
+          units,
+          activation: 'relu',
+          kernelInitializer: 'glorotUniform',
+        }),
+      );
+      model.add(tf.layers.dropout({ rate: 0.2 }));
+    } else if (i === dense.length - 1) {
+      model.add(tf.layers.dense({ units, activation: 'softmax' }));
+    } else {
+      model.add(tf.layers.dense({ units, activation: 'relu' }));
+    }
+  }
 
   const denseLayers = model.layers.filter((l) => l.getClassName() === 'Dense');
-  if (denseLayers.length !== spec.dense.length) {
-    throw new Error(`Expected ${spec.dense.length} dense layers, got ${denseLayers.length}`);
+  if (denseLayers.length !== dense.length) {
+    throw new Error(`Expected ${dense.length} dense layers, got ${denseLayers.length}`);
   }
-  for (let i = 0; i < spec.dense.length; i++) {
-    const { kernel, bias } = spec.dense[i];
+  for (let i = 0; i < dense.length; i++) {
+    const { kernel, bias } = dense[i];
     const k = tf.tensor2d(kernel);
     const b = tf.tensor1d(bias);
     denseLayers[i].setWeights([k, b]);
@@ -91,7 +103,7 @@ async function main() {
   );
 
   model.dispose();
-  console.log(`Exported TF.js model → public/models/${stageId}/`);
+  console.log(`Exported TF.js model → public/models/${stageId}/ (input ${inputDim}-D, ${numClasses} classes)`);
 }
 
 main().catch((err) => {
