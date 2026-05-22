@@ -1,4 +1,5 @@
 import type { CurriculumStageId } from './curriculum';
+import { EMBEDDING_DIM } from './dsp';
 import { loadVoiceBank } from './voice-bank';
 import { APP_VERSION } from './version';
 import { notifyCloudSyncActivity } from './cloud-calibration';
@@ -129,17 +130,37 @@ function markInitialCloudSyncDone(stageId: CurriculumStageId): void {
 }
 
 async function postSample(payload: QueuedVoicePayload): Promise<boolean> {
+  if (payload.embedding.length !== EMBEDDING_DIM) {
+    console.warn(
+      `EARLY: voice-bank upload skipped — embedding length ${payload.embedding.length}, need ${EMBEDDING_DIM}`,
+    );
+    return false;
+  }
   const res = await fetch('/api/voice-bank', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
     body: JSON.stringify(payload),
   });
+  if (!res.ok) {
+    try {
+      const err = (await res.json()) as { reason?: string; expectedEmbeddingLen?: number };
+      console.warn('EARLY: voice-bank POST failed', res.status, err);
+      if (err.reason?.includes('embedding_len') && err.expectedEmbeddingLen) {
+        console.warn(
+          `EARLY: restart VPS early-api after deploy (server expects ${err.expectedEmbeddingLen}-D, client sends ${EMBEDDING_DIM}-D)`,
+        );
+      }
+    } catch {
+      console.warn('EARLY: voice-bank POST failed', res.status);
+    }
+  }
   return res.ok;
 }
 
-/** Upload one voice-bank letter recording (13-D embedding); skips if already sent. */
+/** Upload one voice-bank letter recording; skips if already sent. */
 export async function uploadVoiceBankSample(upload: VoiceBankUpload): Promise<void> {
   if (isAlreadySynced(upload)) return;
+  if (upload.embedding.length !== EMBEDDING_DIM) return;
 
   const payload = toPayload(upload);
   try {

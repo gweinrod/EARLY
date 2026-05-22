@@ -3,14 +3,33 @@
  * Same routes as Vercel Blob handlers; GET stats never lists all samples.
  */
 import crypto from 'node:crypto';
+import { execSync } from 'node:child_process';
 import fs from 'node:fs';
 import path from 'node:path';
+import { fileURLToPath } from 'node:url';
 import express from 'express';
 import pg from 'pg';
 
+const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
+
 const SAMPLE_VERSION = 2;
-/** Must match EMBEDDING_DIM in src/dsp.ts (run: node tools/read_embedding_dim.mjs). */
-const EMBEDDING_LEN = 148;
+
+/** Read from src/dsp.ts so API stays in sync after deploy (restart early-api). */
+function loadEmbeddingLen() {
+  try {
+    const out = execSync('node tools/read_embedding_dim.mjs', {
+      cwd: REPO_ROOT,
+      encoding: 'utf8',
+    }).trim();
+    const n = parseInt(out, 10);
+    if (Number.isFinite(n) && n > 0) return n;
+  } catch (e) {
+    console.warn('EARLY: could not read EMBEDDING_DIM, using 148', e);
+  }
+  return 148;
+}
+
+const EMBEDDING_LEN = loadEmbeddingLen();
 const STAGES = new Set(['alphabet', 'consonants', 'vowels', 'legacy-cvc']);
 
 const PORT = Number(process.env.PORT ?? 8787);
@@ -166,17 +185,21 @@ function validateCalibrationBody(b) {
   );
 }
 
+function voiceBodyRejectReason(b) {
+  if (!b || typeof b !== 'object') return 'missing_body';
+  if (b.v !== SAMPLE_VERSION) return `bad_version (got ${b.v}, need ${SAMPLE_VERSION})`;
+  if (b.kind !== 'voice_bank') return 'bad_kind';
+  if (typeof b.stageId !== 'string' || !STAGES.has(b.stageId)) return 'bad_stage';
+  if (typeof b.targetKey !== 'string' || !b.targetKey) return 'bad_targetKey';
+  if (!Array.isArray(b.embedding)) return 'embedding_not_array';
+  if (b.embedding.length !== EMBEDDING_LEN) {
+    return `embedding_len_${b.embedding.length}_expected_${EMBEDDING_LEN}`;
+  }
+  return null;
+}
+
 function validateVoiceBody(b) {
-  return (
-    b.v === SAMPLE_VERSION &&
-    b.kind === 'voice_bank' &&
-    typeof b.stageId === 'string' &&
-    STAGES.has(b.stageId) &&
-    typeof b.targetKey === 'string' &&
-    b.targetKey &&
-    Array.isArray(b.embedding) &&
-    b.embedding.length === EMBEDDING_LEN
-  );
+  return voiceBodyRejectReason(b) === null;
 }
 
 const app = express();
@@ -223,8 +246,14 @@ app.get('/api/voice-bank', async (req, res) => {
 
 app.post('/api/voice-bank', async (req, res) => {
   const b = req.body;
-  if (!b || typeof b !== 'object' || !validateVoiceBody(b)) {
-    return res.status(400).json({ error: 'invalid_sample' });
+  const reject = voiceBodyRejectReason(b);
+  if (reject) {
+    return res.status(400).json({
+      error: 'invalid_sample',
+      reason: reject,
+      expectedEmbeddingLen: EMBEDDING_LEN,
+      sampleVersion: SAMPLE_VERSION,
+    });
   }
   try {
     const result = await insertSample('voice_bank', b.stageId, b, null);
@@ -249,5 +278,7 @@ app.post('/api/clear-training-data', async (_req, res) => {
 
 await ensureSchema();
 app.listen(PORT, '127.0.0.1', () => {
-  console.log(`EARLY training API on http://127.0.0.1:${PORT}`);
+  console.log(
+    `EARLY training API on http://127.0.0.1:${PORT} (sample v${SAMPLE_VERSION}, embedding ${EMBEDDING_LEN}-D)`,
+  );
 });
