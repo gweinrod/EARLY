@@ -1,4 +1,3 @@
-import { asrLog } from './asr-debug';
 import type { CurriculumItem } from './curriculum';
 import { normalizeHeardLabel } from './curriculum';
 
@@ -63,41 +62,6 @@ export function transcriptMatchesTarget(heard: string, target: string): boolean 
 
 type SpeechRecognitionCtor = new () => SpeechRecognition;
 
-/** Safari/iOS WebKit — reliable with continuous + interim. */
-export function isSafariSpeechRecognition(): boolean {
-  const ua = navigator.userAgent;
-  return /Safari/i.test(ua) && !/Chrome|Chromium|Edg|OPR|CriOS/i.test(ua);
-}
-
-export function isChromiumSpeechRecognition(): boolean {
-  if (isSafariSpeechRecognition()) return false;
-  const w = window as Window & {
-    SpeechRecognition?: SpeechRecognitionCtor;
-    webkitSpeechRecognition?: SpeechRecognitionCtor;
-  };
-  return !!(w.SpeechRecognition ?? w.webkitSpeechRecognition);
-}
-
-function isMobileWebKit(): boolean {
-  return /iPhone|iPad|iPod|Android/i.test(navigator.userAgent);
-}
-
-export interface SpeechRecognitionProfile {
-  continuous: boolean;
-  /**
-   * Desktop Chrome: connecting MediaStreamSource + Analyser often blocks onresult.
-   * Record with MediaRecorder on the same stream; waveform uses speech API events only.
-   */
-  skipAnalyser: boolean;
-}
-
-export function getSpeechRecognitionProfile(): SpeechRecognitionProfile {
-  if (isChromiumSpeechRecognition() && !isMobileWebKit()) {
-    return { continuous: true, skipAnalyser: true };
-  }
-  return { continuous: true, skipAnalyser: false };
-}
-
 export function createSpeechRecognition(): SpeechRecognition | null {
   const w = window as Window & {
     SpeechRecognition?: SpeechRecognitionCtor;
@@ -105,18 +69,12 @@ export function createSpeechRecognition(): SpeechRecognition | null {
   };
   const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition;
   if (!SR) return null;
-  const profile = getSpeechRecognitionProfile();
   const recognition = new SR();
-  recognition.continuous = profile.continuous;
+  /** One tap = one session; we call stop() when done (do not use false — dies mid-take). */
+  recognition.continuous = true;
   recognition.interimResults = true;
   recognition.lang = 'en-US';
   recognition.maxAlternatives = 1;
-  asrLog('createSpeechRecognition', {
-    continuous: profile.continuous,
-    skipAnalyser: profile.skipAnalyser,
-    safari: isSafariSpeechRecognition(),
-    chromium: isChromiumSpeechRecognition(),
-  });
   return recognition;
 }
 
@@ -203,12 +161,6 @@ export function fullTranscriptFromEvent(e: SpeechRecognitionEvent): string {
     text += e.results[i][0].transcript;
   }
   return collapseRepeatedTokens(text);
-}
-
-/** Chrome sometimes fires a result event with no new text yet — still processing. */
-export function speechResultEventHasContent(e: SpeechRecognitionEvent): boolean {
-  if (fullTranscriptFromEvent(e).trim()) return true;
-  return e.results.length > 0;
 }
 
 /** True if any segment in this event is marked final by the browser. */
