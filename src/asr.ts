@@ -1,3 +1,4 @@
+import { asrLog } from './asr-debug';
 import type { CurriculumItem } from './curriculum';
 import { normalizeHeardLabel } from './curriculum';
 
@@ -108,6 +109,13 @@ export function createSpeechRecognition(): SpeechRecognition | null {
   recognition.interimResults = true;
   recognition.lang = 'en-US';
   recognition.maxAlternatives = 3;
+  asrLog('createSpeechRecognition', {
+    continuous: profile.continuous,
+    mediaRecorderDelayMs: profile.mediaRecorderDelayMs,
+    safari: isSafariSpeechRecognition(),
+    chromium: isChromiumSpeechRecognition(),
+    ua: typeof navigator !== 'undefined' ? navigator.userAgent : '',
+  });
   return recognition;
 }
 

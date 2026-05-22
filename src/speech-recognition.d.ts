@@ -20,6 +20,7 @@ interface SpeechRecognition extends EventTarget {
   onresult: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => void) | null;
   onerror: ((this: SpeechRecognition, ev: SpeechRecognitionErrorEvent) => void) | null;
   onend: ((this: SpeechRecognition, ev: Event) => void) | null;
+  onstart: ((this: SpeechRecognition, ev: Event) => void) | null;
   onnomatch: ((this: SpeechRecognition, ev: SpeechRecognitionEvent) => void) | null;
   onspeechstart: ((this: SpeechRecognition, ev: Event) => void) | null;
   onsoundstart: ((this: SpeechRecognition, ev: Event) => void) | null;
@@ -51,6 +52,7 @@ interface SpeechRecognitionAlternative {
 
 interface SpeechRecognitionErrorEvent extends Event {
   readonly error: string;
+  readonly message: string;
 }
 
 declare var SpeechRecognition: {
