@@ -82,12 +82,18 @@ export function isChromiumSpeechRecognition(): boolean {
   return !!(w.SpeechRecognition ?? w.webkitSpeechRecognition);
 }
 
+export type RecorderStartMode = 'immediate' | 'after-first-asr';
+
 export interface SpeechRecognitionProfile {
   continuous: boolean;
-  /** Delay MediaRecorder so SpeechRecognition claims the mic first (ms). */
+  /** Delay MediaRecorder (immediate mode only). */
   mediaRecorderDelayMs: number;
-  /** Restart recognition.start() after onend (desktop Chrome utterance mode only). */
   restartOnEnd: boolean;
+  /**
+   * Desktop Chrome: MediaRecorder + SpeechRecognition on the same mic yields no onresult.
+   * Start recording only after the first ASR transcript (or at endTake fallback).
+   */
+  recorderStartMode: RecorderStartMode;
 }
 
 function isMobileWebKit(): boolean {
@@ -96,9 +102,19 @@ function isMobileWebKit(): boolean {
 
 export function getSpeechRecognitionProfile(): SpeechRecognitionProfile {
   if (isChromiumSpeechRecognition() && !isMobileWebKit()) {
-    return { continuous: true, mediaRecorderDelayMs: 280, restartOnEnd: false };
+    return {
+      continuous: true,
+      mediaRecorderDelayMs: 0,
+      restartOnEnd: false,
+      recorderStartMode: 'after-first-asr',
+    };
   }
-  return { continuous: true, mediaRecorderDelayMs: 0, restartOnEnd: false };
+  return {
+    continuous: true,
+    mediaRecorderDelayMs: 0,
+    restartOnEnd: false,
+    recorderStartMode: 'immediate',
+  };
 }
 
 export function createSpeechRecognition(): SpeechRecognition | null {
@@ -116,6 +132,7 @@ export function createSpeechRecognition(): SpeechRecognition | null {
   recognition.maxAlternatives = 3;
   asrLog('createSpeechRecognition', {
     continuous: profile.continuous,
+    recorderStartMode: profile.recorderStartMode,
     mediaRecorderDelayMs: profile.mediaRecorderDelayMs,
     safari: isSafariSpeechRecognition(),
     chromium: isChromiumSpeechRecognition(),
