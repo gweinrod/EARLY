@@ -2,7 +2,9 @@
   createSpeechRecognition,
   eventHasFinalTranscript,
   fullTranscriptFromEvent,
+  getSpeechRecognitionProfile,
   mergeTakeTranscript,
+  speechResultEventHasContent,
 } from './asr';
 import { APP_VERSION } from './version';
 import {
@@ -436,15 +438,20 @@ function markAsrEnded(): void {
   scheduleMediaStop();
 }
 
-function tearDownRecognition(): void {
+/** @param forceAbort true = cancel; false = end take and let Chrome flush finals via stop() */
+function tearDownRecognition(forceAbort = true): void {
   const rec = activeRecognition;
   activeRecognition = null;
   if (!rec) return;
   try {
-    rec.abort();
-  } catch (err) {
-    try {
+    if (forceAbort) {
+      rec.abort();
+    } else {
       rec.stop();
+    }
+  } catch {
+    try {
+      rec.abort();
     } catch {
       /* already dead */
     }
@@ -509,15 +516,46 @@ function endTake(caller = 'unknown'): void {
   }
 
   endingTake = true;
-  takeSessionId++;
   resetListenUi();
-  tearDownRecognition();
-  if (lockedEeTailAsr) {
-    endEeTailCapture();
-  } else {
-    setAsrWaitStatus('checking...');
-    markAsrEnded();
+
+  const rec = activeRecognition;
+  activeRecognition = null;
+
+  const completeAsrShutdown = () => {
+    takeSessionId++;
+    if (lockedEeTailAsr) {
+      endEeTailCapture();
+    } else {
+      setAsrWaitStatus('checking...');
+      markAsrEnded();
+    }
+  };
+
+  if (!rec) {
+    completeAsrShutdown();
+    return;
   }
+
+  let shutdownDone = false;
+  const finishShutdown = () => {
+    if (shutdownDone) return;
+    shutdownDone = true;
+    completeAsrShutdown();
+  };
+
+  rec.onend = () => finishShutdown();
+  try {
+    rec.stop();
+  } catch {
+    try {
+      rec.abort();
+    } catch {
+      /* already dead */
+    }
+    finishShutdown();
+    return;
+  }
+  setTimeout(finishShutdown, 280);
 }
 
 function finalizeAttempt(opts?: { deferScoring?: boolean }): void {
@@ -801,12 +839,7 @@ async function toggleRec(): Promise<void> {
   }
 
   if (activeRecognition) {
-    try {
-      activeRecognition.abort();
-    } catch {
-      /* previous session */
-    }
-    activeRecognition = null;
+    tearDownRecognition(true);
   }
 
   const session = ++takeSessionId;
@@ -824,6 +857,7 @@ async function toggleRec(): Promise<void> {
     src.connect(an);
 
     recChunks = [];
+    const asrProfile = getSpeechRecognitionProfile();
     mediaRec = createMediaRecorder(stream);
     mediaRec.ondataavailable = (e) => {
       if (e.data.size > 0) recChunks.push(e.data);
@@ -859,6 +893,13 @@ async function toggleRec(): Promise<void> {
     activeRecognition = createSpeechRecognition();
     if (activeRecognition) {
       const recognition = activeRecognition;
+
+      recognition.onspeechstart = () => {
+        if (session === takeSessionId) speechDetectedThisTake = true;
+      };
+      recognition.onsoundstart = () => {
+        if (session === takeSessionId) speechDetectedThisTake = true;
+      };
 
       const scheduleAsrPauseEnd = (why: string) => {
         if (endingTake || lockedEeTailAsr || asrEnded) {
@@ -930,10 +971,20 @@ async function toggleRec(): Promise<void> {
           return;
         }
         if (endingTake) {
+          if (!speechResultEventHasContent(e)) return;
+          const flushText = fullTranscriptFromEvent(e);
+          if (flushText.trim()) {
+            const flushed = mergeTakeTranscript(takeAsrAccum, flushText, curItem);
+            if (!isPhantomKeyTranscript(flushed)) {
+              takeAsrAccum = flushed;
+              applyAsrTranscript(flushed);
+            }
+          }
           return;
         }
+        if (!speechResultEventHasContent(e)) return;
         const eventText = fullTranscriptFromEvent(e);
-        if (!eventText) return;
+        if (!eventText.trim()) return;
         const heard = mergeTakeTranscript(takeAsrAccum, eventText, curItem);
         if (isPhantomKeyTranscript(heard)) {
           return;
@@ -973,6 +1024,11 @@ async function toggleRec(): Promise<void> {
           if (tryRestartRecognition('no-speech')) return;
           return;
         }
+        if (e.error === 'network' && tryRestartRecognition('network')) return;
+      };
+      recognition.onnomatch = () => {
+        if (session !== takeSessionId || endingTake || !listening) return;
+        if (speechDetectedThisTake && tryRestartRecognition('nomatch')) return;
       };
       recognition.onend = () => {
         const heardOnEnd = pendingHeard ?? '';
@@ -1032,8 +1088,14 @@ async function toggleRec(): Promise<void> {
       asrEnded = true;
     }
 
-    if (mediaRec && mediaRec.state === 'inactive') {
-      mediaRec.start(100);
+    const startRecorder = () => {
+      if (!listening || session !== takeSessionId || !mediaRec) return;
+      if (mediaRec.state === 'inactive') mediaRec.start(100);
+    };
+    if (asrProfile.mediaRecorderDelayMs > 0) {
+      setTimeout(startRecorder, asrProfile.mediaRecorderDelayMs);
+    } else {
+      startRecorder();
     }
   } catch (e) {
     resetListenUi();

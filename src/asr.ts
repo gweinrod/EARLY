@@ -62,6 +62,39 @@ export function transcriptMatchesTarget(heard: string, target: string): boolean 
 
 type SpeechRecognitionCtor = new () => SpeechRecognition;
 
+/** Safari/iOS WebKit — reliable with continuous + interim. */
+export function isSafariSpeechRecognition(): boolean {
+  const ua = navigator.userAgent;
+  return /Safari/i.test(ua) && !/Chrome|Chromium|Edg|OPR|CriOS/i.test(ua);
+}
+
+/**
+ * Chromium desktop/Android: often returns no transcript when sharing the mic with
+ * MediaRecorder, and abort() drops pending results. Use shorter utterance sessions.
+ */
+export function isChromiumSpeechRecognition(): boolean {
+  if (isSafariSpeechRecognition()) return false;
+  const w = window as Window & {
+    SpeechRecognition?: SpeechRecognitionCtor;
+    webkitSpeechRecognition?: SpeechRecognitionCtor;
+  };
+  return !!(w.SpeechRecognition ?? w.webkitSpeechRecognition);
+}
+
+export interface SpeechRecognitionProfile {
+  /** false = one utterance per session, restart onend while the take is open (Chrome). */
+  continuous: boolean;
+  /** Delay MediaRecorder so SpeechRecognition claims the mic first (ms). */
+  mediaRecorderDelayMs: number;
+}
+
+export function getSpeechRecognitionProfile(): SpeechRecognitionProfile {
+  if (isChromiumSpeechRecognition()) {
+    return { continuous: false, mediaRecorderDelayMs: 280 };
+  }
+  return { continuous: true, mediaRecorderDelayMs: 0 };
+}
+
 export function createSpeechRecognition(): SpeechRecognition | null {
   const w = window as Window & {
     SpeechRecognition?: SpeechRecognitionCtor;
@@ -69,12 +102,12 @@ export function createSpeechRecognition(): SpeechRecognition | null {
   };
   const SR = w.SpeechRecognition ?? w.webkitSpeechRecognition;
   if (!SR) return null;
+  const profile = getSpeechRecognitionProfile();
   const recognition = new SR();
-  /** One tap = one session; we call stop() when done (do not use false — dies mid-take). */
-  recognition.continuous = true;
+  recognition.continuous = profile.continuous;
   recognition.interimResults = true;
   recognition.lang = 'en-US';
-  recognition.maxAlternatives = 1;
+  recognition.maxAlternatives = 3;
   return recognition;
 }
 
@@ -154,13 +187,32 @@ export function collapseRepeatedTokens(heard: string): string {
   return out.join(' ');
 }
 
-/** Full cumulative transcript (all result segments in this event). */
+/** Best transcript string from a result event (copy immediately — list is live in Chrome). */
 export function fullTranscriptFromEvent(e: SpeechRecognitionEvent): string {
+  const results = e.results;
+  if (!results.length) return '';
+
   let text = '';
-  for (let i = 0; i < e.results.length; i++) {
-    text += e.results[i][0].transcript;
+  for (let i = 0; i < results.length; i++) {
+    const alt = results[i]?.[0];
+    if (alt?.transcript) text += alt.transcript;
   }
+
+  if (!text.trim() && isChromiumSpeechRecognition()) {
+    const idx = Math.max(0, Math.min(e.resultIndex ?? results.length - 1, results.length - 1));
+    for (let a = 0; a < (results[idx]?.length ?? 0); a++) {
+      const t = results[idx]?.[a]?.transcript;
+      if (t) text += t;
+    }
+  }
+
   return collapseRepeatedTokens(text);
+}
+
+/** Chrome sometimes fires a result event with no new text yet — still processing. */
+export function speechResultEventHasContent(e: SpeechRecognitionEvent): boolean {
+  if (fullTranscriptFromEvent(e).trim()) return true;
+  return e.results.length > 0;
 }
 
 /** True if any segment in this event is marked final by the browser. */
