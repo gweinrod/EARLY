@@ -176,7 +176,6 @@ function validateCalibrationBody(b) {
     typeof b.stageId === 'string' &&
     STAGES.has(b.stageId) &&
     typeof b.targetKey === 'string' &&
-    b.targetKey &&
     Array.isArray(b.embedding) &&
     b.embedding.length === EMBEDDING_LEN &&
     typeof b.agrees === 'boolean' &&
@@ -190,7 +189,8 @@ function voiceBodyRejectReason(b) {
   if (b.v !== SAMPLE_VERSION) return `bad_version (got ${b.v}, need ${SAMPLE_VERSION})`;
   if (b.kind !== 'voice_bank') return 'bad_kind';
   if (typeof b.stageId !== 'string' || !STAGES.has(b.stageId)) return 'bad_stage';
-  if (typeof b.targetKey !== 'string' || !b.targetKey) return 'bad_targetKey';
+  if (typeof b.targetKey !== 'string') return 'bad_targetKey';
+  // "" is valid — silence DSP class (SILENCE_VOCAB_KEY)
   if (!Array.isArray(b.embedding)) return 'embedding_not_array';
   if (b.embedding.length !== EMBEDDING_LEN) {
     return `embedding_len_${b.embedding.length}_expected_${EMBEDDING_LEN}`;

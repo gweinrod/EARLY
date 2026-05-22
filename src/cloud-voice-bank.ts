@@ -73,10 +73,29 @@ export function clearSyncedVoiceBank(stageId: CurriculumStageId): void {
   }
 }
 
+function isValidQueuePayload(p: QueuedVoicePayload): boolean {
+  return (
+    p.v === 2 &&
+    p.kind === 'voice_bank' &&
+    typeof p.stageId === 'string' &&
+    typeof p.targetKey === 'string' &&
+    Array.isArray(p.embedding) &&
+    p.embedding.length === EMBEDDING_DIM
+  );
+}
+
 function loadQueue(): QueuedVoicePayload[] {
   try {
     const raw = localStorage.getItem(QUEUE_KEY);
-    return raw ? (JSON.parse(raw) as QueuedVoicePayload[]) : [];
+    const q = raw ? (JSON.parse(raw) as QueuedVoicePayload[]) : [];
+    const valid = q.filter(isValidQueuePayload);
+    if (valid.length !== q.length) {
+      saveQueue(valid);
+      console.warn(
+        `EARLY: dropped ${q.length - valid.length} stale voice-bank queue item(s) (wrong version or embedding size)`,
+      );
+    }
+    return valid;
   } catch {
     return [];
   }
@@ -184,11 +203,14 @@ export async function syncLocalVoiceBankToCloud(stageId: CurriculumStageId): Pro
   const bank = loadVoiceBank(stageId);
   for (const [key, embeddings] of Object.entries(bank.samples)) {
     for (const embedding of embeddings) {
+      if (embedding.length !== EMBEDDING_DIM) continue;
       await uploadVoiceBankSample({ stageId, targetKey: key, embedding });
     }
   }
   await flushVoiceBankQueue();
-  markInitialCloudSyncDone(stageId);
+  if (getVoiceBankQueueLength() === 0) {
+    markInitialCloudSyncDone(stageId);
+  }
 }
 
 export function getVoiceBankQueueLength(): number {

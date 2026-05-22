@@ -115,7 +115,6 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
     typeof b.stageId !== 'string' ||
     !STAGES.has(b.stageId) ||
     typeof b.targetKey !== 'string' ||
-    !b.targetKey ||
     !Array.isArray(b.embedding) ||
     (b.embedding as unknown[]).length !== EMBEDDING_LEN
   ) {
