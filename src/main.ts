@@ -142,7 +142,6 @@ let speechDetectedThisTake = false;
 let recognitionListening = false;
 /** MediaRecorder started for this tap (Chrome defers until first ASR). */
 let takeRecorderStarted = false;
-let takeMicTracks: MediaStreamTrack[] = [];
 let lastDsp: DspPrediction | null = null;
 let pendingHeard: string | null = null;
 let pendingAsrPass: boolean | null = null;
@@ -295,7 +294,6 @@ function resetTakeState(): void {
   speechDetectedThisTake = false;
   recognitionListening = false;
   takeRecorderStarted = false;
-  takeMicTracks = [];
   clearSpeechCheckInterval();
   clearAsrWait();
   pendingHeard = null;
@@ -373,13 +371,6 @@ function startTakeRecorder(caller: string): void {
   takeRecorderStarted = true;
   asrLog('mediaRecorder.start', asrTakeSnapshot({ caller }));
   mediaRec.start(100);
-}
-
-function setTakeMicEnabled(enabled: boolean, why: string): void {
-  for (const t of takeMicTracks) {
-    if (t.readyState === 'live') t.enabled = enabled;
-  }
-  asrLog('setTakeMicEnabled', { enabled, why, trackCount: takeMicTracks.length });
 }
 
 function canAutoEndTake(): boolean {
@@ -516,8 +507,6 @@ function tearDownRecognition(forceAbort = true): void {
 
 function releaseMic(): void {
   tearDownRecognition();
-  setTakeMicEnabled(true, 'releaseMic');
-  takeMicTracks = [];
   if (recStream) {
     recStream.getTracks().forEach((t) => t.stop());
     recStream = null;
@@ -582,8 +571,7 @@ function endTake(caller = 'unknown'): void {
 
   const completeAsrShutdown = () => {
     asrLog('completeAsrShutdown', asrTakeSnapshot());
-    setTakeMicEnabled(true, 'endTake');
-    if (!takeRecorderStarted && speechDetectedThisTake && mediaRec) {
+    if (!takeRecorderStarted && mediaRec) {
       startTakeRecorder('endTake-fallback');
     }
     takeSessionId++;
@@ -944,7 +932,6 @@ async function toggleRec(): Promise<void> {
 
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true, video: false });
     recStream = stream;
-    takeMicTracks = [...stream.getAudioTracks()];
     const src = ctx.createMediaStreamSource(stream);
     const takeAnalyser = ctx.createAnalyser();
     takeAnalyser.fftSize = 2048;
@@ -985,12 +972,9 @@ async function toggleRec(): Promise<void> {
     activeRecognition = createSpeechRecognition();
     if (activeRecognition) {
       const recognition = activeRecognition;
-      const { restartOnEnd, releaseLocalMicForAsr } = asrProfile;
-
       recognition.onstart = () => {
         if (session !== takeSessionId) return;
         recognitionListening = true;
-        if (releaseLocalMicForAsr) setTakeMicEnabled(false, 'recognition.onstart');
         asrLog('recognition.onstart', asrTakeSnapshot({ restarts: asrRestartsThisTake }));
       };
       recognition.onspeechstart = () => {
@@ -1119,8 +1103,6 @@ async function toggleRec(): Promise<void> {
           const flushText = fullTranscriptFromEvent(e);
           asrLog('onresult.flush', { flushText, dump, ...asrTakeSnapshot() });
           if (flushText.trim()) {
-            setTakeMicEnabled(true, 'flush-asr');
-            startTakeRecorder('flush-asr');
             const flushed = mergeTakeTranscript(takeAsrAccum, flushText, curItem);
             if (!isPhantomKeyTranscript(flushed)) {
               takeAsrAccum = flushed;
@@ -1141,10 +1123,6 @@ async function toggleRec(): Promise<void> {
         if (!eventText.trim()) {
           asrLog('onresult.emptyText', { dump, hasContent, ...asrTakeSnapshot() });
           return;
-        }
-        setTakeMicEnabled(true, 'first-asr');
-        if (asrProfile.recorderStartMode === 'after-first-asr') {
-          startTakeRecorder('first-asr');
         }
         const heard = mergeTakeTranscript(takeAsrAccum, eventText, curItem);
         if (isPhantomKeyTranscript(heard)) {
@@ -1203,7 +1181,6 @@ async function toggleRec(): Promise<void> {
       };
       recognition.onend = () => {
         recognitionListening = false;
-        if (releaseLocalMicForAsr && !endingTake) setTakeMicEnabled(true, 'onend');
         const heardOnEnd = pendingHeard ?? '';
         if (session !== takeSessionId) {
           asrLog('onend.staleSession', { hookSession: session, ...asrTakeSnapshot() });
@@ -1242,20 +1219,6 @@ async function toggleRec(): Promise<void> {
         if (!listening || endingTake || lockedEeTailAsr) {
           return;
         }
-        if (restartOnEnd) {
-          const deferRestart = (why: string) => {
-            setTimeout(() => {
-              if (session !== takeSessionId || endingTake || !listening) return;
-              tryRestartRecognition(why);
-            }, 120);
-          };
-          if (!heardOnEnd.trim() && speechDetectedThisTake) {
-            deferRestart('onend-empty');
-            return;
-          }
-          deferRestart('onend-restart');
-          return;
-        }
         if (!heardOnEnd.trim() && speechDetectedThisTake && !asrPauseTimer) {
           scheduleAsrPauseEnd('onend-no-text');
         } else if (pendingHeard && !asrPauseTimer) {
@@ -1263,7 +1226,6 @@ async function toggleRec(): Promise<void> {
         }
       };
       try {
-        if (releaseLocalMicForAsr) setTakeMicEnabled(false, 'pre-start');
         recognition.start();
         recognitionListening = true;
         asrLog('recognition.start', asrTakeSnapshot({ profile: asrProfile }));
@@ -1284,18 +1246,15 @@ async function toggleRec(): Promise<void> {
       asrEnded = true;
     }
 
-    if (asrProfile.recorderStartMode === 'immediate') {
-      const startImmediate = () => {
-        if (!listening || session !== takeSessionId) return;
-        startTakeRecorder('immediate');
-      };
-      if (asrProfile.mediaRecorderDelayMs > 0) {
-        setTimeout(startImmediate, asrProfile.mediaRecorderDelayMs);
-      } else {
-        startImmediate();
-      }
+    const startRecorder = () => {
+      if (!listening || session !== takeSessionId) return;
+      startTakeRecorder(asrProfile.mediaRecorderDelayMs > 0 ? 'delayed' : 'immediate');
+    };
+    if (asrProfile.mediaRecorderDelayMs > 0) {
+      asrLog('mediaRecorder.scheduled', asrTakeSnapshot({ delayMs: asrProfile.mediaRecorderDelayMs }));
+      setTimeout(startRecorder, asrProfile.mediaRecorderDelayMs);
     } else {
-      asrLog('mediaRecorder.deferred', asrTakeSnapshot({ until: 'first-asr' }));
+      startRecorder();
     }
   } catch (e) {
     resetListenUi();
