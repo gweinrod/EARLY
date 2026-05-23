@@ -69,6 +69,7 @@
   <p class="sec-label" id="stageSectionLabel">Letter Names and Sounds</p>
   <div class="pills stage-pills" id="pillGroup"></div>
 
+  <div id="speechPracticeBlock">
   <div class="scores student-hide">
     <div class="sbox"><div class="snum" id="sC">0</div><div class="slbl">correct</div></div>
     <div class="sbox"><div class="snum" id="sT">0</div><div class="slbl">attempts</div></div>
@@ -117,6 +118,21 @@
     <p class="sec-label">recent attempts</p>
     <div id="histRows"></div>
   </div>
+  </div>
+
+  <section id="letterWritingBlock" class="letter-writing-block" hidden>
+    <p class="word-label" id="letterWritingPrompt">Practice writing this letter</p>
+    <div id="letterWritingTarget" class="letter-writing-target" aria-hidden="true">A</div>
+    <div id="letterWritingCanvasWrap" class="letter-writing-canvas-wrap">
+      <canvas id="letterWritingCanvas" aria-label="Handwriting practice canvas"></canvas>
+    </div>
+    <p id="letterWritingHint" class="letter-writing-hint"></p>
+    <button type="button" class="btn-secondary btn-clear-writing" id="btnClearWriting">Clear writing</button>
+    <div class="word-nav-row letter-writing-nav">
+      <button type="button" class="btn-prev" id="btnPrevWriting">previous letter</button>
+      <button type="button" class="btn-next" id="btnNextWriting">next letter</button>
+    </div>
+  </section>
 
   </div>
 

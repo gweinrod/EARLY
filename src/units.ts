@@ -7,6 +7,7 @@ export type CurriculumUnitId = 1 | 2 | 3 | 4 | 5 | 6 | 7;
 export type CurriculumStageId =
   | 'alphabet'
   | 'consonants'
+  | 'letter-writing'
   | 'short-vowels'
   | 'legacy-cvc'
   | 'u2-cv'
@@ -95,7 +96,7 @@ export const CURRICULUM_UNITS: Record<CurriculumUnitId, CurriculumUnitDef> = {
     id: 1,
     pillLabel: 'Unit 1',
     stageSectionLabel: 'Letter Names and Sounds',
-    stageIds: ['alphabet', 'consonants'],
+    stageIds: ['alphabet', 'consonants', 'letter-writing'],
   },
   2: {
     id: 2,
@@ -139,6 +140,7 @@ export const CURRICULUM_UNITS: Record<CurriculumUnitId, CurriculumUnitDef> = {
 export const STAGE_PILL_LABEL: Record<CurriculumStageId, string> = {
   alphabet: 'Letter Names',
   consonants: 'Letter Sounds',
+  'letter-writing': 'Letter Writing',
   'short-vowels': 'Short Vowels',
   'legacy-cvc': 'Legacy',
   'u2-cv': 'CV',
@@ -211,11 +213,16 @@ export function defaultStageForUnit(unitId: CurriculumUnitId): CurriculumStageId
   return CURRICULUM_UNITS[unitId].stageIds[0];
 }
 
+export function isLetterWritingStage(stageId: CurriculumStageId): boolean {
+  return stageId === 'letter-writing';
+}
+
 /** Practice prompt above the target display. */
 export function wordPromptForUnitStage(unitId: CurriculumUnitId, stageId: CurriculumStageId): string {
   if (unitId === 1) {
     if (stageId === 'alphabet') return 'Say this letter name';
     if (stageId === 'consonants') return 'Say this letter sound';
+    if (stageId === 'letter-writing') return 'Practice writing this letter';
     return 'Say this letter name';
   }
   if (unitId === 2 || unitId === 3) return 'Say this nonsense word';

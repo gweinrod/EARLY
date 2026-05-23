@@ -15,6 +15,7 @@ export {
   getUnitForStage,
   isKnownStageId,
   isKnownUnitId,
+  isLetterWritingStage,
   isStageInUnit,
   wordPromptForUnitStage,
 } from './units';
@@ -106,6 +107,12 @@ export const CURRICULUM_STAGES: Partial<Record<CurriculumStageId, CurriculumStag
     label: 'Letter Sounds',
     subtitle: '',
     items: CONSONANT_ITEMS,
+  },
+  'letter-writing': {
+    id: 'letter-writing',
+    label: 'Letter Writing',
+    subtitle: '',
+    items: ALPHABET_ITEMS,
   },
   'short-vowels': {
     id: 'short-vowels',

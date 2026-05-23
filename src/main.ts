@@ -19,8 +19,15 @@ import {
   defaultStageForUnit,
   getStageIdsForUnit,
   getUnitForStage,
+  isLetterWritingStage,
   wordPromptForUnitStage,
 } from './curriculum';
+import {
+  hideLetterWritingPractice,
+  initLetterWritingUi,
+  setLetterWritingTarget,
+  showLetterWritingPractice,
+} from './letter-writing-ui';
 import {
   ensureDspEngine,
   formatDspGuessForSummary,
@@ -122,8 +129,21 @@ function getAudioContext(): AudioContext {
   return audioCtx;
 }
 
+function applyPracticeLayout(): void {
+  if (isLetterWritingStage(curStageId)) {
+    showLetterWritingPractice();
+    setLetterWritingTarget(curItem);
+  } else {
+    hideLetterWritingPractice();
+  }
+}
+
 function setTargetItem(item: CurriculumItem): void {
   curItem = item;
+  if (isLetterWritingStage(curStageId)) {
+    setLetterWritingTarget(item);
+    return;
+  }
   $('tWord').textContent = item.display;
   $('wordLabel').textContent = wordPromptForUnitStage(curUnitId, curStageId);
   const phon = $('tPhon');
@@ -460,6 +480,14 @@ function applyModelLoadStatus(load: TfInitResult): void {
 }
 
 async function prepareStage(stageId: CurriculumStageId): Promise<void> {
+  applyPracticeLayout();
+
+  if (isLetterWritingStage(stageId)) {
+    setTargetItem(getStage(stageId).items[0] ?? curItem);
+    setModelLoadStatus('Letter writing (no speech model)', 'neutral');
+    return;
+  }
+
   resetMelFilterbank();
   setModelLoadStatus('Loading classroom model...', 'neutral');
   $('netTxt').textContent = 'Loading classroom model...';
@@ -493,6 +521,7 @@ function onVoiceBootstrapComplete(): void {
 }
 
 async function toggleRec(): Promise<void> {
+  if (isLetterWritingStage(curStageId)) return;
   if (listening) {
     endRecording('manual-toggle');
     return;
@@ -664,6 +693,7 @@ function init(): void {
     getAudioContext,
     onComplete: onVoiceBootstrapComplete,
   });
+  initLetterWritingUi();
 
   $('btnRec').addEventListener('click', () => {
     if (isVoiceBootstrapActive()) return;
@@ -676,6 +706,14 @@ function init(): void {
   $('btnPrev').addEventListener('click', () => {
     if (isVoiceBootstrapActive()) return;
     previousItem();
+  });
+  $('btnPrevWriting').addEventListener('click', () => {
+    if (isVoiceBootstrapActive()) return;
+    previousItem();
+  });
+  $('btnNextWriting').addEventListener('click', () => {
+    if (isVoiceBootstrapActive()) return;
+    nextItem();
   });
 
   $('debugMode').addEventListener('change', (e) => {

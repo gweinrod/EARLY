@@ -273,6 +273,46 @@ body.ml-debug #netBadge { display: none !important; }
 .unit-pills { margin-bottom: 0.5rem; }
 .stage-pills { margin-bottom: 1rem; }
 #stageSectionLabel { margin-top: 0.25rem; }
+
+.letter-writing-block { margin-bottom: 1rem; }
+.letter-writing-target {
+  font-size: 3rem;
+  font-weight: 700;
+  text-align: center;
+  color: #94a3b8;
+  margin: 0.25rem 0 0.75rem;
+  user-select: none;
+  pointer-events: none;
+}
+.letter-writing-canvas-wrap {
+  width: 100%;
+  max-width: 360px;
+  margin: 0 auto 0.75rem;
+  aspect-ratio: 1;
+  border-radius: 10px;
+  border: 1px solid #cbd5e1;
+  background: #fffef8;
+  box-shadow: inset 0 1px 3px rgba(15, 23, 42, 0.06);
+  overflow: hidden;
+}
+#letterWritingCanvas {
+  display: block;
+  width: 100%;
+  height: 100%;
+  cursor: crosshair;
+  touch-action: none;
+}
+.letter-writing-hint {
+  font-size: 13px;
+  color: #64748b;
+  text-align: center;
+  margin: 0 0 0.75rem;
+}
+.btn-clear-writing {
+  display: block;
+  margin: 0 auto 1rem;
+}
+.letter-writing-nav { max-width: 360px; margin-left: auto; margin-right: auto; }
 .pill {
   padding: 10px 16px;
   min-height: 44px;
