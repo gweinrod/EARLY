@@ -5,6 +5,9 @@ const STROKE_WIDTH = 2.5;
 const STROKE_COLOR = '#1e293b';
 const LINE_COLOR = '#93c5fd';
 const MARGIN_COLOR = '#fca5a5';
+const MIDLINE_COLOR = '#334155';
+const MIDLINE_WIDTH = 4;
+const MIDLINE_DASH = [18, 12] as const;
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
@@ -69,13 +72,25 @@ function redrawPaper(): void {
 
   const midIdx = Math.floor((ruledYs.length - 1) / 2);
   const midY = ruledYs[midIdx] ?? topPad + lineGap * 2;
-  ctx.setLineDash([6, 6]);
-  ctx.strokeStyle = '#cbd5e1';
+  const midlineY = midY + 0.5;
+
+  ctx.setLineDash([...MIDLINE_DASH]);
+  ctx.lineCap = 'round';
+  ctx.lineWidth = MIDLINE_WIDTH;
+  ctx.strokeStyle = '#ffffff';
   ctx.beginPath();
-  ctx.moveTo(marginX, midY + 0.5);
-  ctx.lineTo(w, midY + 0.5);
+  ctx.moveTo(marginX, midlineY);
+  ctx.lineTo(w, midlineY);
+  ctx.stroke();
+
+  ctx.strokeStyle = MIDLINE_COLOR;
+  ctx.beginPath();
+  ctx.moveTo(marginX, midlineY);
+  ctx.lineTo(w, midlineY);
   ctx.stroke();
   ctx.setLineDash([]);
+  ctx.lineWidth = 1;
+  ctx.lineCap = 'butt';
 }
 
 function clearInk(): void {
