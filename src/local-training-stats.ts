@@ -1,4 +1,6 @@
 import type { CurriculumStageId } from './curriculum';
+import { getTrainingReadiness } from './letter-writing-training';
+import { isLetterWritingStage } from './units';
 import { $ } from './ui';
 import { countCalibrationQueueForStage } from './cloud-calibration';
 import { countVoiceQueueForStage } from './cloud-voice-bank';
@@ -30,5 +32,10 @@ export function formatLocalTrainingLine(stageId: CurriculumStageId): string {
 }
 
 export function refreshLocalTrainingStatus(stageId: CurriculumStageId): void {
+  if (isLetterWritingStage(stageId)) {
+    $('localTrainingStatus').textContent =
+      `Letter writing: ${getTrainingReadiness().message}`;
+    return;
+  }
   $('localTrainingStatus').textContent = formatLocalTrainingLine(stageId);
 }

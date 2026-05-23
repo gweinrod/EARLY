@@ -1,4 +1,5 @@
 import type { CurriculumStageId } from './curriculum';
+import { isLetterWritingStage } from './units';
 import { APP_VERSION } from './version';
 
 const QUEUE_KEY = 'early.cloudQueue.v2';
@@ -6,6 +7,8 @@ const UPLOADED_ATTEMPTS_KEY = 'early.cloudUploadedAttempts.v2';
 /** Min interval between server stat fetches (each used to call Blob list). */
 const STATS_REFRESH_MS = 5 * 60 * 1000;
 let lastStatsRefreshAt = 0;
+/** Set when the active stage has no speech cloud API (letter writing). */
+let cloudLineOverride: string | null = null;
 
 export interface CloudCalibrationUpload {
   stageId: CurriculumStageId;
@@ -208,6 +211,17 @@ export async function refreshCloudStats(
   voicePending = 0,
   opts?: { force?: boolean },
 ): Promise<void> {
+  if (isLetterWritingStage(stageId)) {
+    cloudLineOverride =
+      'Cloud training: not used for Letter Writing (stroke data stays on device).';
+    state.voicePending = 0;
+    state.serverTotal = null;
+    state.voiceBankTotal = null;
+    emit();
+    return;
+  }
+
+  cloudLineOverride = null;
   const now = Date.now();
   if (!opts?.force && now - lastStatsRefreshAt < STATS_REFRESH_MS) {
     state.voicePending = voicePending;
@@ -246,6 +260,7 @@ export async function refreshCloudStats(
 }
 
 export function formatCloudSyncLine(s: CloudSyncState): string {
+  if (cloudLineOverride) return cloudLineOverride;
   if (
     !s.enabled &&
     s.pending === 0 &&

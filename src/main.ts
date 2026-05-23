@@ -487,6 +487,8 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
   if (isLetterWritingStage(stageId)) {
     setTargetItem(getStage(stageId).items[0] ?? curItem);
     setModelLoadStatus('Letter writing (no speech model)', 'neutral');
+    void refreshCloudStats(stageId, 0);
+    refreshLocalTrainingStatus(stageId);
     return;
   }
 
@@ -685,7 +687,11 @@ function init(): void {
     void flushCloudQueue()
       .then(() => flushVoiceBankQueue())
       .then(async () => {
-        if (settings.collectorMode && isVoiceBankComplete(curStageId)) {
+        if (
+          settings.collectorMode &&
+          !isLetterWritingStage(curStageId) &&
+          isVoiceBankComplete(curStageId)
+        ) {
           await syncLocalVoiceBankToCloud(curStageId);
         }
         await refreshCloudStats(curStageId, getVoiceBankQueueLength(), { force: true });
