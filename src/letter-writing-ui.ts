@@ -3,14 +3,14 @@ import { $, hide, show } from './ui';
 
 const STROKE_WIDTH = 5;
 const STROKE_COLOR = '#1e293b';
-const LINE_COLOR = '#93c5fd';
 const MARGIN_COLOR = '#fca5a5';
 const MIDLINE_COLOR = '#334155';
 const MIDLINE_WIDTH = 4;
 const MIDLINE_DASH = [18, 12] as const;
 const BOUNDARY_COLOR = '#000000';
-/** Blue ruled lines below the bottom black boundary (g, y, p descenders). */
-const DESCENDER_LINE_COUNT = 4;
+/** Empty space below bottom black line (in line-gap units) for descenders. */
+const DESCENDER_DEPTH_LINES = 4;
+const BOTTOM_PAD_LINES = 1.35;
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
@@ -34,31 +34,30 @@ function canvasCssWidth(): number {
 function paperLayout(w: number): {
   w: number;
   h: number;
-  lineGap: number;
-  topPad: number;
   marginX: number;
-  mainRuledYs: number[];
-  descenderYs: number[];
+  topBlackY: number;
+  bottomBlackY: number;
+  midlineY: number;
 } {
   const lineGap = Math.max(22, Math.round(w / 8));
   const topPad = Math.round(lineGap * 0.65);
   const marginX = Math.round(w * 0.12);
 
-  const mainRuledYs: number[] = [];
+  const rowYs: number[] = [];
   for (let y = topPad; y < w - lineGap * 0.4; y += lineGap) {
-    mainRuledYs.push(y);
+    rowYs.push(y);
   }
 
-  const bottomBlackY = mainRuledYs[mainRuledYs.length - 1] ?? topPad;
-  const descenderYs: number[] = [];
-  for (let i = 1; i <= DESCENDER_LINE_COUNT; i++) {
-    descenderYs.push(bottomBlackY + i * lineGap);
-  }
+  const topBlackY = rowYs[0] ?? topPad;
+  const bottomBlackY = rowYs[rowYs.length - 1] ?? topPad;
+  const midIdx = Math.floor((rowYs.length - 1) / 2);
+  const midlineY = rowYs[midIdx] ?? topBlackY;
 
-  const lastY = descenderYs[descenderYs.length - 1] ?? bottomBlackY;
-  const h = lastY + Math.round(lineGap * 1.35);
+  const h =
+    bottomBlackY +
+    Math.round(lineGap * (DESCENDER_DEPTH_LINES + BOTTOM_PAD_LINES));
 
-  return { w, h, lineGap, topPad, marginX, mainRuledYs, descenderYs };
+  return { w, h, marginX, topBlackY, bottomBlackY, midlineY };
 }
 
 function resizeCanvas(): void {
@@ -75,7 +74,9 @@ function resizeCanvas(): void {
 
 function redrawPaper(): void {
   if (!canvas || !ctx) return;
-  const { w, h, marginX, mainRuledYs, descenderYs } = paperLayout(canvasCssWidth());
+  const { w, h, marginX, topBlackY, bottomBlackY, midlineY } = paperLayout(
+    canvasCssWidth(),
+  );
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = '#fffef8';
   ctx.fillRect(0, 0, w, h);
@@ -87,47 +88,33 @@ function redrawPaper(): void {
   ctx.lineTo(marginX, h);
   ctx.stroke();
 
-  const allBlueYs = [...mainRuledYs, ...descenderYs];
-  ctx.strokeStyle = LINE_COLOR;
-  ctx.lineWidth = 1;
-  for (const y of allBlueYs) {
+  ctx.setLineDash([]);
+  ctx.lineCap = 'round';
+  ctx.lineWidth = MIDLINE_WIDTH;
+  ctx.strokeStyle = BOUNDARY_COLOR;
+  for (const y of [topBlackY, bottomBlackY]) {
+    const by = y + 0.5;
     ctx.beginPath();
-    ctx.moveTo(0, y + 0.5);
-    ctx.lineTo(w, y + 0.5);
+    ctx.moveTo(0, by);
+    ctx.lineTo(w, by);
     ctx.stroke();
   }
 
-  if (mainRuledYs.length >= 2) {
-    ctx.setLineDash([]);
-    ctx.lineCap = 'round';
-    ctx.lineWidth = MIDLINE_WIDTH;
-    ctx.strokeStyle = BOUNDARY_COLOR;
-    for (const y of [mainRuledYs[0], mainRuledYs[mainRuledYs.length - 1]]) {
-      const by = y + 0.5;
-      ctx.beginPath();
-      ctx.moveTo(0, by);
-      ctx.lineTo(w, by);
-      ctx.stroke();
-    }
-  }
-
-  const midIdx = Math.floor((mainRuledYs.length - 1) / 2);
-  const midY = mainRuledYs[midIdx] ?? mainRuledYs[0];
-  const midlineY = midY + 0.5;
+  const midlineDrawY = midlineY + 0.5;
 
   ctx.setLineDash([...MIDLINE_DASH]);
   ctx.lineCap = 'round';
   ctx.lineWidth = MIDLINE_WIDTH;
   ctx.strokeStyle = '#ffffff';
   ctx.beginPath();
-  ctx.moveTo(0, midlineY);
-  ctx.lineTo(w, midlineY);
+  ctx.moveTo(0, midlineDrawY);
+  ctx.lineTo(w, midlineDrawY);
   ctx.stroke();
 
   ctx.strokeStyle = MIDLINE_COLOR;
   ctx.beginPath();
-  ctx.moveTo(0, midlineY);
-  ctx.lineTo(w, midlineY);
+  ctx.moveTo(0, midlineDrawY);
+  ctx.lineTo(w, midlineDrawY);
   ctx.stroke();
   ctx.setLineDash([]);
   ctx.lineWidth = 1;
