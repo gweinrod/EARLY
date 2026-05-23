@@ -8,6 +8,7 @@ import {
 import {
   expectedStrokes,
   extractStrokeFeatures,
+  getLetterRule,
   getStrokeHint,
   scoreLetterAttempt,
 } from './letter-writing-scoring';
@@ -20,7 +21,9 @@ const DASHED_LINE_COLOR = '#3b82f6';
 const DASHED_LINE_WIDTH = 4;
 const DASHED_LINE_DASH = [18, 12] as const;
 const BOUNDARY_COLOR = '#000000';
-const SCORE_DELAY_MS = 800;
+const GUIDE_LETTER_COLOR = 'rgba(150,160,185,0.22)';
+/** Wait this long after the last pen-up before scoring (resets on each new stroke). */
+const SCORE_IDLE_MS = 2500;
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
@@ -146,6 +149,19 @@ function redrawPaper(): void {
   strokeDashedGuide(lowerDashedY, w);
 }
 
+function drawGuideLetter(): void {
+  if (!ctx || scored) return;
+  const { w, bottomBlackY, topBlackY } = paperLayout(canvasCssWidth());
+  const zoneH = bottomBlackY - topBlackY;
+  if (zoneH < 8) return;
+  const fontSize = Math.round(zoneH * 0.82);
+  ctx.font = `${fontSize}px serif`;
+  ctx.fillStyle = GUIDE_LETTER_COLOR;
+  ctx.textAlign = 'center';
+  ctx.textBaseline = 'alphabetic';
+  ctx.fillText(currentLetter, w / 2, bottomBlackY - 4);
+}
+
 function drawInk(): void {
   if (!canvas || !ctx) return;
   const { w, h } = paperLayout(canvasCssWidth());
@@ -170,6 +186,7 @@ function drawInk(): void {
 
 function redrawCanvas(): void {
   redrawPaper();
+  drawGuideLetter();
   drawInk();
 }
 
@@ -202,9 +219,15 @@ function showFeedback(pass: boolean, lines: string[]): void {
     : 'letter-writing-feedback letter-writing-feedback--fail';
 }
 
+function minStrokesExpected(): number {
+  return getLetterRule(currentLetter, currentIsUppercase)?.strokes[0] ?? 1;
+}
+
 function finaliseAttempt(): void {
   scoreTimer = null;
   if (scored || strokes.length === 0) return;
+  if (strokes.length < minStrokesExpected()) return;
+
   scored = true;
 
   const features = extractStrokeFeatures(strokes, attemptStartTime);
@@ -236,8 +259,9 @@ function finaliseAttempt(): void {
 }
 
 function scheduleScore(): void {
+  if (scored) return;
   cancelScoreTimer();
-  scoreTimer = setTimeout(finaliseAttempt, SCORE_DELAY_MS);
+  scoreTimer = setTimeout(finaliseAttempt, SCORE_IDLE_MS);
 }
 
 function clearInk(): void {
@@ -264,6 +288,7 @@ function pointerNorm(e: PointerEvent): StrokePoint {
 
 function onPointerDown(e: PointerEvent): void {
   if (!canvas || !ctx || e.button !== 0 || scored) return;
+  cancelScoreTimer();
   drawing = true;
   pointerId = e.pointerId;
   canvas.setPointerCapture(e.pointerId);
@@ -317,8 +342,8 @@ export function initLetterWritingUi(callbacks: LetterWritingCallbacks = {}): voi
 
   const touch = deviceUsesTouch();
   $('letterWritingHint').textContent = touch
-    ? 'Use your finger to write on the lines.'
-    : 'Use the mouse to write on the lines.';
+    ? 'Use your finger to write on the lines. Lift between strokes; scoring waits until you pause.'
+    : 'Use the mouse to write on the lines. Lift between strokes; scoring waits until you pause.';
 
   canvas.style.touchAction = 'none';
   attemptStartTime = Date.now();
