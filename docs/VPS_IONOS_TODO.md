@@ -464,19 +464,19 @@ npm run publish:model:postgres
 **Then commit + push (does not train again; runs `npm run build` first):**
 
 ```powershell
-npm run build
 scripts\publish-shared-model-postgres.bat alphabet
 ```
 
-Do **not** run `deploy` right after `npm run publish:model:postgres` without meaning to — the old script re-ran pull+train and bumped model/app versions twice (v5→v7, 0.68→0.70). `deploy` / `deploy-only` are now **git only**.
+One call: `git pull` → Postgres pull → archive → train → version bump → build → `git push`. Use `push-only` to skip train.
 
 | Step | What it does |
 |------|----------------|
+| 0 | `git pull origin vps` |
 | 1 | `calibration:pull:postgres` → `data/calibration/`, `data/voice-bank/` |
 | 2 | `training:archive` → merge into `data/training-archive/` (Git backup) |
-| 3 | `train_global_model.py` → `public/models/alphabet/` (manifest version +1) |
+| 3 | `train_global_model.py` → `public/models/alphabet/` (manifest minor +0.01) |
 | 4 | `version:bump` → `package.json`, `src/version.ts` |
-| 5 | `deploy` → `git commit` + `git push origin vps` only |
+| 5–6 | `npm run build` → `git commit` + `git push origin vps` |
 
 **Deploy on VPS** — one command (pull + build; see Phase 4):
 
