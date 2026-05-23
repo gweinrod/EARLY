@@ -9,8 +9,8 @@ const MIDLINE_WIDTH = 4;
 const MIDLINE_DASH = [18, 12] as const;
 const BOUNDARY_COLOR = '#000000';
 /** Empty space below bottom black line (in line-gap units) for descenders. */
-const DESCENDER_DEPTH_LINES = 4;
-const BOTTOM_PAD_LINES = 1.35;
+const DESCENDER_DEPTH_LINES = 2;
+const BOTTOM_PAD_LINES = 0.55;
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
