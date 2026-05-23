@@ -56,8 +56,8 @@ function redrawPaper(): void {
   ctx.strokeStyle = MARGIN_COLOR;
   ctx.lineWidth = 1;
   ctx.beginPath();
-  ctx.moveTo(marginX, topPad * 0.35);
-  ctx.lineTo(marginX, h - lineGap * 0.35);
+  ctx.moveTo(marginX, 0);
+  ctx.lineTo(marginX, h);
   ctx.stroke();
 
   const ruledYs: number[] = [];
