@@ -10,7 +10,7 @@ const MIDLINE_WIDTH = 4;
 const MIDLINE_DASH = [18, 12] as const;
 const BOUNDARY_COLOR = '#000000';
 /** Blue ruled lines below the bottom black boundary (g, y, p descenders). */
-const DESCENDER_LINE_COUNT = 2;
+const DESCENDER_LINE_COUNT = 3;
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
@@ -56,7 +56,7 @@ function paperLayout(w: number): {
   }
 
   const lastY = descenderYs[descenderYs.length - 1] ?? bottomBlackY;
-  const h = lastY + Math.round(lineGap * 1.05);
+  const h = lastY + Math.round(lineGap * 1.35);
 
   return { w, h, lineGap, topPad, marginX, mainRuledYs, descenderYs };
 }
