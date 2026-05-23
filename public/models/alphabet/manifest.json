@@ -1,7 +1,7 @@
 {
-  "version": 0.92,
+  "version": 0.93,
   "stageId": "alphabet",
   "modelUrl": "/models/alphabet/model.json",
-  "trainedAt": "2026-05-23T02:58:08.435499+00:00",
-  "sampleCount": 350
+  "trainedAt": "2026-05-23T03:03:18.245161+00:00",
+  "sampleCount": 380
 }
