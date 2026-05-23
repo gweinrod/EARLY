@@ -1,9 +1,9 @@
 # IONOS VPS rollout — EARLY (`early.gregtutors.com`)
 
-Checklist for the **`vps`** branch. Combines [MIGRATION_OFF_VERCEL.md](MIGRATION_OFF_VERCEL.md) (current repo) with [claude imports/EARLY_full_vps_setup.pdf](claude%20imports/EARLY_full_vps_setup.pdf) (reference only — **do not reinstall** the VPS).
+Checklist for the **`letter-writing-ml`** branch (VPS deploy + letter-writing ML). Combines [MIGRATION_OFF_VERCEL.md](MIGRATION_OFF_VERCEL.md) (current repo) with [claude imports/EARLY_full_vps_setup.pdf](claude%20imports/EARLY_full_vps_setup.pdf) (reference only — **do not reinstall** the VPS).
 
 **Domain:** `early.gregtutors.com` → same IONOS VPS as tutoring (DNS in **GoDaddy** only).  
-**Repo:** `gweinrod/EARLY` — model **v5** and training archive are on `main`; this branch is for deploy/infra work.
+**Repo:** `gweinrod/EARLY` — **`main`** has merged UI/deploy work; **`letter-writing-ml`** is the active deploy branch (pull/build via `/app/deploy-early.sh`).
 
 ---
 
@@ -34,7 +34,7 @@ Re-run inventory anytime: `~/vps-inventory.sh` (see chat / create from script in
 | `GET /api/model` | `GET /models/alphabet/model.json` | App loads shared TF.js model from static files; no API required for class practice. |
 | `POST /api/samples` + PostgreSQL | `POST /api/calibration` + Postgres (`server/`) | Phase 5: same `/api/*` routes on VPS; Vercel retired when ready (Phase 7). |
 | Nightly `retrain.py` (sklearn) | `tools/train_global_model.py` (TF.js) | Prefer existing trainer + `public/models/`; train on PC or VPS. |
-| Client `const API = 'https://…'` | Relative `/api/...` | Optional base URL on `vps` branch when API is live. |
+| Client `const API = 'https://…'` | Relative `/api/...` | Optional base URL on `letter-writing-ml` when API is live. |
 
 ---
 
@@ -90,7 +90,7 @@ Works with **no** backend; uses committed model under `/models/alphabet/`.
   sudo chown -R $USER:$USER /app/early
   cd /app/early
   git clone https://github.com/gweinrod/EARLY.git .
-  git checkout vps   # or main after merge
+  git checkout letter-writing-ml
   ```
 
 - [x] Build on **PC** (recommended) or on VPS with Node 20:
@@ -149,7 +149,7 @@ Works with **no** backend; uses committed model under `/models/alphabet/`.
 
 - [x] Create `/app/deploy-early.sh` on VPS (canonical copy: [scripts/deploy-early.sh](../scripts/deploy-early.sh))
 
-  **Includes `git fetch` + `checkout vps` + `git pull`** — no separate pull step before deploy.
+  **Includes `git fetch` + `checkout letter-writing-ml` + `git pull`** — no separate pull step before deploy.
 
   ```bash
   /app/deploy-early.sh
@@ -205,13 +205,13 @@ Code: [server/README.md](../server/README.md), [server/index.mjs](../server/inde
 | `data/training-archive/calibration/*.json` | `calibration` | ~620 judgments |
 | `data/training-archive/voice-bank/*.json` | `voice_bank` | ~27 voice seed |
 
-The importer auto-uses `data/training-archive/` when `data/calibration/` is empty (after `git pull` on `vps`).
+The importer auto-uses `data/training-archive/` when `data/calibration/` is empty (after `git pull` on `letter-writing-ml`).
 
 #### Path A — Import on the VPS from Git archive (recommended)
 
 ```bash
 cd /app/early
-git pull origin vps
+git pull origin letter-writing-ml
 
 # Confirm archive is present
 ls data/training-archive/calibration/*.json | wc -l
@@ -471,12 +471,12 @@ One call: `git pull` → Postgres pull → archive → train → version bump �
 
 | Step | What it does |
 |------|----------------|
-| 0 | `git pull origin vps` |
+| 0 | `git pull origin letter-writing-ml` |
 | 1 | `calibration:pull:postgres` → `data/calibration/`, `data/voice-bank/` |
 | 2 | `training:archive` → merge into `data/training-archive/` (Git backup) |
 | 3 | `train_global_model.py` → `public/models/alphabet/` (manifest minor +0.01) |
 | 4 | `version:bump` → `package.json`, `src/version.ts` |
-| 5–6 | `npm run build` → `git commit` + `git push origin vps` |
+| 5–6 | `npm run build` → `git commit` + `git push origin letter-writing-ml` |
 
 **Deploy on VPS** — one command (pull + build; see Phase 4):
 
@@ -495,7 +495,7 @@ python tools/train_global_model.py --stage alphabet
 npm run version:bump
 git add public/models/alphabet data/training-archive src/version.ts package.json
 git commit -m "Publish alphabet model vN from Postgres"
-git push origin vps
+git push origin letter-writing-ml
 ```
 
 ### Checklist
@@ -519,7 +519,7 @@ git push origin vps
 - [x] Point classroom to `https://early.gregtutors.com`
 - [ ] Optional: final Blob export on PC (`npm run calibration:pull` + `training:archive`) if anything never made it into Git
 - [ ] Pause Vercel after one week stable on VPS
-- [ ] Update [DEPLOY.md](DEPLOY.md) (PR `vps` → `main`)
+- [ ] Update [DEPLOY.md](DEPLOY.md) when merging `letter-writing-ml` → `main`
 
 ---
 
