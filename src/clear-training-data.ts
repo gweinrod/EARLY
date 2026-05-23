@@ -3,6 +3,7 @@ import { clearCloudQueue } from './cloud-calibration';
 import { clearSyncedVoiceBank, clearVoiceBankQueue } from './cloud-voice-bank';
 import { clearSessionLog } from './session-log';
 import { deleteStoredModel } from './tf-phoneme';
+import { clearWritingAttempts } from './letter-writing-data';
 import { clearVoiceBank } from './voice-bank';
 
 /** Remove session log, voice bank, TF models, and upload queues on this device. */
@@ -10,6 +11,7 @@ export async function clearLocalTrainingData(): Promise<void> {
   clearSessionLog();
   clearCloudQueue();
   clearVoiceBankQueue();
+  clearWritingAttempts();
 
   for (const stageId of ALL_STAGE_IDS) {
     clearVoiceBank(stageId);

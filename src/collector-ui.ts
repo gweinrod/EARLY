@@ -1,5 +1,6 @@
 import type { CurriculumStageId } from './curriculum';
 import { getStage, resolveItemKey } from './curriculum';
+import { setWritingStudentId } from './letter-writing-data';
 import { setStudentId, updateTeacherJudgment, type AttemptLog } from './session-log';
 import {
   clearLocalTrainingData,
@@ -62,7 +63,7 @@ async function onClearServer(): Promise<void> {
 async function onClearLocal(): Promise<void> {
   if (
     !confirm(
-      'Clear on THIS device:\n• session log\n• voice bank (v2 landmark embeddings)\n• local TF (early-tf-v2)\n• pending uploads\n\n' +
+      'Clear on THIS device:\n• session log\n• letter-writing practice data\n• voice bank (v2 landmark embeddings)\n• local TF (early-tf-v2)\n• pending uploads\n\n' +
         'After landmark DSP (v0.87+), re-record teacher voice seed per stage.\n' +
         'Local training archive on your PC is not affected.\n\nContinue?',
     )
@@ -76,8 +77,12 @@ async function onClearLocal(): Promise<void> {
 
 export function initCollectorPanel(): void {
   const studentInput = $('studentId') as HTMLInputElement;
-  studentInput.addEventListener('change', () => setStudentId(studentInput.value));
-  studentInput.addEventListener('blur', () => setStudentId(studentInput.value));
+  const syncStudent = () => {
+    setStudentId(studentInput.value);
+    setWritingStudentId(studentInput.value);
+  };
+  studentInput.addEventListener('change', syncStudent);
+  studentInput.addEventListener('blur', syncStudent);
 
   $('btnHeSaidTarget').addEventListener('click', () => submitHeSaidTarget());
   $('btnClearServer').addEventListener('click', () => void onClearServer());

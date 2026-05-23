@@ -28,6 +28,8 @@ import {
   setLetterWritingTarget,
   showLetterWritingPractice,
 } from './letter-writing-ui';
+import { setWritingStudentId } from './letter-writing-data';
+import { mountWritingStatsPanel } from './letter-writing-training';
 import {
   ensureDspEngine,
   formatDspGuessForSummary,
@@ -674,6 +676,7 @@ function init(): void {
     });
     const meta = getSessionMeta();
     syncStudentIdField(meta.studentId);
+    if (meta.studentId) setWritingStudentId(meta.studentId);
     subscribeCloudSync((s) => {
       $('cloudSyncStatus').textContent = formatCloudSyncLine(s);
       refreshLocalTrainingStatus(curStageId);
@@ -693,7 +696,14 @@ function init(): void {
     getAudioContext,
     onComplete: onVoiceBootstrapComplete,
   });
-  initLetterWritingUi();
+  const { refresh: refreshWritingStats } = mountWritingStatsPanel(
+    $('writingStats') as HTMLElement,
+  );
+  initLetterWritingUi({
+    onAttemptLogged() {
+      refreshWritingStats();
+    },
+  });
 
   $('btnRec').addEventListener('click', () => {
     if (isVoiceBootstrapActive()) return;

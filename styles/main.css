@@ -301,12 +301,41 @@ body.ml-debug #netBadge { display: none !important; }
   cursor: crosshair;
   touch-action: none;
 }
+.letter-writing-stroke-hint {
+  font-size: 13px;
+  color: #475569;
+  text-align: center;
+  margin: 0 0 0.5rem;
+  max-width: 360px;
+  margin-left: auto;
+  margin-right: auto;
+  line-height: 1.35;
+}
 .letter-writing-hint {
   font-size: 13px;
   color: #64748b;
   text-align: center;
-  margin: 0 0 0.75rem;
+  margin: 0 0 0.5rem;
 }
+.letter-writing-feedback {
+  font-size: 14px;
+  text-align: center;
+  min-height: 1.25rem;
+  margin: 0 auto 0.35rem;
+  max-width: 360px;
+  line-height: 1.35;
+  color: #1e293b;
+}
+.letter-writing-feedback--pass { color: #166534; }
+.letter-writing-feedback--fail { color: #7c2d12; }
+.letter-writing-score {
+  font-size: 13px;
+  color: #64748b;
+  text-align: center;
+  margin: 0 0 0.75rem;
+  min-height: 1.1rem;
+}
+.writing-stats { margin: 0.5rem 0 0.75rem; }
 .btn-clear-writing {
   display: block;
   margin: 0 auto 1rem;
