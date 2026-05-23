@@ -1,4 +1,11 @@
 import type { CurriculumStageId } from './curriculum';
+import {
+  type CurriculumUnitId,
+  defaultStageForUnit,
+  isKnownStageId,
+  isKnownUnitId,
+  isStageInUnit,
+} from './units';
 
 /** Runtime flags for EARLY Student (classroom iPad vs developer debug). */
 
@@ -9,7 +16,9 @@ export interface AppSettings {
   collectorMode: boolean;
   /** @deprecated Hold for legacy mode only. */
   useNonsenseWords: boolean;
-  /** Unit 1 stage — default alphabet letter names. */
+  /** Active unit (1–7). */
+  curriculumUnit: CurriculumUnitId;
+  /** Stage within the active unit. */
   curriculumStage: CurriculumStageId;
 }
 
@@ -21,11 +30,13 @@ function fromQuery(): Partial<AppSettings> {
   if (q.has('debug')) out.showMlDebug = q.get('debug') === '1';
   if (q.has('student')) out.collectorMode = q.get('student') !== '1';
   if (q.has('nonsense')) out.useNonsenseWords = q.get('nonsense') === '1';
+  if (q.has('unit')) {
+    const u = Number(q.get('unit'));
+    if (isKnownUnitId(u)) out.curriculumUnit = u;
+  }
   if (q.has('stage')) {
     const s = q.get('stage');
-    if (s === 'alphabet' || s === 'consonants' || s === 'short-vowels' || s === 'legacy-cvc') {
-      out.curriculumStage = s;
-    }
+    if (s && isKnownStageId(s)) out.curriculumStage = s;
   }
   return out;
 }
@@ -39,14 +50,32 @@ function fromStorage(): Partial<AppSettings> {
   }
 }
 
+function resolveCurriculum(
+  stored: Partial<AppSettings>,
+  query: Partial<AppSettings>,
+): Pick<AppSettings, 'curriculumUnit' | 'curriculumStage'> {
+  let unit: CurriculumUnitId =
+    query.curriculumUnit ?? stored.curriculumUnit ?? 1;
+  if (!isKnownUnitId(unit)) unit = 1;
+
+  let stage: CurriculumStageId =
+    query.curriculumStage ?? stored.curriculumStage ?? defaultStageForUnit(unit);
+  if (!isKnownStageId(stage)) stage = defaultStageForUnit(unit);
+  if (!isStageInUnit(stage, unit)) {
+    stage = defaultStageForUnit(unit);
+  }
+  return { curriculumUnit: unit, curriculumStage: stage };
+}
+
 export function loadSettings(): AppSettings {
   const stored = fromStorage();
   const query = fromQuery();
+  const curriculum = resolveCurriculum(stored, query);
   return {
     showMlDebug: query.showMlDebug ?? stored.showMlDebug ?? false,
     collectorMode: query.collectorMode ?? stored.collectorMode ?? true,
     useNonsenseWords: query.useNonsenseWords ?? stored.useNonsenseWords ?? false,
-    curriculumStage: query.curriculumStage ?? stored.curriculumStage ?? 'alphabet',
+    ...curriculum,
   };
 }
 

@@ -1,9 +1,25 @@
 ﻿/**
  * EARLY scope and sequence - docs/EARLY_CURRICULUM_SCOPE.md
- * Unit 1 order: (1) letter names -> (2) consonant sounds -> (3) short vowels in CVC.
+ * Units 1–7: see units.ts for stage pills; item lists fill in over time.
  */
 
-export type CurriculumStageId = 'alphabet' | 'consonants' | 'short-vowels' | 'legacy-cvc';
+export type { CurriculumStageId, CurriculumUnitId } from './units';
+export {
+  ALL_STAGE_IDS,
+  CURRICULUM_UNITS,
+  STAGE_PILL_LABEL,
+  UNIT_ORDER,
+  defaultStageForUnit,
+  getStageIdsForUnit,
+  getUnit,
+  getUnitForStage,
+  isKnownStageId,
+  isKnownUnitId,
+  isStageInUnit,
+  wordPromptForUnitStage,
+} from './units';
+
+import { ALL_STAGE_IDS, STAGE_PILL_LABEL, type CurriculumStageId } from './units';
 
 export interface CurriculumItem {
   /** Stable key for logging / TF (e.g. "b", "bat"). */
@@ -78,7 +94,7 @@ const SHORT_VOWEL_CVC: CurriculumItem[] = [
   { key: 'but', display: 'but', spokenName: 'but', phonemeNote: 'short /?/', aliases: ['but', 'ut'] },
 ];
 
-export const CURRICULUM_STAGES: Record<CurriculumStageId, CurriculumStage> = {
+export const CURRICULUM_STAGES: Partial<Record<CurriculumStageId, CurriculumStage>> = {
   alphabet: {
     id: 'alphabet',
     label: 'Letter Names',
@@ -105,17 +121,28 @@ export const CURRICULUM_STAGES: Record<CurriculumStageId, CurriculumStage> = {
   },
 };
 
-export const STAGE_ORDER: CurriculumStageId[] = ['alphabet', 'consonants', 'short-vowels', 'legacy-cvc'];
+/** @deprecated Use ALL_STAGE_IDS */
+export const STAGE_ORDER: CurriculumStageId[] = ALL_STAGE_IDS;
 
-/** Stages shown as unit pills in the practice UI. */
-export const STAGE_PILL_ORDER: CurriculumStageId[] = ['alphabet', 'consonants'];
+function skeletonItem(stageId: CurriculumStageId, display: string): CurriculumItem {
+  return {
+    key: `${stageId}-placeholder`,
+    display,
+    spokenName: display,
+    phonemeNote: 'Placeholder — content coming soon',
+    aliases: [display.toLowerCase()],
+  };
+}
 
-export const STAGE_PILL_LABEL: Record<CurriculumStageId, string> = {
-  alphabet: 'Letter Names',
-  consonants: 'Letter Sounds',
-  'short-vowels': 'Short Vowels',
-  'legacy-cvc': 'Legacy',
-};
+function skeletonStage(stageId: CurriculumStageId): CurriculumStage {
+  const label = STAGE_PILL_LABEL[stageId];
+  return {
+    id: stageId,
+    label,
+    subtitle: '',
+    items: [skeletonItem(stageId, label)],
+  };
+}
 
 export function pickPreviousItemInOrder(
   stageId: CurriculumStageId,
@@ -130,7 +157,7 @@ export function pickPreviousItemInOrder(
 }
 
 export function getStage(id: CurriculumStageId): CurriculumStage {
-  return CURRICULUM_STAGES[id];
+  return CURRICULUM_STAGES[id] ?? skeletonStage(id);
 }
 
 export function normalizeHeardLabel(text: string): string {

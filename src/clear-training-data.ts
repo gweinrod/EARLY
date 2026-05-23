@@ -1,4 +1,4 @@
-import { STAGE_ORDER, type CurriculumStageId } from './curriculum';
+import { ALL_STAGE_IDS } from './curriculum';
 import { clearCloudQueue } from './cloud-calibration';
 import { clearSyncedVoiceBank, clearVoiceBankQueue } from './cloud-voice-bank';
 import { clearSessionLog } from './session-log';
@@ -11,7 +11,7 @@ export async function clearLocalTrainingData(): Promise<void> {
   clearCloudQueue();
   clearVoiceBankQueue();
 
-  for (const stageId of STAGE_ORDER) {
+  for (const stageId of ALL_STAGE_IDS) {
     clearVoiceBank(stageId);
     clearSyncedVoiceBank(stageId);
     localStorage.removeItem(`early.publishedModel.v2.${stageId}`);

@@ -270,6 +270,9 @@ body.ml-debug #netBadge { display: none !important; }
 #netBadge.warning { background: #fef9c3; color: #854d0e; }
 
 .pills { display: flex; gap: 8px; flex-wrap: wrap; margin-bottom: 1rem; }
+.unit-pills { margin-bottom: 0.5rem; }
+.stage-pills { margin-bottom: 1rem; }
+#stageSectionLabel { margin-top: 0.25rem; }
 .pill {
   padding: 10px 16px;
   min-height: 44px;

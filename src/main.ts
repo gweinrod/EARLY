@@ -9,11 +9,18 @@ import {
 import {
   type CurriculumItem,
   type CurriculumStageId,
+  type CurriculumUnitId,
   getStage,
+  getUnit,
   pickNextItemInOrder,
   pickPreviousItemInOrder,
   STAGE_PILL_LABEL,
-  STAGE_PILL_ORDER,
+  UNIT_ORDER,
+  defaultStageForUnit,
+  getStageIdsForUnit,
+  getUnitForStage,
+  isStageInUnit,
+  wordPromptForUnitStage,
 } from './curriculum';
 import {
   ensureDspEngine,
@@ -102,6 +109,7 @@ let correct = 0;
 let total = 0;
 const history: { w: string; h: string; pass: boolean }[] = [];
 
+let curUnitId: CurriculumUnitId = settings.curriculumUnit;
 let curStageId: CurriculumStageId = settings.curriculumStage;
 let curItem: CurriculumItem = getStage(curStageId).items[0];
 
@@ -115,16 +123,10 @@ function getAudioContext(): AudioContext {
   return audioCtx;
 }
 
-function wordPromptLabel(stageId: CurriculumStageId): string {
-  if (stageId === 'alphabet') return 'Say this letter name';
-  if (stageId === 'consonants') return 'Say this letter sound';
-  return 'Say this word';
-}
-
 function setTargetItem(item: CurriculumItem): void {
   curItem = item;
   $('tWord').textContent = item.display;
-  $('wordLabel').textContent = wordPromptLabel(curStageId);
+  $('wordLabel').textContent = wordPromptForUnitStage(curUnitId, curStageId);
   const phon = $('tPhon');
   phon.textContent = '';
   phon.hidden = true;
@@ -473,8 +475,11 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
 
 async function switchStage(stageId: CurriculumStageId): Promise<void> {
   curStageId = stageId;
+  curUnitId = getUnitForStage(stageId);
+  settings.curriculumUnit = curUnitId;
   settings.curriculumStage = stageId;
   saveSettings(settings);
+  updateStageSectionLabel();
   await prepareStage(stageId);
 }
 
@@ -552,10 +557,16 @@ async function toggleRec(): Promise<void> {
   }
 }
 
-function initStagePills(): void {
+function updateStageSectionLabel(): void {
+  $('stageSectionLabel').textContent = getUnit(curUnitId).stageSectionLabel;
+}
+
+function renderStagePills(): void {
   const container = $('pillGroup');
   container.innerHTML = '';
-  for (const stageId of STAGE_PILL_ORDER) {
+  updateStageSectionLabel();
+
+  for (const stageId of getStageIdsForUnit(curUnitId)) {
     const stage = getStage(stageId);
     if (!stage.items.length) continue;
     const btn = document.createElement('button');
@@ -563,12 +574,41 @@ function initStagePills(): void {
     btn.className = 'pill' + (stageId === curStageId ? ' on' : '');
     btn.textContent = STAGE_PILL_LABEL[stageId];
     btn.addEventListener('click', () => {
-      document.querySelectorAll('.pill').forEach((p) => p.classList.remove('on'));
+      container.querySelectorAll('.pill').forEach((p) => p.classList.remove('on'));
       btn.classList.add('on');
       void switchStage(stageId);
     });
     container.appendChild(btn);
   }
+}
+
+function initUnitPills(): void {
+  const container = $('unitPillGroup');
+  container.innerHTML = '';
+  for (const unitId of UNIT_ORDER) {
+    const unit = getUnit(unitId);
+    const btn = document.createElement('button');
+    btn.type = 'button';
+    btn.className = 'pill' + (unitId === curUnitId ? ' on' : '');
+    btn.textContent = unit.pillLabel;
+    btn.addEventListener('click', () => {
+      container.querySelectorAll('.pill').forEach((p) => p.classList.remove('on'));
+      btn.classList.add('on');
+      void switchUnit(unitId);
+    });
+    container.appendChild(btn);
+  }
+}
+
+async function switchUnit(unitId: CurriculumUnitId): Promise<void> {
+  curUnitId = unitId;
+  settings.curriculumUnit = unitId;
+  const stageId = isStageInUnit(curStageId, unitId)
+    ? curStageId
+    : defaultStageForUnit(unitId);
+  saveSettings(settings);
+  renderStagePills();
+  await switchStage(stageId);
 }
 
 function applySettingsUi(): void {
@@ -589,9 +629,11 @@ function init(): void {
   $('appVersion').textContent = `v${APP_VERSION}`;
 
   settings = loadSettings();
+  curUnitId = settings.curriculumUnit;
   curStageId = settings.curriculumStage;
   applySettingsUi();
-  initStagePills();
+  initUnitPills();
+  renderStagePills();
   if (settings.collectorMode) {
     initCollectorPanel();
     setJudgmentCompleteHandler((j) => {
