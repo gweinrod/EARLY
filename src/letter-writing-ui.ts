@@ -56,7 +56,7 @@ function paperLayout(w: number): {
   }
 
   const lastY = descenderYs[descenderYs.length - 1] ?? bottomBlackY;
-  const h = lastY + Math.round(lineGap * 0.55);
+  const h = lastY + Math.round(lineGap * 0.85);
 
   return { w, h, lineGap, topPad, marginX, mainRuledYs, descenderYs };
 }
