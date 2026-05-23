@@ -94,13 +94,13 @@ function redrawPaper(): void {
   ctx.lineWidth = MIDLINE_WIDTH;
   ctx.strokeStyle = '#ffffff';
   ctx.beginPath();
-  ctx.moveTo(marginX, midlineY);
+  ctx.moveTo(0, midlineY);
   ctx.lineTo(w, midlineY);
   ctx.stroke();
 
   ctx.strokeStyle = MIDLINE_COLOR;
   ctx.beginPath();
-  ctx.moveTo(marginX, midlineY);
+  ctx.moveTo(0, midlineY);
   ctx.lineTo(w, midlineY);
   ctx.stroke();
   ctx.setLineDash([]);
