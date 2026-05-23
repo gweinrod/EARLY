@@ -56,16 +56,19 @@ function redrawPaper(): void {
   ctx.lineTo(marginX, h - lineGap * 0.35);
   ctx.stroke();
 
+  const ruledYs: number[] = [];
   ctx.strokeStyle = LINE_COLOR;
   ctx.lineWidth = 1;
   for (let y = topPad; y < h - lineGap * 0.4; y += lineGap) {
+    ruledYs.push(y);
     ctx.beginPath();
     ctx.moveTo(0, y + 0.5);
     ctx.lineTo(w, y + 0.5);
     ctx.stroke();
   }
 
-  const midY = topPad + lineGap * 2.5;
+  const midIdx = Math.floor((ruledYs.length - 1) / 2);
+  const midY = ruledYs[midIdx] ?? topPad + lineGap * 2;
   ctx.setLineDash([6, 6]);
   ctx.strokeStyle = '#cbd5e1';
   ctx.beginPath();
