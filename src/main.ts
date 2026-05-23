@@ -19,7 +19,6 @@ import {
   defaultStageForUnit,
   getStageIdsForUnit,
   getUnitForStage,
-  isStageInUnit,
   wordPromptForUnitStage,
 } from './curriculum';
 import {
@@ -479,7 +478,7 @@ async function switchStage(stageId: CurriculumStageId): Promise<void> {
   settings.curriculumUnit = curUnitId;
   settings.curriculumStage = stageId;
   saveSettings(settings);
-  updateStageSectionLabel();
+  renderStagePills();
   await prepareStage(stageId);
 }
 
@@ -601,14 +600,15 @@ function initUnitPills(): void {
 }
 
 async function switchUnit(unitId: CurriculumUnitId): Promise<void> {
+  const stageId = defaultStageForUnit(unitId);
   curUnitId = unitId;
+  curStageId = stageId;
   settings.curriculumUnit = unitId;
-  const stageId = isStageInUnit(curStageId, unitId)
-    ? curStageId
-    : defaultStageForUnit(unitId);
+  settings.curriculumStage = stageId;
   saveSettings(settings);
+  updateStageSectionLabel();
   renderStagePills();
-  await switchStage(stageId);
+  await prepareStage(stageId);
 }
 
 function applySettingsUi(): void {
