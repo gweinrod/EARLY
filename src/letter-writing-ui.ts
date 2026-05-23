@@ -1,9 +1,9 @@
 import type { CurriculumItem } from './curriculum';
-import type { Stroke, StrokePoint } from './letter-writing-data';
+import type { FeedbackLine, Stroke, StrokePoint } from './letter-writing-data';
 import {
-  ALL_LETTERS,
   getMastery,
   logWritingAttempt,
+  type LetterWritingAttempt,
 } from './letter-writing-data';
 import {
   expectedStrokes,
@@ -12,6 +12,12 @@ import {
   getStrokeHint,
   scoreLetterAttempt,
 } from './letter-writing-scoring';
+import {
+  initLetterWritingModel,
+  isLetterWritingModelReady,
+  predictLetterWriting,
+} from './letter-writing-tf';
+import { loadSettings } from './settings';
 import { $, hide, show } from './ui';
 
 const STROKE_WIDTH = 5;
@@ -21,7 +27,6 @@ const DASHED_LINE_COLOR = '#3b82f6';
 const DASHED_LINE_WIDTH = 4;
 const DASHED_LINE_DASH = [18, 12] as const;
 const BOUNDARY_COLOR = '#000000';
-/** Wait this long after the last pen-up before scoring (resets on each new stroke). */
 const SCORE_IDLE_MS = 2500;
 
 let canvas: HTMLCanvasElement | null = null;
@@ -29,6 +34,7 @@ let ctx: CanvasRenderingContext2D | null = null;
 let drawing = false;
 let pointerId: number | null = null;
 let resizeObserver: ResizeObserver | null = null;
+let bootstrapMode = false;
 
 let strokes: Stroke[] = [];
 let currentStroke: StrokePoint[] | null = null;
@@ -36,13 +42,14 @@ let strokeT0 = 0;
 let attemptStartTime = 0;
 let scored = false;
 let scoreTimer: ReturnType<typeof setTimeout> | null = null;
+let lastAttempt: LetterWritingAttempt | null = null;
 
 let currentLetter = 'A';
 let currentIsUppercase = true;
-let onAttemptLogged: ((pass: boolean, score: number, letter: string) => void) | undefined;
+let onAttemptLogged: ((attempt: LetterWritingAttempt) => void) | undefined;
 
 export interface LetterWritingCallbacks {
-  onAttemptLogged?: (pass: boolean, score: number, letter: string) => void;
+  onAttemptLogged?: (attempt: LetterWritingAttempt) => void;
 }
 
 function deviceUsesTouch(): boolean {
@@ -182,6 +189,26 @@ function cancelScoreTimer(): void {
   }
 }
 
+function sourceLabel(source: FeedbackLine['source']): string {
+  if (source === 'heuristic') return 'heuristic';
+  if (source === 'model') return 'model';
+  return 'teacher';
+}
+
+function renderFeedbackLines(lines: FeedbackLine[], pass: boolean): void {
+  const el = $('letterWritingFeedback');
+  el.innerHTML = lines
+    .map(
+      (line) =>
+        `<p class="feedback-line feedback-line--${line.source}">` +
+        `<span class="feedback-tag">${sourceLabel(line.source)}</span> ${line.text}</p>`,
+    )
+    .join('');
+  el.className = pass
+    ? 'letter-writing-feedback letter-writing-feedback--pass'
+    : 'letter-writing-feedback letter-writing-feedback--fail';
+}
+
 function updateTargetHints(): void {
   const hint = getStrokeHint(currentLetter, currentIsUppercase);
   const expected = expectedStrokes(currentLetter, currentIsUppercase);
@@ -196,21 +223,29 @@ function updateTargetHints(): void {
   }
 }
 
-function showFeedback(pass: boolean, lines: string[]): void {
-  const el = $('letterWritingFeedback');
-  el.innerHTML = lines.map((line) => `<div>${line}</div>`).join('');
-  el.className = pass
-    ? 'letter-writing-feedback letter-writing-feedback--pass'
-    : 'letter-writing-feedback letter-writing-feedback--fail';
+export function refreshWritingFeedbackDisplay(attempt: LetterWritingAttempt): void {
+  lastAttempt = attempt;
+  renderFeedbackLines(attempt.feedbackLines, attempt.appPass);
+  const mastery = getMastery(attempt.letter, attempt.isUppercase);
+  const accuracyStr = mastery
+    ? ` · ${Math.round(mastery.recentAccuracy * 100)}% recent accuracy`
+    : '';
+  const masteredStr = mastery?.mastered ? ' ⭐' : '';
+  const mlStr =
+    attempt.mlConfidence != null
+      ? ` · Model ${Math.round(attempt.mlConfidence * 100)}% on ${attempt.mlGuessLetter ?? '?'}`
+      : '';
+  $('letterWritingScore').textContent =
+    `Score: ${attempt.heuristicScore}/100 heuristic${mlStr}${accuracyStr}${masteredStr}`;
 }
 
 function minStrokesExpected(): number {
   return getLetterRule(currentLetter, currentIsUppercase)?.strokes[0] ?? 1;
 }
 
-function finaliseAttempt(): void {
+async function finaliseAttempt(): Promise<void> {
   scoreTimer = null;
-  if (scored || strokes.length === 0) return;
+  if (bootstrapMode || scored || strokes.length === 0) return;
   if (strokes.length < minStrokesExpected()) return;
 
   scored = true;
@@ -218,38 +253,82 @@ function finaliseAttempt(): void {
   const features = extractStrokeFeatures(strokes, attemptStartTime);
   const result = scoreLetterAttempt(currentLetter, currentIsUppercase, features);
 
-  logWritingAttempt({
+  const heuristicLines: FeedbackLine[] = [
+    ...result.feedback.map((text) => ({ text, source: 'heuristic' as const })),
+    ...result.warnings.map((text) => ({ text, source: 'heuristic' as const })),
+  ];
+
+  await initLetterWritingModel();
+  const ml = isLetterWritingModelReady()
+    ? predictLetterWriting(strokes, currentLetter)
+    : null;
+
+  const modelLines: FeedbackLine[] = [];
+  let mlGuessLetter: string | null = null;
+  let mlConfidence: number | null = null;
+  let mlPass: boolean | null = null;
+
+  if (ml) {
+    mlGuessLetter = ml.guessedLetter;
+    mlConfidence = ml.confidence;
+    mlPass = ml.pass;
+    modelLines.push({
+      text: `Read “${ml.guessedLetter}” (${Math.round(ml.confidence * 100)}% confidence).`,
+      source: 'model',
+    });
+    modelLines.push({
+      text: ml.pass
+        ? `Target “${currentLetter}” match (${Math.round(ml.targetProbability * 100)}%).`
+        : `Expected “${currentLetter}” (${Math.round(ml.targetProbability * 100)}% on target).`,
+      source: 'model',
+    });
+  } else {
+    modelLines.push({
+      text: 'Writing model not ready — record teacher writing seed first.',
+      source: 'model',
+    });
+  }
+
+  const feedbackLines = [...heuristicLines, ...modelLines];
+  const appPass = mlPass ?? result.pass;
+
+  const attempt = logWritingAttempt({
     letter: currentLetter,
     isUppercase: currentIsUppercase,
-    strokes,
+    strokes: strokes.map((s) => s.map((p) => ({ ...p }))),
     features,
     heuristicScore: result.score,
     heuristicPass: result.pass,
-    feedback: [...result.feedback, ...result.warnings],
+    feedbackLines,
+    mlGuessLetter,
+    mlConfidence,
+    mlPass,
+    appPass,
     teacherPass: null,
     teacherNote: null,
   });
 
-  showFeedback(result.pass, [...result.feedback, ...result.warnings]);
+  lastAttempt = attempt;
+  refreshWritingFeedbackDisplay(attempt);
 
-  const mastery = getMastery(currentLetter, currentIsUppercase);
-  const accuracyStr = mastery
-    ? ` · ${Math.round(mastery.recentAccuracy * 100)}% recent accuracy`
-    : '';
-  const masteredStr = mastery?.mastered ? ' ⭐' : '';
-  $('letterWritingScore').textContent =
-    `Score: ${result.score}/100${accuracyStr}${masteredStr}`;
+  if (loadSettings().collectorMode) {
+    /* judgment buttons wired in letter-writing-judgment-ui */
+  } else {
+    hide('letterWritingJudgmentBlock');
+  }
 
-  onAttemptLogged?.(result.pass, result.score, currentLetter);
+  onAttemptLogged?.(attempt);
 }
 
 function scheduleScore(): void {
-  if (scored) return;
+  if (scored || bootstrapMode) return;
   cancelScoreTimer();
-  scoreTimer = setTimeout(finaliseAttempt, SCORE_IDLE_MS);
+  scoreTimer = setTimeout(() => {
+    void finaliseAttempt();
+  }, SCORE_IDLE_MS);
 }
 
-function clearInk(): void {
+export function clearWritingInkOnly(): void {
   cancelScoreTimer();
   strokes = [];
   currentStroke = null;
@@ -258,6 +337,28 @@ function clearInk(): void {
   attemptStartTime = Date.now();
   redrawCanvas();
   updateTargetHints();
+}
+
+function clearInk(): void {
+  clearWritingInkOnly();
+  hide('letterWritingJudgmentBlock');
+  lastAttempt = null;
+}
+
+export function getWritingStrokesSnapshot(): Stroke[] {
+  return strokes.map((s) => s.map((p) => ({ ...p })));
+}
+
+export function getLastWritingAttempt(): LetterWritingAttempt | null {
+  return lastAttempt;
+}
+
+export function setWritingBootstrapMode(on: boolean): void {
+  bootstrapMode = on;
+  if (on) {
+    cancelScoreTimer();
+    hide('letterWritingJudgmentBlock');
+  }
 }
 
 function pointerNorm(e: PointerEvent): StrokePoint {
@@ -305,10 +406,9 @@ function endStroke(e: PointerEvent): void {
   scheduleScore();
 }
 
-/** Index into ALL_LETTERS for a display character (e.g. "A"). */
 export function findLetterIndex(letter: string): number {
   const ch = letter.trim().charAt(0);
-  const idx = ALL_LETTERS.findIndex((l) => l.letter === ch);
+  const idx = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('').indexOf(ch.toUpperCase());
   return idx >= 0 ? idx : 0;
 }
 
@@ -350,7 +450,9 @@ export function setLetterWritingTarget(item: CurriculumItem): void {
   const isUppercase = letter === letter.toUpperCase();
   setCurrentLetter(letter, isUppercase);
   $('letterWritingTarget').textContent = item.display;
-  $('letterWritingPrompt').textContent = 'Practice writing this letter';
+  $('letterWritingPrompt').textContent = bootstrapMode
+    ? 'Teacher writing seed — write each letter once'
+    : 'Practice writing this letter';
   clearInk();
 }
 
@@ -363,6 +465,7 @@ export function showLetterWritingPractice(): void {
 export function hideLetterWritingPractice(): void {
   show('speechPracticeBlock');
   hide('letterWritingBlock');
+  hide('letterWritingJudgmentBlock');
   drawing = false;
   pointerId = null;
   cancelScoreTimer();

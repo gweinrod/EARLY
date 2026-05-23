@@ -37,6 +37,7 @@
     <div class="teacher-toggles">
       <label class="mode-toggle"><input type="checkbox" id="debugMode" /> Show Debug</label>
       <button type="button" class="btn-secondary" id="btnRedoVoiceBank">Record teacher voice (seed)</button>
+      <button type="button" class="btn-secondary" id="btnRedoWritingBank">Record teacher writing (seed)</button>
     </div>
     <div class="collector-actions debug-only">
       <button type="button" class="btn-secondary btn-danger" id="btnClearServer">Clear Server</button>
@@ -57,6 +58,15 @@
       <span id="btnBootstrapLbl">tap to record</span>
     </button>
     <p id="bootstrapStatus" class="bootstrap-status"></p>
+  </div>
+
+  <div id="writingBootstrap" class="writing-bootstrap" style="display:none">
+    <h2 class="writing-bootstrap-title">Teacher writing seed (one time)</h2>
+    <p class="writing-bootstrap-lead">Write each uppercase letter once in <strong>your</strong> handwriting. This trains the letter-recognition model. Students improve it through your practice judgments only.</p>
+    <p id="writingBootstrapProgress" class="bootstrap-progress">0 / 26 recorded</p>
+    <p id="writingBootstrapTarget" class="bootstrap-target">A — write this letter on the lines</p>
+    <button type="button" class="btn-secondary" id="btnWritingBootstrapSave">Save sample &amp; next</button>
+    <p id="writingBootstrapStatus" class="bootstrap-status"></p>
   </div>
 
   <div id="practiceMain">
@@ -135,6 +145,11 @@
     <div class="word-nav-row letter-writing-nav">
       <button type="button" class="btn-prev" id="btnPrevWriting">previous letter</button>
       <button type="button" class="btn-next" id="btnNextWriting">next letter</button>
+    </div>
+    <div id="letterWritingJudgmentBlock" class="judgment-block collector-only" style="display:none">
+      <button type="button" class="btn-he-said-target" id="btnWritingAccept">Student wrote the target correctly — accept</button>
+      <button type="button" class="btn-secondary" id="btnWritingReject">Needs more practice</button>
+      <p id="letterWritingJudgmentStatus" class="judgment-status"></p>
     </div>
   </section>
 

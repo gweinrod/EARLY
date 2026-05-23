@@ -50,6 +50,14 @@ export interface LetterStrokeFeatures {
   durationMs: number;
 }
 
+/** Feedback provenance for layered scoring UI. */
+export type FeedbackSource = 'heuristic' | 'model' | 'teacher';
+
+export interface FeedbackLine {
+  text: string;
+  source: FeedbackSource;
+}
+
 /** One recorded writing attempt. */
 export interface LetterWritingAttempt {
   id: string;
@@ -63,7 +71,15 @@ export interface LetterWritingAttempt {
   features: LetterStrokeFeatures;
   heuristicScore: number;   // 0-100
   heuristicPass: boolean;
-  feedback: string[];
+  /** Structured feedback (heuristic + model + teacher). */
+  feedbackLines: FeedbackLine[];
+  /** @deprecated Legacy flat feedback — migrated on load. */
+  feedback?: string[];
+  mlGuessLetter: string | null;
+  mlConfidence: number | null;
+  mlPass: boolean | null;
+  /** Student-facing pass: teacher > model > heuristic. */
+  appPass: boolean;
   /** Null until teacher reviews. */
   teacherPass: boolean | null;
   teacherNote: string | null;
@@ -143,10 +159,36 @@ export function setWritingStudentId(studentId: string): void {
 export function loadWritingAttempts(): LetterWritingAttempt[] {
   try {
     const raw = localStorage.getItem(ATTEMPTS_KEY);
-    return raw ? (JSON.parse(raw) as LetterWritingAttempt[]) : [];
+    if (!raw) return [];
+    const rows = JSON.parse(raw) as LetterWritingAttempt[];
+    return rows.map((a) => migrateAttempt(a));
   } catch {
     return [];
   }
+}
+
+function migrateAttempt(a: LetterWritingAttempt): LetterWritingAttempt {
+  if (a.feedbackLines?.length) return a;
+  const legacy = a.feedback ?? [];
+  const feedbackLines: FeedbackLine[] = legacy.map((text) => ({
+    text,
+    source: 'heuristic' as const,
+  }));
+  const appPass =
+    a.teacherPass ??
+    (a.mlPass !== null && a.mlPass !== undefined ? a.mlPass : a.heuristicPass);
+  return {
+    ...a,
+    feedbackLines,
+    mlGuessLetter: a.mlGuessLetter ?? null,
+    mlConfidence: a.mlConfidence ?? null,
+    mlPass: a.mlPass ?? null,
+    appPass: a.appPass ?? appPass,
+  };
+}
+
+export function effectivePass(a: LetterWritingAttempt): boolean {
+  return a.teacherPass ?? a.mlPass ?? a.heuristicPass;
 }
 
 function saveWritingAttempts(attempts: LetterWritingAttempt[]): void {
@@ -177,19 +219,35 @@ export function updateTeacherFeedback(
   attemptId: string,
   teacherPass: boolean,
   teacherNote: string,
-): void {
+): LetterWritingAttempt | null {
   const attempts = loadWritingAttempts();
   const row = attempts.find((a) => a.id === attemptId);
-  if (!row) return;
+  if (!row) return null;
   row.teacherPass = teacherPass;
   row.teacherNote = teacherNote;
+  row.appPass = teacherPass;
+  row.feedbackLines = [
+    ...row.feedbackLines.filter((f) => f.source !== 'teacher'),
+    {
+      text: teacherPass
+        ? `Teacher accepted this ${row.letter} sample.`
+        : `Teacher marked this ${row.letter} as needs more practice.`,
+      source: 'teacher',
+    },
+  ];
   saveWritingAttempts(attempts);
+  updateMastery(row);
+  return row;
 }
 
 export function clearWritingAttempts(): void {
   localStorage.removeItem(ATTEMPTS_KEY);
   localStorage.removeItem(SESSION_KEY);
   localStorage.removeItem(MASTERY_KEY);
+}
+
+export function getWritingAttemptById(id: string): LetterWritingAttempt | null {
+  return loadWritingAttempts().find((a) => a.id === id) ?? null;
 }
 
 // ---------------------------------------------------------------------------
@@ -221,8 +279,8 @@ function updateMastery(attempt: LetterWritingAttempt): void {
     (a) => a.letter === attempt.letter && a.isUppercase === attempt.isUppercase,
   );
   const recent = all.slice(-MASTERY_WINDOW);
-  const passCount = all.filter((a) => a.heuristicPass).length;
-  const recentPasses = recent.filter((a) => a.heuristicPass).length;
+  const passCount = all.filter((a) => effectivePass(a)).length;
+  const recentPasses = recent.filter((a) => effectivePass(a)).length;
   const recentAcc = recent.length > 0 ? recentPasses / recent.length : 0;
 
   const entry: LetterMastery = {
@@ -280,7 +338,7 @@ export function exportWritingTrainingSamples(): WritingTrainingSample[] {
     letter: a.letter,
     isUppercase: a.isUppercase,
     features: a.features,
-    pass: a.teacherPass ?? a.heuristicPass,
+    pass: effectivePass(a),
     source: a.teacherPass !== null ? 'teacher' : 'heuristic',
   }));
 }

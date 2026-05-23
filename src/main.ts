@@ -31,6 +31,21 @@ import {
 import { setWritingStudentId } from './letter-writing-data';
 import { mountWritingStatsPanel } from './letter-writing-training';
 import {
+  getLetterWritingModelSource,
+  isLetterWritingModelReady,
+} from './letter-writing-tf';
+import { isWritingBankComplete } from './letter-writing-bank';
+import {
+  initWritingJudgmentUi,
+  promptWritingTeacherJudgment,
+} from './letter-writing-judgment-ui';
+import {
+  ensureWritingModelForPractice,
+  initWritingBootstrapUi,
+  isWritingBootstrapActive,
+  startWritingBootstrap,
+} from './writing-bootstrap-ui';
+import {
   ensureDspEngine,
   formatDspGuessForSummary,
   runDspPrediction,
@@ -486,9 +501,29 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
 
   if (isLetterWritingStage(stageId)) {
     setTargetItem(getStage(stageId).items[0] ?? curItem);
-    setModelLoadStatus('Letter writing (no speech model)', 'neutral');
     void refreshCloudStats(stageId, 0);
     refreshLocalTrainingStatus(stageId);
+
+    if (settings.collectorMode && !isWritingBankComplete()) {
+      await startWritingBootstrap();
+      return;
+    }
+
+    await ensureWritingModelForPractice();
+    if (isLetterWritingModelReady()) {
+      const src = getLetterWritingModelSource();
+      setModelLoadStatus(
+        src === 'bootstrap' ? 'Writing model (teacher seed)' : 'Writing recognition model',
+        'ok',
+      );
+    } else {
+      setModelLoadStatus(
+        settings.collectorMode
+          ? 'Writing model not ready ? record teacher writing seed'
+          : 'Writing practice (recognition model loading)',
+        'warn',
+      );
+    }
     return;
   }
 
@@ -512,6 +547,10 @@ async function switchStage(stageId: CurriculumStageId): Promise<void> {
   saveSettings(settings);
   renderStagePills();
   await prepareStage(stageId);
+}
+
+function onWritingBootstrapComplete(): void {
+  void prepareStage(curStageId);
 }
 
 function onVoiceBootstrapComplete(): void {
@@ -702,33 +741,38 @@ function init(): void {
     getAudioContext,
     onComplete: onVoiceBootstrapComplete,
   });
+  initWritingBootstrapUi({ onComplete: onWritingBootstrapComplete });
+  initWritingJudgmentUi();
   const { refresh: refreshWritingStats } = mountWritingStatsPanel(
     $('writingStats') as HTMLElement,
   );
   initLetterWritingUi({
-    onAttemptLogged() {
+    onAttemptLogged(attempt) {
       refreshWritingStats();
+      if (settings.collectorMode) {
+        promptWritingTeacherJudgment(attempt);
+      }
     },
   });
 
   $('btnRec').addEventListener('click', () => {
-    if (isVoiceBootstrapActive()) return;
+    if (isVoiceBootstrapActive() || isWritingBootstrapActive()) return;
     void toggleRec();
   });
   $('btnNext').addEventListener('click', () => {
-    if (isVoiceBootstrapActive()) return;
+    if (isVoiceBootstrapActive() || isWritingBootstrapActive()) return;
     nextItem();
   });
   $('btnPrev').addEventListener('click', () => {
-    if (isVoiceBootstrapActive()) return;
+    if (isVoiceBootstrapActive() || isWritingBootstrapActive()) return;
     previousItem();
   });
   $('btnPrevWriting').addEventListener('click', () => {
-    if (isVoiceBootstrapActive()) return;
+    if (isVoiceBootstrapActive() || isWritingBootstrapActive()) return;
     previousItem();
   });
   $('btnNextWriting').addEventListener('click', () => {
-    if (isVoiceBootstrapActive()) return;
+    if (isVoiceBootstrapActive() || isWritingBootstrapActive()) return;
     nextItem();
   });
 

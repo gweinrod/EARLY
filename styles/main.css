@@ -139,6 +139,31 @@ body.ml-debug #netBadge { display: none !important; }
 }
 .voice-bootstrap-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem; }
 .voice-bootstrap-lead { font-size: 14px; color: #475569; line-height: 1.45; margin-bottom: 1rem; }
+.writing-bootstrap {
+  margin: 0 0 1rem;
+  padding: 1rem 1.1rem;
+  border-radius: 12px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+}
+.writing-bootstrap-title { font-size: 1.1rem; font-weight: 700; margin-bottom: 0.5rem; }
+.writing-bootstrap-lead { font-size: 14px; color: #475569; line-height: 1.45; margin-bottom: 1rem; }
+.feedback-line { margin: 0.2rem 0; font-size: 14px; line-height: 1.35; }
+.feedback-tag {
+  display: inline-block;
+  font-size: 10px;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 1px 6px;
+  border-radius: 4px;
+  margin-right: 4px;
+  vertical-align: middle;
+}
+.feedback-line--heuristic .feedback-tag { background: #e2e8f0; color: #475569; }
+.feedback-line--model .feedback-tag { background: #dbeafe; color: #1d4ed8; }
+.feedback-line--teacher .feedback-tag { background: #dcfce7; color: #166534; }
+#letterWritingJudgmentBlock .btn-secondary { margin-top: 0.5rem; }
 .bootstrap-progress { font-size: 13px; color: #64748b; margin-bottom: 0.75rem; }
 .bootstrap-target {
   font-size: 2.5rem;
