@@ -2,28 +2,38 @@
 setlocal EnableExtensions EnableDelayedExpansion
 
 REM Publish shared model from VPS Postgres (Phase 6).
+REM Default: git pull + train + commit/push. You deploy on VPS: ssh early@HOST /app/deploy-early.sh
 REM Prereq: SSH tunnel, e.g. ssh -L 5433:127.0.0.1:5432 early@YOUR_VPS
 REM Repo .env: DATABASE_URL=postgresql://earlyuser:PASS@127.0.0.1:5433/earlydb
+REM Optional: MANIFEST_VERSION=0.92  MANIFEST_BUMP=major|minor
 
 cd /d "%~dp0.."
 
 set "STAGE=alphabet"
 set "GIT_BRANCH=vps"
-set "DEPLOY_ONLY=0"
+set "PUSH_ONLY=0"
 set "API_HOST=https://early.gregtutors.com"
 
 :parse_args
 if "%~1"=="" goto args_done
-if /i "%~1"=="deploy" set "DEPLOY_ONLY=1" & shift & goto parse_args
-if /i "%~1"=="--deploy" set "DEPLOY_ONLY=1" & shift & goto parse_args
-if /i "%~1"=="deploy-only" set "DEPLOY_ONLY=1" & shift & goto parse_args
+if /i "%~1"=="deploy" set "PUSH_ONLY=1" & shift & goto parse_args
+if /i "%~1"=="--deploy" set "PUSH_ONLY=1" & shift & goto parse_args
+if /i "%~1"=="deploy-only" set "PUSH_ONLY=1" & shift & goto parse_args
+if /i "%~1"=="push-only" set "PUSH_ONLY=1" & shift & goto parse_args
 set "STAGE=%~1"
 shift
 goto parse_args
 
 :args_done
 
-if "%DEPLOY_ONLY%"=="1" goto deploy_only
+echo [0] git pull origin %GIT_BRANCH%...
+git pull origin %GIT_BRANCH%
+if errorlevel 1 (
+  echo git pull failed — fix conflicts or network, then retry.
+  exit /b 1
+)
+
+if "%PUSH_ONLY%"=="1" goto git_push
 
 if not defined DATABASE_URL if exist ".env" (
   for /f "usebackq eol=# tokens=1,* delims==" %%A in (".env") do (
@@ -57,14 +67,14 @@ echo EARLY publish shared model ^(Postgres^)  stage=%STAGE%
 echo ========================================
 echo.
 
-echo Checking live API sample count...
+echo [1/6] Checking live API sample count...
 powershell -NoProfile -Command "try { $c = Invoke-RestMethod -Uri '%API_HOST%/api/calibration?stage=%STAGE%' -TimeoutSec 20; $v = Invoke-RestMethod -Uri '%API_HOST%/api/voice-bank?stage=%STAGE%' -TimeoutSec 20; $t = $c.total + $v.total; Write-Host ('  Judgments: ' + $c.total + ', voice: ' + $v.total + ', total: ' + $t); if ($t -lt 5) { exit 2 } } catch { Write-Host '  (could not reach API — continuing anyway)' }"
 if errorlevel 2 (
   echo Need at least 5 cloud samples. Collect more judgments on %API_HOST% first.
   exit /b 1
 )
 
-echo [1/5] Pull samples from Postgres...
+echo [2/6] Pull samples from Postgres...
 call npm run calibration:pull:postgres
 if errorlevel 1 (
   echo FAILED at calibration:pull:postgres
@@ -73,12 +83,12 @@ if errorlevel 1 (
 )
 
 echo.
-echo [2/5] Merge into training archive...
+echo [3/6] Merge into training archive...
 call npm run training:archive
 if errorlevel 1 exit /b 1
 
 echo.
-echo [3/5] Train TensorFlow.js model...
+echo [4/6] Train TensorFlow.js model...
 if defined MANIFEST_VERSION (
   if defined MANIFEST_BUMP (
     python tools\train_global_model.py --stage %STAGE% --manifest-version %MANIFEST_VERSION% --manifest-bump %MANIFEST_BUMP%
@@ -97,30 +107,24 @@ if errorlevel 1 (
 )
 
 echo.
-echo [4/5] Bump app version...
+echo [5/6] Bump app version...
 call npm run version:bump
 if errorlevel 1 exit /b 1
 
 echo.
-echo [5/5] Model: public\models\%STAGE%\
+echo Model: public\models\%STAGE%\
 type public\models\%STAGE%\manifest.json 2>nul
 echo.
 
-echo Next: commit and push ^(does not train again^)
-echo   scripts\publish-shared-model-postgres.bat %STAGE% deploy
-echo   ssh early@YOUR_VPS /app/deploy-early.sh
-goto :eof
-
-:deploy_only
-echo Running build check before commit/push...
+:git_push
+echo [6/6] Build, commit, and push to %GIT_BRANCH%...
 call npm run build
 if errorlevel 1 (
   echo BUILD FAILED — fix errors before pushing.
   exit /b 1
 )
 
-echo Committing and pushing to %GIT_BRANCH%...
-git add public/models/%STAGE% data/training-archive src/version.ts package.json
+git add public/models/%STAGE% data/training-archive src/version.ts package.json package-lock.json
 git commit -m "Publish shared %STAGE% model from Postgres calibration"
 if errorlevel 1 (
   echo git commit failed ^(nothing to commit?^)
@@ -130,7 +134,8 @@ git push origin %GIT_BRANCH%
 if errorlevel 1 exit /b 1
 
 echo.
-echo Pushed. On VPS run:  ssh early@YOUR_VPS /app/deploy-early.sh
+echo Done. Pushed to origin/%GIT_BRANCH%.
+echo On VPS:  ssh early@early.gregtutors.com /app/deploy-early.sh
 echo Devices load the new model on next visit to %API_HOST%.
 
 endlocal

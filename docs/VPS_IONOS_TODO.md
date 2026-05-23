@@ -465,7 +465,7 @@ npm run publish:model:postgres
 
 ```powershell
 npm run build
-scripts\publish-shared-model-postgres.bat alphabet deploy
+scripts\publish-shared-model-postgres.bat alphabet
 ```
 
 Do **not** run `deploy` right after `npm run publish:model:postgres` without meaning to — the old script re-ran pull+train and bumped model/app versions twice (v5→v7, 0.68→0.70). `deploy` / `deploy-only` are now **git only**.
@@ -501,7 +501,7 @@ git push origin vps
 ### Checklist
 
 - [ ] SSH tunnel + `DATABASE_URL` in `.env`
-- [ ] `npm run publish:model:postgres`, then `.bat alphabet deploy` (git only)
+- [ ] `scripts\publish-shared-model-postgres.bat alphabet` (pull + train + push)
 - [ ] Commit includes `public/models/alphabet/` and `data/training-archive/` if archive grew
 - [ ] `/app/deploy-early.sh` on VPS
 - [ ] iPad: new model version loads (teacher panel / footer)

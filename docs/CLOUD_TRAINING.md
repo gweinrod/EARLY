@@ -42,17 +42,19 @@ BLOB_READ_WRITE_TOKEN=vercel_blob_rw_...
 
 ```bat
 cd C:\EARLY
-scripts\publish-shared-model.bat
-scripts\publish-shared-model.bat deploy
+REM Postgres (VPS): tunnel open, DATABASE_URL in .env
+scripts\publish-shared-model-postgres.bat alphabet
+ssh early@early.gregtutors.com /app/deploy-early.sh
 ```
 
-Or: `npm run publish:model` (train only) — add `deploy` as the first argument to the `.bat` for git push.
+Or: `npm run publish:model:postgres` (same `.bat`).
 
 | Command | Does |
 |---------|------|
-| `publish-shared-model.bat` | pull → train → version bump (you commit manually) |
-| `publish-shared-model.bat deploy` | same + `git commit` + `git push` |
-| `publish-shared-model.bat consonants` | other stage (when train script supports it) |
+| `publish-shared-model-postgres.bat alphabet` | `git pull` → pull Postgres → archive → train → version bump → `git push` |
+| `publish-shared-model-postgres.bat alphabet push-only` | `git pull` → build → commit/push only (model already trained) |
+| `publish-shared-model.bat` | Blob pull → train → version bump (legacy Vercel) |
+| `publish-shared-model.bat deploy` | Blob train + `git push` |
 
 After deploy, all iPads/PCs load the new version on next open (feedback: “Loaded shared classroom model”).
 
