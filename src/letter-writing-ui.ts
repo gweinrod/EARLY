@@ -4,12 +4,10 @@ import { $, hide, show } from './ui';
 const STROKE_WIDTH = 5;
 const STROKE_COLOR = '#1e293b';
 const MARGIN_COLOR = '#fca5a5';
-const MIDLINE_COLOR = '#334155';
-const MIDLINE_WIDTH = 4;
-const MIDLINE_DASH = [18, 12] as const;
+const DASHED_LINE_COLOR = '#3b82f6';
+const DASHED_LINE_WIDTH = 4;
+const DASHED_LINE_DASH = [18, 12] as const;
 const BOUNDARY_COLOR = '#000000';
-/** Empty space below bottom black line (in line-gap units) for descenders. */
-const DESCENDER_DEPTH_LINES = 3;
 const BOTTOM_PAD_LINES = 0.98;
 
 let canvas: HTMLCanvasElement | null = null;
@@ -38,6 +36,7 @@ function paperLayout(w: number): {
   topBlackY: number;
   bottomBlackY: number;
   midlineY: number;
+  lowerDashedY: number;
 } {
   const lineGap = Math.max(22, Math.round(w / 8));
   const topPad = Math.round(lineGap * 0.65);
@@ -52,12 +51,12 @@ function paperLayout(w: number): {
   const bottomBlackY = rowYs[rowYs.length - 1] ?? topPad;
   const midIdx = Math.floor((rowYs.length - 1) / 2);
   const midlineY = rowYs[midIdx] ?? topBlackY;
+  const midlineToBottom = bottomBlackY - midlineY;
+  const lowerDashedY = bottomBlackY + midlineToBottom;
 
-  const h =
-    bottomBlackY +
-    Math.round(lineGap * (DESCENDER_DEPTH_LINES + BOTTOM_PAD_LINES));
+  const h = lowerDashedY + Math.round(lineGap * BOTTOM_PAD_LINES);
 
-  return { w, h, marginX, topBlackY, bottomBlackY, midlineY };
+  return { w, h, marginX, topBlackY, bottomBlackY, midlineY, lowerDashedY };
 }
 
 function resizeCanvas(): void {
@@ -72,11 +71,26 @@ function resizeCanvas(): void {
   redrawPaper();
 }
 
+function strokeDashedGuide(y: number, width: number): void {
+  if (!ctx) return;
+  const drawY = y + 0.5;
+  ctx.setLineDash([...DASHED_LINE_DASH]);
+  ctx.lineCap = 'round';
+  ctx.lineWidth = DASHED_LINE_WIDTH;
+  ctx.strokeStyle = DASHED_LINE_COLOR;
+  ctx.beginPath();
+  ctx.moveTo(0, drawY);
+  ctx.lineTo(width, drawY);
+  ctx.stroke();
+  ctx.setLineDash([]);
+  ctx.lineCap = 'butt';
+  ctx.lineWidth = 1;
+}
+
 function redrawPaper(): void {
   if (!canvas || !ctx) return;
-  const { w, h, marginX, topBlackY, bottomBlackY, midlineY } = paperLayout(
-    canvasCssWidth(),
-  );
+  const { w, h, marginX, topBlackY, bottomBlackY, midlineY, lowerDashedY } =
+    paperLayout(canvasCssWidth());
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = '#fffef8';
   ctx.fillRect(0, 0, w, h);
@@ -90,7 +104,7 @@ function redrawPaper(): void {
 
   ctx.setLineDash([]);
   ctx.lineCap = 'round';
-  ctx.lineWidth = MIDLINE_WIDTH;
+  ctx.lineWidth = DASHED_LINE_WIDTH;
   ctx.strokeStyle = BOUNDARY_COLOR;
   for (const y of [topBlackY, bottomBlackY]) {
     const by = y + 0.5;
@@ -99,26 +113,10 @@ function redrawPaper(): void {
     ctx.lineTo(w, by);
     ctx.stroke();
   }
-
-  const midlineDrawY = midlineY + 0.5;
-
-  ctx.setLineDash([...MIDLINE_DASH]);
-  ctx.lineCap = 'round';
-  ctx.lineWidth = MIDLINE_WIDTH;
-  ctx.strokeStyle = '#ffffff';
-  ctx.beginPath();
-  ctx.moveTo(0, midlineDrawY);
-  ctx.lineTo(w, midlineDrawY);
-  ctx.stroke();
-
-  ctx.strokeStyle = MIDLINE_COLOR;
-  ctx.beginPath();
-  ctx.moveTo(0, midlineDrawY);
-  ctx.lineTo(w, midlineDrawY);
-  ctx.stroke();
-  ctx.setLineDash([]);
   ctx.lineWidth = 1;
-  ctx.lineCap = 'butt';
+
+  strokeDashedGuide(midlineY, w);
+  strokeDashedGuide(lowerDashedY, w);
 }
 
 function clearInk(): void {
