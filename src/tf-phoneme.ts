@@ -22,6 +22,20 @@ let saveTimer: ReturnType<typeof setTimeout> | null = null;
 let activeStage: CurriculumStageId = 'alphabet';
 let wasmPathsConfigured = false;
 
+/** When `published`, teacher judgments upload only — no on-device fit (avoids wiping shared weights). */
+type ActiveModelOrigin = 'published' | 'local' | 'bootstrap' | 'none';
+let activeModelOrigin: ActiveModelOrigin = 'none';
+
+async function isPublishedModelActive(stageId: CurriculumStageId): Promise<boolean> {
+  const manifest = await fetchPublishedManifest(stageId);
+  if (!manifest) return false;
+  return getStoredPublishedVersion(stageId) >= manifest.version;
+}
+
+function markModelOrigin(origin: ActiveModelOrigin): void {
+  activeModelOrigin = origin;
+}
+
 function ensureWasmPaths(): void {
   if (wasmPathsConfigured) return;
   // Bundled JS lives under /assets/; .wasm must be served as static files (see public/tfjs-wasm/).
@@ -70,6 +84,7 @@ async function publishedCachedResult(stageId: CurriculumStageId): Promise<TfInit
   const manifest = await fetchPublishedManifest(stageId);
   const stored = getStoredPublishedVersion(stageId);
   if (manifest && stored >= manifest.version) {
+    markModelOrigin('published');
     return { source: 'published_cached', publishedVersion: manifest.version };
   }
   return { source: 'local', publishedVersion: null };
@@ -95,6 +110,7 @@ export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<Tf
 
   const published = await tryLoadPublishedModel(stageId);
   if (published) {
+    markModelOrigin('published');
     return { source: 'published_fresh', publishedVersion: published.version };
   }
 
@@ -117,6 +133,7 @@ export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<Tf
         availablePublishVersion: manifestAfterPublish.version,
       };
     }
+    markModelOrigin('local');
     return cached;
   } catch {
     /* no saved model for this stage */
@@ -127,13 +144,16 @@ export async function initTfPhonemeModel(stageId: CurriculumStageId): Promise<Tf
     if (!bootstrapped) {
       model = null;
       ready = false;
+      markModelOrigin('none');
       return noneResult();
     }
+    markModelOrigin('bootstrap');
     return { source: 'bootstrap', publishedVersion: null };
   }
 
   model = null;
   ready = false;
+  markModelOrigin('none');
   return noneResult();
 }
 
@@ -228,6 +248,7 @@ async function runBootstrapTraining(stageId: CurriculumStageId): Promise<boolean
     await fitBatch(dataset.x, dataset.y, 40, 16);
     await persistModel();
     ready = true;
+    markModelOrigin('bootstrap');
     return true;
   } finally {
     trainingBusy = false;
@@ -269,6 +290,7 @@ export async function retrainFromVoiceBank(stageId: CurriculumStageId): Promise<
     await fitBatch(dataset.x, dataset.y, 40, 16);
     await persistModel();
     ready = true;
+    markModelOrigin('local');
     return true;
   } finally {
     trainingBusy = false;
@@ -297,12 +319,18 @@ async function persistModel(): Promise<void> {
   await model.save(modelStorageUrl(activeStage));
 }
 
-/** Shared model shipped with the app (trained from all teachers' cloud samples). */
+/**
+ * Shared model shipped with the app (trained from all teachers' cloud samples).
+ * Reloads when manifest.version >= stored (including equal) so local judgment fits
+ * cannot permanently override published weights in localStorage.
+ */
 async function tryLoadPublishedModel(
   stageId: CurriculumStageId,
 ): Promise<PublishedModelManifest | null> {
   const manifest = await fetchPublishedManifest(stageId);
-  if (!manifest || manifest.version <= getStoredPublishedVersion(stageId)) return null;
+  if (!manifest) return null;
+  const stored = getStoredPublishedVersion(stageId);
+  if (manifest.version < stored) return null;
 
   try {
     const loaded = await tf.loadLayersModel(manifest.modelUrl);
@@ -314,15 +342,18 @@ async function tryLoadPublishedModel(
         const bootstrapped = await runBootstrapTraining(stageId);
         if (bootstrapped) {
           setStoredPublishedVersion(stageId, manifest.version);
+          markModelOrigin('published');
           return manifest;
         }
       }
       model = null;
       ready = false;
+      markModelOrigin('none');
       return null;
     }
     await model.save(modelStorageUrl(stageId));
     setStoredPublishedVersion(stageId, manifest.version);
+    markModelOrigin('published');
     return manifest;
   } catch (err) {
     console.warn('EARLY: failed to load published model', manifest.modelUrl, err);
@@ -405,8 +436,15 @@ export interface CalibrationTrainInput {
   dspWrong: boolean;
 }
 
+/**
+ * Optional on-device fit for local/bootstrap models only.
+ * With a published classroom model, judgments are cloud-only (see upload in main.ts).
+ */
 export async function trainCalibrationSample(input: CalibrationTrainInput): Promise<void> {
   if (trainingBusy) return;
+  if (activeModelOrigin === 'published' || (await isPublishedModelActive(activeStage))) {
+    return;
+  }
   if (!model || !modelMatchesVocab()) {
     const ok = await reconcileModelWithVocab(activeStage);
     if (!ok || !model) return;
@@ -419,14 +457,14 @@ export async function trainCalibrationSample(input: CalibrationTrainInput): Prom
     if (teacherHeardKey) {
       const heardIdx = wordIndex(teacherHeardKey);
       if (heardIdx !== undefined) {
-        await fitBatch([embedding], [heardIdx], 4, 1);
+        await fitBatch([embedding], [heardIdx], 2, 1);
       }
     }
 
     if (agrees && !asrWrong) {
       const targetIdx = wordIndex(targetKey);
       if (targetIdx !== undefined && (!dspWrong || teacherHeardKey === targetKey)) {
-        await fitBatch([embedding], [targetIdx], 4, 1);
+        await fitBatch([embedding], [targetIdx], 2, 1);
       }
     }
 

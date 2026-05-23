@@ -26,7 +26,7 @@ The teacher panel shows **Cloud training: N samples on server** when uploads wor
 | Teacher confirms | POST `/api/calibration` with same-length embedding + labels |
 | Offline | Queued in `localStorage`, retried on next load |
 | App start | Loads newest `public/models/<stage>/` if manifest version (float, e.g. 0.91) &gt; device version |
-| Local TF fit | Still runs for instant feedback on that device |
+| Local TF fit | Only when no published model is active; with shared model, judgments are cloud-only |
 
 ## 3. Publish the shared model (your machine)
 
