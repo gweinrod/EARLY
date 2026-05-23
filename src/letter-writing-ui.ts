@@ -8,7 +8,6 @@ const DASHED_LINE_COLOR = '#3b82f6';
 const DASHED_LINE_WIDTH = 4;
 const DASHED_LINE_DASH = [18, 12] as const;
 const BOUNDARY_COLOR = '#000000';
-const BOTTOM_PAD_LINES = 0.98;
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
@@ -54,7 +53,7 @@ function paperLayout(w: number): {
   const midlineToBottom = bottomBlackY - midlineY;
   const lowerDashedY = bottomBlackY + midlineToBottom;
 
-  const h = lowerDashedY + Math.round(lineGap * BOTTOM_PAD_LINES);
+  const h = lowerDashedY + topBlackY;
 
   return { w, h, marginX, topBlackY, bottomBlackY, midlineY, lowerDashedY };
 }
