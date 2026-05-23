@@ -1,7 +1,7 @@
 import type { CurriculumItem } from './curriculum';
 import { $, hide, show } from './ui';
 
-const STROKE_WIDTH = 2.5;
+const STROKE_WIDTH = 5;
 const STROKE_COLOR = '#1e293b';
 const LINE_COLOR = '#93c5fd';
 const MARGIN_COLOR = '#fca5a5';
