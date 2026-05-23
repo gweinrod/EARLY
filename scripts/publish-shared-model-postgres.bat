@@ -79,7 +79,11 @@ if errorlevel 1 exit /b 1
 
 echo.
 echo [3/5] Train TensorFlow.js model...
-python tools\train_global_model.py --stage %STAGE%
+if defined MANIFEST_VERSION (
+  python tools\train_global_model.py --stage %STAGE% --manifest-version %MANIFEST_VERSION%
+) else (
+  python tools\train_global_model.py --stage %STAGE%
+)
 if errorlevel 1 (
   echo FAILED at train_global_model.py
   echo If packages missing: pip install -r tools\requirements-train.txt

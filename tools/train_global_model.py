@@ -206,6 +206,12 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--stage", default="alphabet")
     parser.add_argument("--epochs", type=int, default=60)
+    parser.add_argument(
+        "--manifest-version",
+        type=int,
+        default=None,
+        help="Set manifest version (default: current manifest + 1). Use to pin e.g. 9 for 'model v0.9'.",
+    )
     args = parser.parse_args()
 
     xs, ys, vocab = load_samples(args.stage)
@@ -283,7 +289,11 @@ def main() -> None:
     )
     weights_path.unlink(missing_ok=True)
 
-    next_version = read_manifest_version(stage_dir) + 1
+    next_version = (
+        args.manifest_version
+        if args.manifest_version is not None
+        else read_manifest_version(stage_dir) + 1
+    )
     manifest = {
         "version": next_version,
         "stageId": args.stage,
