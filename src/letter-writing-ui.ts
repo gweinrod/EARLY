@@ -12,6 +12,7 @@ import {
   getStrokeHint,
   scoreLetterAttempt,
 } from './letter-writing-scoring';
+import { refreshWritingSeedExportButtons } from './letter-writing-bank';
 import {
   initLetterWritingModel,
   isLetterWritingModelReady,
@@ -459,6 +460,7 @@ export function setLetterWritingTarget(item: CurriculumItem): void {
 export function showLetterWritingPractice(): void {
   hide('speechPracticeBlock');
   show('letterWritingBlock');
+  refreshWritingSeedExportButtons();
   resizeCanvas();
 }
 

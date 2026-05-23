@@ -1,10 +1,12 @@
 import type { CurriculumItem } from './curriculum';
 import {
   addWritingBankSample,
+  clearWritingBank,
   countWritingBankRecorded,
   getWritingBankSamples,
   isWritingBankComplete,
-  clearWritingBank,
+  refreshWritingSeedExportButtons,
+  tryExportWritingSeedForPublish,
 } from './letter-writing-bank';
 import {
   deleteLetterWritingModel,
@@ -70,11 +72,16 @@ export function initWritingBootstrapUi(deps: { onComplete: () => void }): void {
     }
     void startWritingBootstrap(true);
   });
+
+  $('btnExportWritingSeed').addEventListener('click', tryExportWritingSeedForPublish);
+  $('btnExportWritingSeedInline').addEventListener('click', tryExportWritingSeedForPublish);
+  refreshWritingSeedExportButtons();
 }
 
 export async function startWritingBootstrap(forceReset = false): Promise<void> {
   if (forceReset) {
     clearWritingBank();
+    refreshWritingSeedExportButtons();
     await deleteLetterWritingModel();
   }
 
@@ -102,6 +109,7 @@ async function saveBootstrapSample(): Promise<void> {
 
   addWritingBankSample(LETTERS[letterIndex], strokes);
   clearWritingInkOnly();
+  refreshWritingSeedExportButtons();
   $('writingBootstrapStatus').textContent = `Saved ${LETTERS[letterIndex]}.`;
 
   if (isWritingBankComplete()) {
@@ -127,7 +135,5 @@ function hideBootstrap(): void {
 }
 
 export async function ensureWritingModelForPractice(): Promise<void> {
-  if (isWritingBankComplete()) {
-    await initLetterWritingModel();
-  }
+  await initLetterWritingModel();
 }

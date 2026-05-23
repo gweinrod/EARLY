@@ -24,6 +24,7 @@ import {
   type LetterMastery,
   type WritingTrainingSample,
 } from './letter-writing-data';
+import { downloadWritingBankForPublish } from './letter-writing-bank';
 
 // ---------------------------------------------------------------------------
 // Session summary
@@ -229,10 +230,16 @@ export function mountWritingStatsPanel(container: HTMLElement): { refresh: () =>
               Export training data
            </button>`
         : ''}
+      <button id="lwExportSeedBtn" style="margin-top:8px;margin-left:6px;padding:5px 12px;border:1px solid #d1d5db;
+            border-radius:6px;background:#f9fafb;cursor:pointer;font-size:12px;">
+        Export writing seed
+      </button>
     `;
 
     const exportBtn = container.querySelector('#lwExportBtn') as HTMLButtonElement | null;
     exportBtn?.addEventListener('click', downloadWritingTrainingData);
+    const seedBtn = container.querySelector('#lwExportSeedBtn') as HTMLButtonElement | null;
+    seedBtn?.addEventListener('click', downloadWritingBankForPublish);
   }
 
   refresh();

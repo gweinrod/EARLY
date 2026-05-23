@@ -3,13 +3,20 @@ import { setWasmPaths } from '@tensorflow/tfjs-backend-wasm';
 import '@tensorflow/tfjs-backend-wasm';
 import type { Stroke } from './letter-writing-data';
 import {
+  fetchPublishedManifest,
+  getStoredPublishedVersion,
+  setStoredPublishedVersion,
+  type PublishedModelManifest,
+} from './published-model';
+import {
   getWritingBankSamples,
   isWritingBankComplete,
   WRITING_BANK_LETTERS,
 } from './letter-writing-bank';
 import { RASTER_SIZE, rasterizeStrokes } from './letter-writing-raster';
 
-const MODEL_URL = 'localstorage://early-letter-writing-v1';
+const LOCAL_MODEL_URL = 'localstorage://early-letter-writing-v1';
+const STAGE_ID = 'letter-writing' as const;
 const NUM_CLASSES = 26;
 const ML_PASS_THRESHOLD = 0.45;
 
@@ -18,7 +25,7 @@ let ready = false;
 let trainingBusy = false;
 let wasmConfigured = false;
 
-export type LetterWritingModelSource = 'bootstrap' | 'local' | 'none';
+export type LetterWritingModelSource = 'published' | 'local' | 'bootstrap' | 'none';
 
 let modelSource: LetterWritingModelSource = 'none';
 
@@ -75,8 +82,64 @@ function ensureCompiled(): void {
   });
 }
 
+function getModelClassCount(): number | null {
+  if (!model) return null;
+  const shape = model.outputs[0]?.shape;
+  if (!shape?.length) return null;
+  const n = shape[shape.length - 1];
+  return typeof n === 'number' ? n : null;
+}
+
+function modelMatchesVocab(): boolean {
+  return getModelClassCount() === NUM_CLASSES;
+}
+
 function rasterToTensor(flat: Float32Array): tf.Tensor4D {
   return tf.tensor4d(flat, [1, RASTER_SIZE, RASTER_SIZE, 1]);
+}
+
+async function persistLocalModel(): Promise<void> {
+  if (!model) return;
+  await model.save(LOCAL_MODEL_URL);
+}
+
+async function isPublishedModelActive(): Promise<boolean> {
+  const manifest = await fetchPublishedManifest(STAGE_ID);
+  if (!manifest) return false;
+  return getStoredPublishedVersion(STAGE_ID) >= manifest.version;
+}
+
+async function tryLoadPublishedModel(): Promise<PublishedModelManifest | null> {
+  const manifest = await fetchPublishedManifest(STAGE_ID);
+  if (!manifest) return null;
+  const stored = getStoredPublishedVersion(STAGE_ID);
+  if (manifest.version < stored) return null;
+
+  try {
+    const loaded = await tf.loadLayersModel(manifest.modelUrl);
+    model?.dispose();
+    model = loaded;
+    if (!modelMatchesVocab()) {
+      model.dispose();
+      model = null;
+      ready = false;
+      return null;
+    }
+    ensureCompiled();
+    await model.save(LOCAL_MODEL_URL);
+    setStoredPublishedVersion(STAGE_ID, manifest.version);
+    ready = true;
+    modelSource = 'published';
+    return manifest;
+  } catch (err) {
+    console.warn('EARLY: failed to load published letter-writing model', manifest.modelUrl, err);
+    return null;
+  }
+}
+
+export async function hasPublishedLetterWritingModel(): Promise<boolean> {
+  const manifest = await fetchPublishedManifest(STAGE_ID);
+  return manifest !== null;
 }
 
 async function fitRasters(
@@ -85,7 +148,7 @@ async function fitRasters(
   epochs: number,
   batchSize: number,
 ): Promise<void> {
-  if (!model || flats.length === 0) return;
+  if (!model || flats.length === 0 || (await isPublishedModelActive())) return;
   ensureCompiled();
   const xs = tf.stack(flats.map((f) => tf.tensor3d(f, [RASTER_SIZE, RASTER_SIZE, 1])));
   const ys = tf.oneHot(tf.tensor1d(labels, 'int32'), NUM_CLASSES);
@@ -95,11 +158,6 @@ async function fitRasters(
     xs.dispose();
     ys.dispose();
   }
-}
-
-async function persistModel(): Promise<void> {
-  if (!model) return;
-  await model.save(MODEL_URL);
 }
 
 function buildBootstrapBatch(): { flats: Float32Array[]; labels: number[] } | null {
@@ -122,6 +180,7 @@ function buildBootstrapBatch(): { flats: Float32Array[]; labels: number[] } | nu
 }
 
 async function runBootstrapTraining(): Promise<boolean> {
+  if (await isPublishedModelActive()) return false;
   const batch = buildBootstrapBatch();
   if (!batch) return false;
   model?.dispose();
@@ -129,7 +188,7 @@ async function runBootstrapTraining(): Promise<boolean> {
   trainingBusy = true;
   try {
     await fitRasters(batch.flats, batch.labels, 35, 16);
-    await persistModel();
+    await persistLocalModel();
     ready = true;
     modelSource = 'bootstrap';
     return true;
@@ -160,17 +219,24 @@ export async function initLetterWritingModel(): Promise<LetterWritingModelSource
   model = null;
   ready = false;
 
+  const published = await tryLoadPublishedModel();
+  if (published) return 'published';
+
   try {
-    model = await tf.loadLayersModel(MODEL_URL);
-    ensureCompiled();
-    ready = true;
-    modelSource = 'local';
-    return 'local';
+    model = await tf.loadLayersModel(LOCAL_MODEL_URL);
+    if (modelMatchesVocab()) {
+      ensureCompiled();
+      ready = true;
+      modelSource = 'local';
+      return 'local';
+    }
+    model.dispose();
+    model = null;
   } catch {
     /* no saved model */
   }
 
-  if (isWritingBankComplete()) {
+  if (isWritingBankComplete() && !(await isPublishedModelActive())) {
     const ok = await runBootstrapTraining();
     return ok ? 'bootstrap' : 'none';
   }
@@ -180,13 +246,14 @@ export async function initLetterWritingModel(): Promise<LetterWritingModelSource
 }
 
 export async function retrainFromWritingBank(): Promise<boolean> {
+  if (await isPublishedModelActive()) return false;
   if (!isWritingBankComplete()) return false;
   return runBootstrapTraining();
 }
 
 export async function deleteLetterWritingModel(): Promise<void> {
   try {
-    await tf.io.removeModel(MODEL_URL);
+    await tf.io.removeModel(LOCAL_MODEL_URL);
   } catch {
     /* not saved */
   }
@@ -246,13 +313,14 @@ export function predictLetterWriting(
   }
 }
 
-/** On-device fit from a teacher judgment (judgments-only path after bootstrap). */
+/** On-device fit from teacher judgment — skipped when shared published model is active. */
 export async function trainWritingJudgment(
   strokes: Stroke[],
   targetLetter: string,
   teacherPass: boolean,
 ): Promise<void> {
   if (!teacherPass || trainingBusy || !model || !ready) return;
+  if (await isPublishedModelActive()) return;
   const idx = letterToIndex(targetLetter);
   if (idx < 0) return;
 
@@ -260,7 +328,7 @@ export async function trainWritingJudgment(
   trainingBusy = true;
   try {
     await fitRasters([flat], [idx], 3, 1);
-    await persistModel();
+    await persistLocalModel();
     modelSource = 'local';
   } finally {
     trainingBusy = false;

@@ -29,11 +29,13 @@ import {
   showLetterWritingPractice,
 } from './letter-writing-ui';
 import { setWritingStudentId } from './letter-writing-data';
+import { refreshWritingSeedExportButtons } from './letter-writing-bank';
 import { mountWritingStatsPanel } from './letter-writing-training';
 import {
   getLetterWritingModelSource,
   isLetterWritingModelReady,
 } from './letter-writing-tf';
+import { fetchPublishedManifest, formatPublishedModelVersion } from './published-model';
 import { isWritingBankComplete } from './letter-writing-bank';
 import {
   initWritingJudgmentUi,
@@ -76,7 +78,6 @@ import {
   getVoiceBankQueueLength,
   syncLocalVoiceBankToCloud,
 } from './cloud-voice-bank';
-import { formatPublishedModelVersion } from './published-model';
 import { isTfReady, trainCalibrationSample, type TfInitResult } from './tf-phoneme';
 import { isVoiceBankComplete } from './voice-bank';
 import {
@@ -504,23 +505,32 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
     void refreshCloudStats(stageId, 0);
     refreshLocalTrainingStatus(stageId);
 
-    if (settings.collectorMode && !isWritingBankComplete()) {
+    const publishedManifest = await fetchPublishedManifest('letter-writing');
+    if (settings.collectorMode && !isWritingBankComplete() && !publishedManifest) {
       await startWritingBootstrap();
       return;
     }
 
     await ensureWritingModelForPractice();
+    const src = getLetterWritingModelSource();
     if (isLetterWritingModelReady()) {
-      const src = getLetterWritingModelSource();
-      setModelLoadStatus(
-        src === 'bootstrap' ? 'Writing model (teacher seed)' : 'Writing recognition model',
-        'ok',
-      );
+      if (src === 'published' && publishedManifest) {
+        setModelLoadStatus(
+          `Shared letter-writing model (v${formatPublishedModelVersion(publishedManifest.version)})`,
+          'ok',
+        );
+      } else if (src === 'bootstrap') {
+        setModelLoadStatus('Local writing model (teacher seed)', 'neutral');
+      } else {
+        setModelLoadStatus('Local letter-writing model', 'neutral');
+      }
+    } else if (publishedManifest) {
+      setModelLoadStatus('Could not load shared letter-writing model ? using heuristics', 'warn');
     } else {
       setModelLoadStatus(
         settings.collectorMode
           ? 'Writing model not ready ? record teacher writing seed'
-          : 'Writing practice (recognition model loading)',
+          : 'Letter writing (model loading)',
         'warn',
       );
     }
@@ -694,6 +704,7 @@ function applySettingsUi(): void {
   if (settings.collectorMode) show('collectorPanel');
   else hide('collectorPanel');
   hide('netBadge');
+  refreshWritingSeedExportButtons();
 }
 
 function init(): void {

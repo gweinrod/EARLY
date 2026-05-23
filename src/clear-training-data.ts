@@ -16,6 +16,7 @@ export async function clearLocalTrainingData(): Promise<void> {
   clearWritingAttempts();
   clearWritingBank();
   await deleteLetterWritingModel();
+  localStorage.removeItem('early.publishedModel.v2.letter-writing');
 
   for (const stageId of ALL_STAGE_IDS) {
     clearVoiceBank(stageId);

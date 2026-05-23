@@ -365,6 +365,13 @@ body.ml-debug #netBadge { display: none !important; }
   display: block;
   margin: 0 auto 1rem;
 }
+.btn-export-writing-seed {
+  display: block;
+  width: 100%;
+  max-width: 360px;
+  margin: -0.5rem auto 1rem;
+  font-size: 15px;
+}
 .letter-writing-nav { max-width: 360px; margin-left: auto; margin-right: auto; }
 .pill {
   padding: 10px 16px;

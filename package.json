@@ -21,7 +21,9 @@
     "seed:blob-counts": "node tools/seed-blob-counts.mjs",
     "calibration:train": "python tools/train_global_model.py",
     "publish:model": "scripts\\publish-shared-model.bat",
-    "publish:model:postgres": "scripts\\publish-shared-model-postgres.bat"
+    "publish:model:postgres": "scripts\\publish-shared-model-postgres.bat",
+    "publish:writing-model": "scripts\\publish-letter-writing.bat",
+    "writing:train": "node tools/train_letter_writing_model.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

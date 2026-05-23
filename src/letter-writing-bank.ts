@@ -1,4 +1,5 @@
 import type { Stroke } from './letter-writing-data';
+import { loadSettings } from './settings';
 
 const BANK_KEY = 'early.writingBank.v1';
 
@@ -43,6 +44,50 @@ export function addWritingBankSample(letter: string, strokes: Stroke[]): void {
 
 export function clearWritingBank(): void {
   localStorage.removeItem(BANK_KEY);
+}
+
+/** Download teacher seed JSON for PC training (data/writing-bank/teacher-seed.json). */
+export function downloadWritingBankForPublish(): void {
+  const bank = loadWritingBank();
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    samples: bank.samples,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url;
+  a.download = 'teacher-seed.json';
+  a.click();
+  URL.revokeObjectURL(url);
+}
+
+const WRITING_SEED_EXPORT_BTN_IDS = ['btnExportWritingSeed', 'btnExportWritingSeedInline'] as const;
+
+/** Show export buttons when collector has at least one seeded letter. */
+export function refreshWritingSeedExportButtons(): void {
+  const { done } = countWritingBankRecorded();
+  const visible = loadSettings().collectorMode && done > 0;
+  for (const id of WRITING_SEED_EXPORT_BTN_IDS) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = visible ? '' : 'none';
+  }
+}
+
+/** User-facing export with validation (collector panel + letter-writing section). */
+export function tryExportWritingSeedForPublish(): void {
+  const { done, total } = countWritingBankRecorded();
+  if (done === 0) {
+    alert('No writing seed on this device yet. Tap “Record teacher writing (seed)” first.');
+    return;
+  }
+  downloadWritingBankForPublish();
+  if (done < total) {
+    alert(
+      `Exported ${done} of ${total} letters. Finish the seed on this device, or merge JSON on your PC before training.`,
+    );
+  }
 }
 
 export function countWritingBankRecorded(): { done: number; total: number } {

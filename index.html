@@ -38,6 +38,7 @@
       <label class="mode-toggle"><input type="checkbox" id="debugMode" /> Show Debug</label>
       <button type="button" class="btn-secondary" id="btnRedoVoiceBank">Record teacher voice (seed)</button>
       <button type="button" class="btn-secondary" id="btnRedoWritingBank">Record teacher writing (seed)</button>
+      <button type="button" class="btn-secondary" id="btnExportWritingSeed">Export writing seed</button>
     </div>
     <div class="collector-actions debug-only">
       <button type="button" class="btn-secondary btn-danger" id="btnClearServer">Clear Server</button>
@@ -142,6 +143,9 @@
     <div id="letterWritingFeedback" class="letter-writing-feedback" aria-live="polite"></div>
     <p id="letterWritingScore" class="letter-writing-score"></p>
     <button type="button" class="btn-secondary btn-clear-writing" id="btnClearWriting">Clear writing</button>
+    <button type="button" class="btn-secondary btn-export-writing-seed" id="btnExportWritingSeedInline" style="display:none">
+      Export teacher writing seed (for PC)
+    </button>
     <div class="word-nav-row letter-writing-nav">
       <button type="button" class="btn-prev" id="btnPrevWriting">previous letter</button>
       <button type="button" class="btn-next" id="btnNextWriting">next letter</button>
