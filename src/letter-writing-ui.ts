@@ -10,7 +10,7 @@ const MIDLINE_WIDTH = 4;
 const MIDLINE_DASH = [18, 12] as const;
 const BOUNDARY_COLOR = '#000000';
 /** Blue ruled lines below the bottom black boundary (g, y, p descenders). */
-const DESCENDER_LINE_COUNT = 3;
+const DESCENDER_LINE_COUNT = 4;
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
