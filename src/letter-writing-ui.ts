@@ -21,7 +21,6 @@ const DASHED_LINE_COLOR = '#3b82f6';
 const DASHED_LINE_WIDTH = 4;
 const DASHED_LINE_DASH = [18, 12] as const;
 const BOUNDARY_COLOR = '#000000';
-const GUIDE_LETTER_COLOR = 'rgba(150,160,185,0.22)';
 /** Wait this long after the last pen-up before scoring (resets on each new stroke). */
 const SCORE_IDLE_MS = 2500;
 
@@ -149,19 +148,6 @@ function redrawPaper(): void {
   strokeDashedGuide(lowerDashedY, w);
 }
 
-function drawGuideLetter(): void {
-  if (!ctx || scored) return;
-  const { w, bottomBlackY, topBlackY } = paperLayout(canvasCssWidth());
-  const zoneH = bottomBlackY - topBlackY;
-  if (zoneH < 8) return;
-  const fontSize = Math.round(zoneH * 0.82);
-  ctx.font = `${fontSize}px serif`;
-  ctx.fillStyle = GUIDE_LETTER_COLOR;
-  ctx.textAlign = 'center';
-  ctx.textBaseline = 'alphabetic';
-  ctx.fillText(currentLetter, w / 2, bottomBlackY - 4);
-}
-
 function drawInk(): void {
   if (!canvas || !ctx) return;
   const { w, h } = paperLayout(canvasCssWidth());
@@ -186,7 +172,6 @@ function drawInk(): void {
 
 function redrawCanvas(): void {
   redrawPaper();
-  drawGuideLetter();
   drawInk();
 }
 
