@@ -8,6 +8,7 @@ const MARGIN_COLOR = '#fca5a5';
 const MIDLINE_COLOR = '#334155';
 const MIDLINE_WIDTH = 4;
 const MIDLINE_DASH = [18, 12] as const;
+const BOUNDARY_COLOR = '#000000';
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
@@ -68,6 +69,20 @@ function redrawPaper(): void {
     ctx.moveTo(0, y + 0.5);
     ctx.lineTo(w, y + 0.5);
     ctx.stroke();
+  }
+
+  if (ruledYs.length >= 2) {
+    ctx.setLineDash([]);
+    ctx.lineCap = 'round';
+    ctx.lineWidth = MIDLINE_WIDTH;
+    ctx.strokeStyle = BOUNDARY_COLOR;
+    for (const y of [ruledYs[0], ruledYs[ruledYs.length - 1]]) {
+      const by = y + 0.5;
+      ctx.beginPath();
+      ctx.moveTo(0, by);
+      ctx.lineTo(w, by);
+      ctx.stroke();
+    }
   }
 
   const midIdx = Math.floor((ruledYs.length - 1) / 2);
