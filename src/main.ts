@@ -44,6 +44,7 @@ import {
   getVoiceBankQueueLength,
   syncLocalVoiceBankToCloud,
 } from './cloud-voice-bank';
+import { formatPublishedModelVersion } from './published-model';
 import {
   isTfReady,
   retrainFromVoiceBank,
@@ -429,11 +430,17 @@ function applyModelLoadStatus(load: TfInitResult): void {
     return;
   }
   if (load.source === 'published_fresh' && load.publishedVersion != null) {
-    setModelLoadStatus(`Shared classroom model loaded (v${load.publishedVersion})`, 'ok');
+    setModelLoadStatus(
+      `Shared classroom model loaded (v${formatPublishedModelVersion(load.publishedVersion)})`,
+      'ok',
+    );
     return;
   }
   if (load.source === 'published_cached' && load.publishedVersion != null) {
-    setModelLoadStatus(`Shared classroom model (v${load.publishedVersion})`, 'ok');
+    setModelLoadStatus(
+      `Shared classroom model (v${formatPublishedModelVersion(load.publishedVersion)})`,
+      'ok',
+    );
     return;
   }
   if (load.source === 'bootstrap') {
@@ -456,7 +463,9 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
     const shared =
       load.publishedVersion != null &&
       (load.source === 'published_fresh' || load.source === 'published_cached');
-    const sharedTag = shared ? ` | shared v${load.publishedVersion}` : '';
+    const sharedTag = shared
+      ? ` | shared v${formatPublishedModelVersion(load.publishedVersion!)}`
+      : '';
     $('netTxt').textContent = `TensorFlow.js WASM | ${getStage(stageId).label}${sharedTag}`;
   } else {
     $('netTxt').textContent = 'Heuristics only - publish or record teacher voice seed';

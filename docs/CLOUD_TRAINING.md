@@ -25,7 +25,7 @@ The teacher panel shows **Cloud training: N samples on server** when uploads wor
 | Voice setup (each letter) | POST `/api/voice-bank` with `EMBEDDING_DIM` landmark vector + letter key |
 | Teacher confirms | POST `/api/calibration` with same-length embedding + labels |
 | Offline | Queued in `localStorage`, retried on next load |
-| App start | Loads newest `public/models/<stage>/` if manifest version &gt; device version |
+| App start | Loads newest `public/models/<stage>/` if manifest version (float, e.g. 0.91) &gt; device version |
 | Local TF fit | Still runs for instant feedback on that device |
 
 ## 3. Publish the shared model (your machine)

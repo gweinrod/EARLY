@@ -21,6 +21,8 @@ from pathlib import Path
 
 import tensorflow as tf
 
+from model_version import bump_major_version, bump_minor_version, normalize_manifest_version
+
 ROOT = Path(__file__).resolve().parents[1]
 CALIBRATION_DIR = ROOT / "data" / "calibration"
 VOICE_BANK_DIR = ROOT / "data" / "voice-bank"
@@ -191,15 +193,15 @@ def build_model(num_classes: int) -> tf.keras.Model:
     )
 
 
-def read_manifest_version(stage_dir: Path) -> int:
+def read_manifest_version(stage_dir: Path) -> float:
     manifest_path = stage_dir / "manifest.json"
     if not manifest_path.is_file():
-        return 0
+        return 0.0
     try:
         data = json.loads(manifest_path.read_text(encoding="utf-8"))
-        return int(data.get("version", 0))
+        return normalize_manifest_version(float(data.get("version", 0)))
     except (json.JSONDecodeError, TypeError, ValueError):
-        return 0
+        return 0.0
 
 
 def main() -> None:
@@ -208,9 +210,15 @@ def main() -> None:
     parser.add_argument("--epochs", type=int, default=60)
     parser.add_argument(
         "--manifest-version",
-        type=int,
+        type=float,
         default=None,
-        help="Set manifest version (default: current manifest + 1). Use to pin e.g. 9 for 'model v0.9'.",
+        help="Pin manifest version (e.g. 0.9). Default: bump minor (+0.01) or major (+1.0).",
+    )
+    parser.add_argument(
+        "--manifest-bump",
+        choices=("minor", "major"),
+        default="minor",
+        help="When --manifest-version omitted: minor +0.01 (retrain), major next integer (embedding/arch change).",
     )
     args = parser.parse_args()
 
@@ -289,11 +297,13 @@ def main() -> None:
     )
     weights_path.unlink(missing_ok=True)
 
-    next_version = (
-        args.manifest_version
-        if args.manifest_version is not None
-        else read_manifest_version(stage_dir) + 1
-    )
+    current = read_manifest_version(stage_dir)
+    if args.manifest_version is not None:
+        next_version = normalize_manifest_version(args.manifest_version)
+    elif args.manifest_bump == "major":
+        next_version = bump_major_version(current)
+    else:
+        next_version = bump_minor_version(current)
     manifest = {
         "version": next_version,
         "stageId": args.stage,

@@ -80,7 +80,13 @@ if errorlevel 1 exit /b 1
 echo.
 echo [3/5] Train TensorFlow.js model...
 if defined MANIFEST_VERSION (
-  python tools\train_global_model.py --stage %STAGE% --manifest-version %MANIFEST_VERSION%
+  if defined MANIFEST_BUMP (
+    python tools\train_global_model.py --stage %STAGE% --manifest-version %MANIFEST_VERSION% --manifest-bump %MANIFEST_BUMP%
+  ) else (
+    python tools\train_global_model.py --stage %STAGE% --manifest-version %MANIFEST_VERSION%
+  )
+) else if defined MANIFEST_BUMP (
+  python tools\train_global_model.py --stage %STAGE% --manifest-bump %MANIFEST_BUMP%
 ) else (
   python tools\train_global_model.py --stage %STAGE%
 )
