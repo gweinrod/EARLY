@@ -9,6 +9,8 @@ const MIDLINE_COLOR = '#334155';
 const MIDLINE_WIDTH = 4;
 const MIDLINE_DASH = [18, 12] as const;
 const BOUNDARY_COLOR = '#000000';
+/** Blue ruled lines below the bottom black boundary (g, y, p descenders). */
+const DESCENDER_LINE_COUNT = 2;
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
@@ -23,35 +25,60 @@ function deviceUsesTouch(): boolean {
   );
 }
 
-function canvasCssSize(): number {
+function canvasCssWidth(): number {
   const wrap = $('letterWritingCanvasWrap');
   const w = wrap.clientWidth;
   return Math.max(200, Math.min(w, 360));
 }
 
+function paperLayout(w: number): {
+  w: number;
+  h: number;
+  lineGap: number;
+  topPad: number;
+  marginX: number;
+  mainRuledYs: number[];
+  descenderYs: number[];
+} {
+  const lineGap = Math.max(22, Math.round(w / 8));
+  const topPad = Math.round(lineGap * 0.65);
+  const marginX = Math.round(w * 0.12);
+
+  const mainRuledYs: number[] = [];
+  for (let y = topPad; y < w - lineGap * 0.4; y += lineGap) {
+    mainRuledYs.push(y);
+  }
+
+  const bottomBlackY = mainRuledYs[mainRuledYs.length - 1] ?? topPad;
+  const descenderYs: number[] = [];
+  for (let i = 1; i <= DESCENDER_LINE_COUNT; i++) {
+    descenderYs.push(bottomBlackY + i * lineGap);
+  }
+
+  const lastY = descenderYs[descenderYs.length - 1] ?? bottomBlackY;
+  const h = lastY + Math.round(lineGap * 0.55);
+
+  return { w, h, lineGap, topPad, marginX, mainRuledYs, descenderYs };
+}
+
 function resizeCanvas(): void {
   if (!canvas || !ctx) return;
-  const css = canvasCssSize();
+  const { w, h } = paperLayout(canvasCssWidth());
   const dpr = window.devicePixelRatio || 1;
-  canvas.width = Math.round(css * dpr);
-  canvas.height = Math.round(css * dpr);
-  canvas.style.width = `${css}px`;
-  canvas.style.height = `${css}px`;
+  canvas.width = Math.round(w * dpr);
+  canvas.height = Math.round(h * dpr);
+  canvas.style.width = `${w}px`;
+  canvas.style.height = `${h}px`;
   ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
   redrawPaper();
 }
 
 function redrawPaper(): void {
   if (!canvas || !ctx) return;
-  const w = canvasCssSize();
-  const h = w;
+  const { w, h, marginX, mainRuledYs, descenderYs } = paperLayout(canvasCssWidth());
   ctx.clearRect(0, 0, w, h);
   ctx.fillStyle = '#fffef8';
   ctx.fillRect(0, 0, w, h);
-
-  const lineGap = Math.max(22, Math.round(h / 8));
-  const topPad = Math.round(lineGap * 0.65);
-  const marginX = Math.round(w * 0.12);
 
   ctx.strokeStyle = MARGIN_COLOR;
   ctx.lineWidth = 1;
@@ -60,23 +87,22 @@ function redrawPaper(): void {
   ctx.lineTo(marginX, h);
   ctx.stroke();
 
-  const ruledYs: number[] = [];
+  const allBlueYs = [...mainRuledYs, ...descenderYs];
   ctx.strokeStyle = LINE_COLOR;
   ctx.lineWidth = 1;
-  for (let y = topPad; y < h - lineGap * 0.4; y += lineGap) {
-    ruledYs.push(y);
+  for (const y of allBlueYs) {
     ctx.beginPath();
     ctx.moveTo(0, y + 0.5);
     ctx.lineTo(w, y + 0.5);
     ctx.stroke();
   }
 
-  if (ruledYs.length >= 2) {
+  if (mainRuledYs.length >= 2) {
     ctx.setLineDash([]);
     ctx.lineCap = 'round';
     ctx.lineWidth = MIDLINE_WIDTH;
     ctx.strokeStyle = BOUNDARY_COLOR;
-    for (const y of [ruledYs[0], ruledYs[ruledYs.length - 1]]) {
+    for (const y of [mainRuledYs[0], mainRuledYs[mainRuledYs.length - 1]]) {
       const by = y + 0.5;
       ctx.beginPath();
       ctx.moveTo(0, by);
@@ -85,8 +111,8 @@ function redrawPaper(): void {
     }
   }
 
-  const midIdx = Math.floor((ruledYs.length - 1) / 2);
-  const midY = ruledYs[midIdx] ?? topPad + lineGap * 2;
+  const midIdx = Math.floor((mainRuledYs.length - 1) / 2);
+  const midY = mainRuledYs[midIdx] ?? mainRuledYs[0];
   const midlineY = midY + 0.5;
 
   ctx.setLineDash([...MIDLINE_DASH]);
