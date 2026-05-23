@@ -23,7 +23,7 @@
     "publish:model": "scripts\\publish-shared-model.bat",
     "publish:model:postgres": "scripts\\publish-shared-model-postgres.bat",
     "publish:writing-model": "scripts\\publish-letter-writing.bat",
-    "writing:train": "node tools/train_letter_writing_model.mjs"
+    "writing:train": "python tools/train_letter_writing_model.py"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

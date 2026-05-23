@@ -29,7 +29,7 @@ if not exist "data\writing-bank\teacher-seed.json" (
 
 echo.
 echo [1/4] Train letter-writing CNN from bootstrap seed...
-node tools\train_letter_writing_model.mjs
+python tools\train_letter_writing_model.py
 if errorlevel 1 exit /b 1
 
 echo.

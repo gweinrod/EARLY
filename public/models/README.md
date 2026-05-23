@@ -5,7 +5,7 @@ Ship TensorFlow.js exports here after training scripts.
 | Stage | Train command | Manifest |
 |-------|---------------|----------|
 | `alphabet` (speech) | `python tools/train_global_model.py --stage alphabet` | `alphabet/manifest.json` |
-| `letter-writing` | `node tools/train_letter_writing_model.mjs` | `letter-writing/manifest.json` |
+| `letter-writing` | `python tools/train_letter_writing_model.py` | `letter-writing/manifest.json` |
 
 - **`*/manifest.json`** — float version devices compare (e.g. `0.9`, `0.91`; major releases `1.0`, `2.0`)
 - **`*/model.json` + weight shards** — loaded by the app

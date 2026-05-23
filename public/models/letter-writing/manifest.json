@@ -1,0 +1,9 @@
+{
+  "version": 0.02,
+  "stageId": "letter-writing",
+  "modelUrl": "/models/letter-writing/model.json",
+  "trainedAt": "2026-05-23T21:45:19.464290+00:00",
+  "sampleCount": 104,
+  "bootstrapLetters": 26,
+  "judgmentSamples": 0
+}

@@ -12,7 +12,7 @@ Place **`teacher-seed.json`** here before running the publish script.
 
 ```powershell
 cd C:\EARLY
-node tools/train_letter_writing_model.mjs
+python tools/train_letter_writing_model.py
 scripts\publish-letter-writing.bat
 ```
 

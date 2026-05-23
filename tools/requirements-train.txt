@@ -1,3 +1,4 @@
-# Training script only (tools/train_global_model.py) — TF.js export uses Node.
+# Training scripts (tools/train_global_model.py, tools/train_letter_writing_model.py)
+# TF.js export for letter-writing uses Node (tools/export_letter_writing_tfjs.mjs).
 #   pip install -r tools/requirements-train.txt
 tensorflow>=2.15
