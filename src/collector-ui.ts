@@ -1,11 +1,6 @@
 import type { CurriculumStageId } from './curriculum';
 import { getStage, resolveItemKey } from './curriculum';
-import {
-  downloadSessionLog,
-  setStudentId,
-  updateTeacherJudgment,
-  type AttemptLog,
-} from './session-log';
+import { setStudentId, updateTeacherJudgment, type AttemptLog } from './session-log';
 import {
   clearLocalTrainingData,
   clearServerTrainingData,
@@ -84,7 +79,6 @@ export function initCollectorPanel(): void {
   studentInput.addEventListener('change', () => setStudentId(studentInput.value));
   studentInput.addEventListener('blur', () => setStudentId(studentInput.value));
 
-  $('btnExportLog').addEventListener('click', () => downloadSessionLog());
   $('btnHeSaidTarget').addEventListener('click', () => submitHeSaidTarget());
   $('btnClearServer').addEventListener('click', () => void onClearServer());
   $('btnClearLocal').addEventListener('click', () => void onClearLocal());

@@ -11,7 +11,9 @@ import {
   type CurriculumStageId,
   getStage,
   pickNextItemInOrder,
-  STAGE_ORDER,
+  pickPreviousItemInOrder,
+  STAGE_PILL_LABEL,
+  STAGE_PILL_ORDER,
 } from './curriculum';
 import {
   ensureDspEngine,
@@ -45,12 +47,7 @@ import {
   syncLocalVoiceBankToCloud,
 } from './cloud-voice-bank';
 import { formatPublishedModelVersion } from './published-model';
-import {
-  isTfReady,
-  retrainFromVoiceBank,
-  trainCalibrationSample,
-  type TfInitResult,
-} from './tf-phoneme';
+import { isTfReady, trainCalibrationSample, type TfInitResult } from './tf-phoneme';
 import { isVoiceBankComplete } from './voice-bank';
 import {
   initVoiceBootstrapUi,
@@ -118,12 +115,19 @@ function getAudioContext(): AudioContext {
   return audioCtx;
 }
 
+function wordPromptLabel(stageId: CurriculumStageId): string {
+  if (stageId === 'alphabet') return 'Say this letter name';
+  if (stageId === 'consonants') return 'Say this letter sound';
+  return 'Say this word';
+}
+
 function setTargetItem(item: CurriculumItem): void {
   curItem = item;
-  const stage = getStage(curStageId);
   $('tWord').textContent = item.display;
-  $('tPhon').textContent = `say: ${item.spokenName} | ${item.phonemeNote}`;
-  $('stageSubtitle').textContent = stage.subtitle;
+  $('wordLabel').textContent = wordPromptLabel(curStageId);
+  const phon = $('tPhon');
+  phon.textContent = '';
+  phon.hidden = true;
   clearFB();
   hide('hmWrap');
   hide('pbWrap');
@@ -132,6 +136,10 @@ function setTargetItem(item: CurriculumItem): void {
 
 function nextItem(): void {
   setTargetItem(pickNextItemInOrder(curStageId, curItem.key));
+}
+
+function previousItem(): void {
+  setTargetItem(pickPreviousItemInOrder(curStageId, curItem.key));
 }
 
 function displayFeedback(items: DspPrediction['heuristicItems']): void {
@@ -459,18 +467,6 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
   setTargetItem(getStage(stageId).items[0] ?? curItem);
   applyModelLoadStatus(load);
 
-  if (isTfReady()) {
-    const shared =
-      load.publishedVersion != null &&
-      (load.source === 'published_fresh' || load.source === 'published_cached');
-    const sharedTag = shared
-      ? ` | shared v${formatPublishedModelVersion(load.publishedVersion!)}`
-      : '';
-    $('netTxt').textContent = `TensorFlow.js WASM | ${getStage(stageId).label}${sharedTag}`;
-  } else {
-    $('netTxt').textContent = 'Heuristics only - publish or record teacher voice seed';
-  }
-
   void refreshCloudStats(stageId, getVoiceBankQueueLength());
   refreshLocalTrainingStatus(stageId);
 }
@@ -490,24 +486,6 @@ function onVoiceBootstrapComplete(): void {
     }
     await prepareStage(curStageId);
   })();
-}
-
-async function trainLocalFromVoiceBank(): Promise<void> {
-  if (!isVoiceBankComplete(curStageId)) {
-    showErr('Voice seed incomplete ? record all letters + silence first.');
-    return;
-  }
-  setModelLoadStatus('Training local model from voice seed?', 'neutral');
-  const ok = await retrainFromVoiceBank(curStageId);
-  await prepareStage(curStageId);
-  if (!ok) {
-    setModelLoadStatus('Local training failed ? check console', 'warn');
-    return;
-  }
-  setModelLoadStatus(
-    isTfReady() ? 'Local model ready (teacher voice seed)' : 'Training finished but model not ready',
-    isTfReady() ? 'ok' : 'warn',
-  );
 }
 
 async function toggleRec(): Promise<void> {
@@ -577,15 +555,13 @@ async function toggleRec(): Promise<void> {
 function initStagePills(): void {
   const container = $('pillGroup');
   container.innerHTML = '';
-  for (const stageId of STAGE_ORDER) {
-    if (stageId === 'legacy-cvc') continue;
+  for (const stageId of STAGE_PILL_ORDER) {
     const stage = getStage(stageId);
     if (!stage.items.length) continue;
     const btn = document.createElement('button');
     btn.type = 'button';
     btn.className = 'pill' + (stageId === curStageId ? ' on' : '');
-    btn.textContent = stage.label.replace('Stage ', 'S');
-    btn.title = stage.subtitle;
+    btn.textContent = STAGE_PILL_LABEL[stageId];
     btn.addEventListener('click', () => {
       document.querySelectorAll('.pill').forEach((p) => p.classList.remove('on'));
       btn.classList.add('on');
@@ -605,7 +581,7 @@ function applySettingsUi(): void {
 
   if (settings.collectorMode) show('collectorPanel');
   else hide('collectorPanel');
-  show('netBadge');
+  hide('netBadge');
 }
 
 function init(): void {
@@ -618,9 +594,6 @@ function init(): void {
   initStagePills();
   if (settings.collectorMode) {
     initCollectorPanel();
-    $('btnTrainLocalModel').addEventListener('click', () => {
-      void trainLocalFromVoiceBank();
-    });
     setJudgmentCompleteHandler((j) => {
       if (j.agrees) applyTeacherAcceptAsPass(j.teacherHeard);
       void onTeacherJudgment(j);
@@ -657,6 +630,10 @@ function init(): void {
   $('btnNext').addEventListener('click', () => {
     if (isVoiceBootstrapActive()) return;
     nextItem();
+  });
+  $('btnPrev').addEventListener('click', () => {
+    if (isVoiceBootstrapActive()) return;
+    previousItem();
   });
 
   $('debugMode').addEventListener('change', (e) => {

@@ -8,7 +8,7 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="EARLY" />
   <meta name="theme-color" content="#3b82f6" />
-  <title>EARLY — Phoneme Practice</title>
+  <title>EARLY — Alphabet Letter Names</title>
   <link rel="manifest" href="/manifest.json" />
   <link rel="apple-touch-icon" href="/icon.svg" />
   <link rel="stylesheet" href="/styles/main.css" />
@@ -20,31 +20,26 @@
     <h1 class="app-title" id="appTitle">EARLY</h1>
     <p class="app-version" id="appVersion" aria-label="app version"></p>
     <p class="model-status" id="modelStatus" aria-live="polite"></p>
-    <p class="app-sub">voice calibration &amp; phoneme practice</p>
-    <p id="stageSubtitle" class="stage-subtitle"></p>
+    <p class="app-sub">Alphabet Letter Names</p>
   </header>
 
   <div id="errBox"></div>
 
   <div id="collectorPanel" class="collector-panel">
-    <p class="sec-label">teacher session</p>
     <label class="field-label">
       student ID (anonymous)
       <input type="text" id="studentId" class="text-input" placeholder="e.g. S12" autocomplete="off" />
     </label>
-    <p id="cloudSyncStatus" class="cloud-sync-status">Cloud training: checking…</p>
-    <p id="localTrainingStatus" class="cloud-sync-status">Local training: …</p>
+    <p id="cloudSyncStatus" class="cloud-sync-status debug-only">Cloud training: checking…</p>
+    <p id="localTrainingStatus" class="cloud-sync-status debug-only">Local training: …</p>
     <p id="dataClearStatus" class="data-clear-status" style="display:none"></p>
-    <div class="collector-actions">
-      <button type="button" class="btn-secondary" id="btnExportLog">export session log</button>
-      <button type="button" class="btn-secondary" id="btnRedoVoiceBank">record teacher voice (seed)</button>
-      <button type="button" class="btn-secondary" id="btnTrainLocalModel">train local model from voice seed</button>
-      <button type="button" class="btn-secondary btn-danger" id="btnClearServer">clear server data</button>
-      <button type="button" class="btn-secondary btn-danger" id="btnClearLocal">clear this device</button>
-    </div>
     <div class="teacher-toggles">
-      <label class="mode-toggle"><input type="checkbox" id="debugMode" /> show ML debug</label>
-
+      <label class="mode-toggle"><input type="checkbox" id="debugMode" /> Show Debug</label>
+      <button type="button" class="btn-secondary" id="btnRedoVoiceBank">Record teacher voice (seed)</button>
+    </div>
+    <div class="collector-actions debug-only">
+      <button type="button" class="btn-secondary btn-danger" id="btnClearServer">Clear Server</button>
+      <button type="button" class="btn-secondary btn-danger" id="btnClearLocal">Clear Device</button>
     </div>
     <div id="legacyToggles" class="teacher-toggles" style="display:none">
       <label class="mode-toggle"><input type="checkbox" id="nonsenseMode" /> nonsense words (legacy)</label>
@@ -69,7 +64,7 @@
     <span id="netTxt">collecting training data silently</span>
   </div>
 
-  <p class="sec-label">phoneme group</p>
+  <p class="sec-label">Unit Stage</p>
   <div class="pills" id="pillGroup"></div>
 
   <div class="scores student-hide">
@@ -79,9 +74,9 @@
   </div>
 
   <section class="word-stage">
-    <p class="word-label">say this word</p>
+    <p class="word-label" id="wordLabel">Say this letter name</p>
     <div id="tWord">—</div>
-    <div id="tPhon"></div>
+    <div id="tPhon" class="letter-hint" hidden></div>
     <div id="resultBanner" class="result-banner" style="display:none" aria-hidden="true"></div>
   </section>
 
@@ -94,7 +89,10 @@
       <span class="dot"></span>
       <span id="btnLbl">tap to speak</span>
     </button>
-    <button type="button" class="btn-next" id="btnNext">next word</button>
+    <div class="word-nav-row">
+      <button type="button" class="btn-prev" id="btnPrev">previous word</button>
+      <button type="button" class="btn-next" id="btnNext">next word</button>
+    </div>
   </div>
 
   <div id="judgmentBlock" class="judgment-block" style="display:none">

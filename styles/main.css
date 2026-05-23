@@ -66,9 +66,30 @@ body {
   margin-top: auto;
   padding-top: 1rem;
 }
+.word-nav-row {
+  display: flex;
+  gap: 10px;
+  width: 100%;
+}
+.word-nav-row .btn-prev,
+.word-nav-row .btn-next {
+  flex: 1;
+  width: auto;
+  min-width: 0;
+}
 
 body.student-face .tech-only { display: none !important; }
 body.student-face .student-hide { display: none !important; }
+body.ml-debug .debug-only { display: block !important; }
+body:not(.ml-debug) .debug-only { display: none !important; }
+body.ml-debug #netBadge { display: none !important; }
+.teacher-toggles {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 10px 14px;
+  margin-top: 0.5rem;
+}
 
 .collector-panel {
   background: #f1f5f9;
@@ -230,7 +251,6 @@ body.student-face .student-hide { display: none !important; }
 }
 .judgment-hint { font-size: 11px; color: #94a3b8; margin-top: 8px; line-height: 1.35; }
 .judgment-status { font-size: 12px; color: #64748b; margin-top: 8px; display: none; }
-.teacher-toggles { display: flex; flex-direction: column; gap: 6px; margin-top: 0.75rem; }
 
 #netBadge {
   display: flex;
@@ -345,6 +365,18 @@ body.student-face .student-hide { display: none !important; }
   touch-action: manipulation;
 }
 .btn-next:hover { background: #f1f5f9; }
+.btn-prev {
+  min-height: 48px;
+  padding: 12px 16px;
+  border-radius: 8px;
+  border: 1px solid #e2e8f0;
+  background: transparent;
+  color: #64748b;
+  font-size: 16px;
+  cursor: pointer;
+  touch-action: manipulation;
+}
+.btn-prev:hover { background: #f1f5f9; }
 .dot {
   width: 8px; height: 8px;
   border-radius: 50%;

@@ -81,14 +81,14 @@ const SHORT_VOWEL_CVC: CurriculumItem[] = [
 export const CURRICULUM_STAGES: Record<CurriculumStageId, CurriculumStage> = {
   alphabet: {
     id: 'alphabet',
-    label: 'Stage 1  letter names',
-    subtitle: 'Say the letter name (bee, dee, ). Consonant names contain their sound.',
+    label: 'Letter Names',
+    subtitle: '',
     items: ALPHABET_ITEMS,
   },
   consonants: {
     id: 'consonants',
-    label: 'Stage 2  consonant sounds',
-    subtitle: 'Say the phoneme only (/b/, /d/, ). Letter name is the anchor.',
+    label: 'Letter Sounds',
+    subtitle: '',
     items: CONSONANT_ITEMS,
   },
   'short-vowels': {
@@ -106,6 +106,28 @@ export const CURRICULUM_STAGES: Record<CurriculumStageId, CurriculumStage> = {
 };
 
 export const STAGE_ORDER: CurriculumStageId[] = ['alphabet', 'consonants', 'short-vowels', 'legacy-cvc'];
+
+/** Stages shown as unit pills in the practice UI. */
+export const STAGE_PILL_ORDER: CurriculumStageId[] = ['alphabet', 'consonants'];
+
+export const STAGE_PILL_LABEL: Record<CurriculumStageId, string> = {
+  alphabet: 'Letter Names',
+  consonants: 'Letter Sounds',
+  'short-vowels': 'Short Vowels',
+  'legacy-cvc': 'Legacy',
+};
+
+export function pickPreviousItemInOrder(
+  stageId: CurriculumStageId,
+  currentKey?: string,
+): CurriculumItem {
+  const items = getStage(stageId).items;
+  if (!items.length) throw new Error(`Stage ${stageId} has no items`);
+  if (!currentKey) return items[items.length - 1];
+  const idx = items.findIndex((i) => i.key === currentKey);
+  const prevIdx = idx <= 0 ? items.length - 1 : idx - 1;
+  return items[prevIdx];
+}
 
 export function getStage(id: CurriculumStageId): CurriculumStage {
   return CURRICULUM_STAGES[id];
