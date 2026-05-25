@@ -12,6 +12,43 @@
 import type { Stroke, StrokePoint, LetterStrokeFeatures } from './letter-writing-data';
 
 // ---------------------------------------------------------------------------
+// Paper geometry
+// ---------------------------------------------------------------------------
+
+/**
+ * Paper-line positions as fractions of the canvas height.
+ * MUST stay in sync with paperLayout() in letter-writing-ui.ts (7-row grid).
+ *
+ * The drawing canvas is divided by four horizontal guides:
+ *   topBlack       — top of the capital / ascender zone
+ *   midline        — upper dashed blue line (x-height ceiling)
+ *   bottomBlack    — baseline (bottom of upper-zone letters)
+ *   lowerDashed    — bottom of the descender zone (g, p, q, y, j)
+ *
+ * Anything below lowerDashed is bottom margin — students never write there.
+ */
+export const PAPER_LINE_FRACTIONS = {
+  topBlack: 0.063,
+  midline: 0.354,
+  bottomBlack: 0.646,
+  lowerDashed: 0.937,
+} as const;
+
+/** Vertical zone (canvas-normalized) where this letter is expected to live. */
+export function expectedLetterZone(
+  rule: Pick<LetterRule, 'hasAscender' | 'hasDescender'>,
+  isUppercase: boolean,
+): { top: number; bottom: number; height: number } {
+  const top = isUppercase || rule.hasAscender
+    ? PAPER_LINE_FRACTIONS.topBlack
+    : PAPER_LINE_FRACTIONS.midline;
+  const bottom = rule.hasDescender
+    ? PAPER_LINE_FRACTIONS.lowerDashed
+    : PAPER_LINE_FRACTIONS.bottomBlack;
+  return { top, bottom, height: bottom - top };
+}
+
+// ---------------------------------------------------------------------------
 // Feature extraction
 // ---------------------------------------------------------------------------
 
@@ -170,7 +207,11 @@ export interface CrossbarRequirement {
 interface LetterRule {
   /** Expected number of strokes [min, max]. */
   strokes: [number, number];
-  /** Minimum coverage fraction (how tall the letter should be). */
+  /**
+   * Minimum coverage as a fraction of the letter's *expected zone* height
+   * (capital/ascender zone, x-height zone, or descender zone — chosen via
+   * hasAscender / hasDescender). 1.0 means "fill your zone top to bottom".
+   */
   minCoverage: number;
   /** Aspect ratio range [min, max] (width/height). */
   aspectRatio: [number, number];
@@ -189,11 +230,16 @@ interface LetterRule {
   crossbar?: CrossbarRequirement;
 }
 
-/** Rules indexed by letter (uppercase) */
+/**
+ * Rules indexed by letter (uppercase).
+ * minCoverage is a fraction of the letter's expected zone height (capital
+ * zone ≈ 0.58 of canvas), so 0.75 means "fill at least three-quarters of
+ * the space between the black baselines".
+ */
 const UPPER_RULES: Record<string, LetterRule> = {
   A: {
     strokes: [2, 3],
-    minCoverage: 0.65,
+    minCoverage: 0.75,
     aspectRatio: [0.4, 1.1],
     isRound: false,
     hasDescender: false,
@@ -208,61 +254,66 @@ const UPPER_RULES: Record<string, LetterRule> = {
         'A needs a horizontal crossbar near the dashed blue midline — draw it as a separate stroke.',
     },
   },
-  B: { strokes: [2, 3], minCoverage: 0.65, aspectRatio: [0.4, 0.9], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then two bumps on the right.' },
-  C: { strokes: [1, 1], minCoverage: 0.60, aspectRatio: [0.5, 1.1], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'One curved stroke, open on the right.' },
-  D: { strokes: [2, 2], minCoverage: 0.65, aspectRatio: [0.4, 0.9], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then a big curve on the right.' },
-  E: { strokes: [3, 4], minCoverage: 0.65, aspectRatio: [0.5, 1.2], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then three horizontal lines.' },
-  F: { strokes: [2, 3], minCoverage: 0.65, aspectRatio: [0.4, 1.1], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then two horizontal lines at top and middle.' },
-  G: { strokes: [1, 2], minCoverage: 0.60, aspectRatio: [0.5, 1.1], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Like C, but with a short horizontal line going inward at the middle.' },
-  H: { strokes: [2, 3], minCoverage: 0.65, aspectRatio: [0.5, 1.2], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Two tall lines connected by a crossbar in the middle.' },
-  I: { strokes: [1, 3], minCoverage: 0.65, aspectRatio: [0.0, 0.5], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'One vertical line (and optional serifs at top and bottom).' },
-  J: { strokes: [1, 2], minCoverage: 0.65, aspectRatio: [0.1, 0.7], isRound: true,  hasDescender: true,  hasAscender: true,  strokeHint: 'A line that curves to the left at the bottom.' },
-  K: { strokes: [2, 3], minCoverage: 0.65, aspectRatio: [0.4, 1.1], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then two diagonal lines touching the middle.' },
-  L: { strokes: [1, 2], minCoverage: 0.65, aspectRatio: [0.3, 0.9], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then a short line to the right at the bottom.' },
-  M: { strokes: [1, 4], minCoverage: 0.65, aspectRatio: [0.5, 1.4], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Two tall lines with a V shape between them at the top.' },
-  N: { strokes: [1, 3], minCoverage: 0.65, aspectRatio: [0.4, 1.2], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Two tall lines connected by a diagonal.' },
-  O: { strokes: [1, 2], minCoverage: 0.60, aspectRatio: [0.5, 1.2], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'One smooth closed oval.' },
-  P: { strokes: [2, 2], minCoverage: 0.65, aspectRatio: [0.3, 0.9], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then one bump on the upper right.' },
-  Q: { strokes: [2, 2], minCoverage: 0.60, aspectRatio: [0.5, 1.2], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'A circle with a small diagonal tail at the lower right.' },
-  R: { strokes: [2, 3], minCoverage: 0.65, aspectRatio: [0.4, 1.0], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Like P but with a diagonal leg kicking right.' },
-  S: { strokes: [1, 1], minCoverage: 0.60, aspectRatio: [0.4, 1.0], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'One curvy stroke — like two half-circles in opposite directions.' },
-  T: { strokes: [2, 2], minCoverage: 0.65, aspectRatio: [0.5, 1.5], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'A tall line with a horizontal line across the top.' },
-  U: { strokes: [1, 2], minCoverage: 0.60, aspectRatio: [0.4, 1.1], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Two tall lines joined by a curve at the bottom.' },
-  V: { strokes: [1, 2], minCoverage: 0.65, aspectRatio: [0.5, 1.3], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Two diagonal lines meeting at a point at the bottom.' },
-  W: { strokes: [1, 4], minCoverage: 0.65, aspectRatio: [0.7, 2.0], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Like two V shapes side by side.' },
-  X: { strokes: [2, 2], minCoverage: 0.65, aspectRatio: [0.5, 1.3], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Two diagonal lines crossing in the middle.' },
-  Y: { strokes: [2, 3], minCoverage: 0.65, aspectRatio: [0.4, 1.2], isRound: false, hasDescender: true,  hasAscender: true,  strokeHint: 'A V on top with a line dropping down from the centre.' },
-  Z: { strokes: [1, 3], minCoverage: 0.65, aspectRatio: [0.5, 1.5], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Top line, then a diagonal down-left, then bottom line.' },
+  B: { strokes: [2, 3], minCoverage: 0.75, aspectRatio: [0.4, 0.9], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then two bumps on the right.' },
+  C: { strokes: [1, 1], minCoverage: 0.70, aspectRatio: [0.5, 1.1], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'One curved stroke, open on the right.' },
+  D: { strokes: [2, 2], minCoverage: 0.75, aspectRatio: [0.4, 0.9], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then a big curve on the right.' },
+  E: { strokes: [3, 4], minCoverage: 0.75, aspectRatio: [0.5, 1.2], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then three horizontal lines.' },
+  F: { strokes: [2, 3], minCoverage: 0.75, aspectRatio: [0.4, 1.1], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then two horizontal lines at top and middle.' },
+  G: { strokes: [1, 2], minCoverage: 0.70, aspectRatio: [0.5, 1.1], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Like C, but with a short horizontal line going inward at the middle.' },
+  H: { strokes: [2, 3], minCoverage: 0.75, aspectRatio: [0.5, 1.2], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Two tall lines connected by a crossbar in the middle.' },
+  I: { strokes: [1, 3], minCoverage: 0.75, aspectRatio: [0.0, 0.5], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'One vertical line (and optional serifs at top and bottom).' },
+  J: { strokes: [1, 2], minCoverage: 0.70, aspectRatio: [0.1, 0.7], isRound: true,  hasDescender: true,  hasAscender: true,  strokeHint: 'A line that curves to the left at the bottom.' },
+  K: { strokes: [2, 3], minCoverage: 0.75, aspectRatio: [0.4, 1.1], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then two diagonal lines touching the middle.' },
+  L: { strokes: [1, 2], minCoverage: 0.75, aspectRatio: [0.3, 0.9], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then a short line to the right at the bottom.' },
+  M: { strokes: [1, 4], minCoverage: 0.75, aspectRatio: [0.5, 1.4], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Two tall lines with a V shape between them at the top.' },
+  N: { strokes: [1, 3], minCoverage: 0.75, aspectRatio: [0.4, 1.2], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Two tall lines connected by a diagonal.' },
+  O: { strokes: [1, 2], minCoverage: 0.70, aspectRatio: [0.5, 1.2], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'One smooth closed oval.' },
+  P: { strokes: [2, 2], minCoverage: 0.75, aspectRatio: [0.3, 0.9], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then one bump on the upper right.' },
+  Q: { strokes: [2, 2], minCoverage: 0.70, aspectRatio: [0.5, 1.2], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'A circle with a small diagonal tail at the lower right.' },
+  R: { strokes: [2, 3], minCoverage: 0.75, aspectRatio: [0.4, 1.0], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Like P but with a diagonal leg kicking right.' },
+  S: { strokes: [1, 1], minCoverage: 0.70, aspectRatio: [0.4, 1.0], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'One curvy stroke — like two half-circles in opposite directions.' },
+  T: { strokes: [2, 2], minCoverage: 0.75, aspectRatio: [0.5, 1.5], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'A tall line with a horizontal line across the top.' },
+  U: { strokes: [1, 2], minCoverage: 0.70, aspectRatio: [0.4, 1.1], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Two tall lines joined by a curve at the bottom.' },
+  V: { strokes: [1, 2], minCoverage: 0.75, aspectRatio: [0.5, 1.3], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Two diagonal lines meeting at a point at the bottom.' },
+  W: { strokes: [1, 4], minCoverage: 0.75, aspectRatio: [0.7, 2.0], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Like two V shapes side by side.' },
+  X: { strokes: [2, 2], minCoverage: 0.75, aspectRatio: [0.5, 1.3], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Two diagonal lines crossing in the middle.' },
+  Y: { strokes: [2, 3], minCoverage: 0.70, aspectRatio: [0.4, 1.2], isRound: false, hasDescender: true,  hasAscender: true,  strokeHint: 'A V on top with a line dropping down from the centre.' },
+  Z: { strokes: [1, 3], minCoverage: 0.75, aspectRatio: [0.5, 1.5], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Top line, then a diagonal down-left, then bottom line.' },
 };
 
-/** Rules indexed by letter (lowercase). */
+/**
+ * Rules indexed by letter (lowercase).
+ * minCoverage is a fraction of the letter's expected zone — x-height for
+ * plain lowercase, ascender zone for b/d/f/h/k/l/t, descender zone for
+ * g/j/p/q/y.
+ */
 const LOWER_RULES: Record<string, LetterRule> = {
-  a: { strokes: [1, 2], minCoverage: 0.30, aspectRatio: [0.5, 1.4], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'A small circle then a short line on the right.' },
-  b: { strokes: [1, 2], minCoverage: 0.55, aspectRatio: [0.4, 1.0], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'A tall line down, then a bump on the right.' },
-  c: { strokes: [1, 1], minCoverage: 0.30, aspectRatio: [0.5, 1.2], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'Small open curve facing right.' },
-  d: { strokes: [1, 2], minCoverage: 0.55, aspectRatio: [0.4, 1.0], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'A small circle, then a tall line on the right.' },
-  e: { strokes: [1, 1], minCoverage: 0.30, aspectRatio: [0.5, 1.3], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'A small loop — start at the middle, curve around and open left.' },
-  f: { strokes: [1, 2], minCoverage: 0.55, aspectRatio: [0.2, 0.8], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'A curved top, then a long line down, then a crossbar.' },
-  g: { strokes: [1, 2], minCoverage: 0.45, aspectRatio: [0.4, 1.1], isRound: true,  hasDescender: true,  hasAscender: false, strokeHint: 'A small circle, then a line dropping below the baseline and curling left.' },
-  h: { strokes: [1, 2], minCoverage: 0.55, aspectRatio: [0.4, 1.0], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Tall line down, then a hump on the right from midway.' },
-  i: { strokes: [1, 2], minCoverage: 0.30, aspectRatio: [0.0, 0.4], isRound: false, hasDescender: false, hasAscender: false, strokeHint: 'Short line, then a dot above.' },
-  j: { strokes: [1, 2], minCoverage: 0.40, aspectRatio: [0.0, 0.5], isRound: true,  hasDescender: true,  hasAscender: false, strokeHint: 'Short line curving left below the baseline, then a dot above.' },
-  k: { strokes: [2, 3], minCoverage: 0.55, aspectRatio: [0.4, 1.1], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Tall line, then two diagonal strokes touching the middle.' },
-  l: { strokes: [1, 1], minCoverage: 0.55, aspectRatio: [0.0, 0.4], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'One tall straight line.' },
-  m: { strokes: [1, 3], minCoverage: 0.30, aspectRatio: [0.7, 2.0], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'Two humps side by side (wider than other letters).' },
-  n: { strokes: [1, 2], minCoverage: 0.30, aspectRatio: [0.4, 1.2], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'One hump — line down then arch right and down.' },
-  o: { strokes: [1, 2], minCoverage: 0.30, aspectRatio: [0.6, 1.3], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'A closed oval.' },
-  p: { strokes: [1, 2], minCoverage: 0.45, aspectRatio: [0.4, 1.0], isRound: true,  hasDescender: true,  hasAscender: false, strokeHint: 'Line dropping below baseline, with a bump on the upper right.' },
-  q: { strokes: [1, 2], minCoverage: 0.45, aspectRatio: [0.4, 1.0], isRound: true,  hasDescender: true,  hasAscender: false, strokeHint: 'Small circle, then a line dropping below baseline to the right.' },
-  r: { strokes: [1, 2], minCoverage: 0.30, aspectRatio: [0.2, 0.8], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'Line down then a small hook curving right at the top.' },
-  s: { strokes: [1, 1], minCoverage: 0.30, aspectRatio: [0.4, 1.1], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'Small S-curve.' },
-  t: { strokes: [1, 2], minCoverage: 0.50, aspectRatio: [0.3, 1.0], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Tall line (just above midline), then a crossbar at the midline.' },
-  u: { strokes: [1, 2], minCoverage: 0.30, aspectRatio: [0.4, 1.2], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'Two lines joined by a curve at the bottom.' },
-  v: { strokes: [1, 2], minCoverage: 0.30, aspectRatio: [0.5, 1.4], isRound: false, hasDescender: false, hasAscender: false, strokeHint: 'Two diagonals meeting at a point at the bottom.' },
-  w: { strokes: [1, 4], minCoverage: 0.30, aspectRatio: [0.8, 2.2], isRound: false, hasDescender: false, hasAscender: false, strokeHint: 'Like two small v shapes side by side.' },
-  x: { strokes: [2, 2], minCoverage: 0.30, aspectRatio: [0.5, 1.4], isRound: false, hasDescender: false, hasAscender: false, strokeHint: 'Two short diagonals crossing.' },
-  y: { strokes: [1, 2], minCoverage: 0.40, aspectRatio: [0.4, 1.2], isRound: false, hasDescender: true,  hasAscender: false, strokeHint: 'V on top, then the right leg continues below the baseline.' },
-  z: { strokes: [1, 3], minCoverage: 0.30, aspectRatio: [0.5, 1.6], isRound: false, hasDescender: false, hasAscender: false, strokeHint: 'Top line, diagonal down-left, then bottom line.' },
+  a: { strokes: [1, 2], minCoverage: 0.70, aspectRatio: [0.5, 1.4], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'A small circle then a short line on the right.' },
+  b: { strokes: [1, 2], minCoverage: 0.75, aspectRatio: [0.4, 1.0], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'A tall line down, then a bump on the right.' },
+  c: { strokes: [1, 1], minCoverage: 0.65, aspectRatio: [0.5, 1.2], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'Small open curve facing right.' },
+  d: { strokes: [1, 2], minCoverage: 0.75, aspectRatio: [0.4, 1.0], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'A small circle, then a tall line on the right.' },
+  e: { strokes: [1, 1], minCoverage: 0.65, aspectRatio: [0.5, 1.3], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'A small loop — start at the middle, curve around and open left.' },
+  f: { strokes: [1, 2], minCoverage: 0.75, aspectRatio: [0.2, 0.8], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'A curved top, then a long line down, then a crossbar.' },
+  g: { strokes: [1, 2], minCoverage: 0.70, aspectRatio: [0.4, 1.1], isRound: true,  hasDescender: true,  hasAscender: false, strokeHint: 'A small circle, then a line dropping below the baseline and curling left.' },
+  h: { strokes: [1, 2], minCoverage: 0.75, aspectRatio: [0.4, 1.0], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Tall line down, then a hump on the right from midway.' },
+  i: { strokes: [1, 2], minCoverage: 0.55, aspectRatio: [0.0, 0.4], isRound: false, hasDescender: false, hasAscender: false, strokeHint: 'Short line, then a dot above.' },
+  j: { strokes: [1, 2], minCoverage: 0.55, aspectRatio: [0.0, 0.5], isRound: true,  hasDescender: true,  hasAscender: false, strokeHint: 'Short line curving left below the baseline, then a dot above.' },
+  k: { strokes: [2, 3], minCoverage: 0.75, aspectRatio: [0.4, 1.1], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Tall line, then two diagonal strokes touching the middle.' },
+  l: { strokes: [1, 1], minCoverage: 0.80, aspectRatio: [0.0, 0.4], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'One tall straight line.' },
+  m: { strokes: [1, 3], minCoverage: 0.65, aspectRatio: [0.7, 2.0], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'Two humps side by side (wider than other letters).' },
+  n: { strokes: [1, 2], minCoverage: 0.65, aspectRatio: [0.4, 1.2], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'One hump — line down then arch right and down.' },
+  o: { strokes: [1, 2], minCoverage: 0.65, aspectRatio: [0.6, 1.3], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'A closed oval.' },
+  p: { strokes: [1, 2], minCoverage: 0.70, aspectRatio: [0.4, 1.0], isRound: true,  hasDescender: true,  hasAscender: false, strokeHint: 'Line dropping below baseline, with a bump on the upper right.' },
+  q: { strokes: [1, 2], minCoverage: 0.70, aspectRatio: [0.4, 1.0], isRound: true,  hasDescender: true,  hasAscender: false, strokeHint: 'Small circle, then a line dropping below baseline to the right.' },
+  r: { strokes: [1, 2], minCoverage: 0.65, aspectRatio: [0.2, 0.8], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'Line down then a small hook curving right at the top.' },
+  s: { strokes: [1, 1], minCoverage: 0.65, aspectRatio: [0.4, 1.1], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'Small S-curve.' },
+  t: { strokes: [1, 2], minCoverage: 0.55, aspectRatio: [0.3, 1.0], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Tall line (just above midline), then a crossbar at the midline.' },
+  u: { strokes: [1, 2], minCoverage: 0.65, aspectRatio: [0.4, 1.2], isRound: true,  hasDescender: false, hasAscender: false, strokeHint: 'Two lines joined by a curve at the bottom.' },
+  v: { strokes: [1, 2], minCoverage: 0.65, aspectRatio: [0.5, 1.4], isRound: false, hasDescender: false, hasAscender: false, strokeHint: 'Two diagonals meeting at a point at the bottom.' },
+  w: { strokes: [1, 4], minCoverage: 0.65, aspectRatio: [0.8, 2.2], isRound: false, hasDescender: false, hasAscender: false, strokeHint: 'Like two small v shapes side by side.' },
+  x: { strokes: [2, 2], minCoverage: 0.65, aspectRatio: [0.5, 1.4], isRound: false, hasDescender: false, hasAscender: false, strokeHint: 'Two short diagonals crossing.' },
+  y: { strokes: [1, 2], minCoverage: 0.70, aspectRatio: [0.4, 1.2], isRound: false, hasDescender: true,  hasAscender: false, strokeHint: 'V on top, then the right leg continues below the baseline.' },
+  z: { strokes: [1, 3], minCoverage: 0.65, aspectRatio: [0.5, 1.6], isRound: false, hasDescender: false, hasAscender: false, strokeHint: 'Top line, diagonal down-left, then bottom line.' },
 };
 
 export function getLetterRule(letter: string, isUppercase: boolean): LetterRule | null {
@@ -368,14 +419,24 @@ export function scoreLetterAttempt(
     return { score, pass: score >= 60, feedback: [], warnings: [], hardFail: false };
   }
 
-  // --- Coverage (30 pts) ---
-  if (features.coverageFraction >= rule.minCoverage) {
+  // --- Coverage (30 pts) — fraction of expected zone, not whole canvas ---
+  const zone = expectedLetterZone(rule, isUppercase);
+  const zoneCoverage = zone.height > 0 ? features.bboxH / zone.height : 0;
+  if (zoneCoverage >= rule.minCoverage) {
     score += 30;
-  } else if (features.coverageFraction >= rule.minCoverage * 0.7) {
+  } else if (zoneCoverage >= rule.minCoverage * 0.7) {
     score += 15;
-    warnings.push(`Try to make the letter ${isUppercase ? 'taller' : 'fill more of the writing zone'}.`);
+    warnings.push(
+      isUppercase
+        ? 'Try to make the letter fill the space between the solid black lines.'
+        : rule.hasDescender
+          ? 'Try to fill the writing zone from the dashed midline down through the descender line.'
+          : rule.hasAscender
+            ? 'Try to make the letter fill the space between the solid black lines.'
+            : 'Try to fill the writing zone between the dashed midline and the bottom black line.',
+    );
   } else {
-    feedback.push(`The letter is too small — try to fill the writing lines.`);
+    feedback.push('The letter is too small — try to fill the writing zone.');
   }
 
   // --- Stroke count (30 pts) ---
