@@ -79,6 +79,27 @@ const ALPHABET_ITEMS: CurriculumItem[] = [
 ];
 
 /** Stage 2  consonant phonemes (letter name as anchor). */
+/**
+ * Letter-writing stage — A–Z then a–z (52 items).
+ *
+ * Distinct keys (`U-a`, `L-a`) keep upper- and lowercase as separate curriculum
+ * items so pickNextItemInOrder cycles A → … → Z → a → … → z → A.
+ */
+const LETTER_WRITING_ITEMS: CurriculumItem[] = [
+  ...ALPHABET_ITEMS.map((x) => ({
+    ...x,
+    key: `U-${x.key}`,
+    display: x.key.toUpperCase(),
+    aliases: [x.key, x.key.toUpperCase()],
+  })),
+  ...ALPHABET_ITEMS.map((x) => ({
+    ...x,
+    key: `L-${x.key}`,
+    display: x.key.toLowerCase(),
+    aliases: [x.key.toLowerCase()],
+  })),
+];
+
 const CONSONANT_ITEMS: CurriculumItem[] = ALPHABET_ITEMS.filter((x) => !'aeiou'.includes(x.key)).map((x) => ({
   ...x,
   spokenName: x.key,
@@ -112,7 +133,7 @@ export const CURRICULUM_STAGES: Partial<Record<CurriculumStageId, CurriculumStag
     id: 'letter-writing',
     label: 'Letter Writing',
     subtitle: '',
-    items: ALPHABET_ITEMS,
+    items: LETTER_WRITING_ITEMS,
   },
   'short-vowels': {
     id: 'short-vowels',

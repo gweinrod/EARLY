@@ -75,7 +75,24 @@ def _rasterize_pure(
 
 
 def letter_to_index(letter: str) -> int:
-    code = letter.upper()[0]
-    if not ("A" <= code <= "Z"):
+    """
+    Case-sensitive map. A–Z → 0..25, a–z → 26..51.
+    Returns -1 for anything else.
+    """
+    if not letter:
         return -1
-    return ord(code) - ord("A")
+    ch = letter[0]
+    code = ord(ch)
+    if 65 <= code <= 90:
+        return code - 65
+    if 97 <= code <= 122:
+        return 26 + (code - 97)
+    return -1
+
+
+def index_to_letter(index: int) -> str:
+    if 0 <= index < 26:
+        return chr(65 + index)
+    if 26 <= index < 52:
+        return chr(97 + (index - 26))
+    return "?"

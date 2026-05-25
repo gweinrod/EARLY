@@ -26,8 +26,8 @@ from model_version import bump_minor_version, normalize_manifest_version
 
 ROOT = Path(__file__).resolve().parents[1]
 STAGE_ID = "letter-writing"
-LETTERS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZ")
-NUM_CLASSES = 26
+LETTERS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
+NUM_CLASSES = 52
 BANK_PATH = ROOT / "data" / "writing-bank" / "teacher-seed.json"
 CALIBRATION_DIR = ROOT / "data" / "writing-calibration"
 STAGE_DIR = ROOT / "public" / "models" / STAGE_ID

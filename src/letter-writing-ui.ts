@@ -9,7 +9,6 @@ import {
   expectedStrokes,
   extractStrokeFeatures,
   getLetterRule,
-  getStrokeHint,
   scoreLetterAttempt,
 } from './letter-writing-scoring';
 import { refreshWritingSeedExportButtons } from './letter-writing-bank';
@@ -218,17 +217,18 @@ function renderFeedbackLines(lines: FeedbackLine[], pass: boolean): void {
 }
 
 function updateTargetHints(): void {
-  const hint = getStrokeHint(currentLetter, currentIsUppercase);
-  const expected = expectedStrokes(currentLetter, currentIsUppercase);
-  const strokeHintEl = $('letterWritingStrokeHint');
-  strokeHintEl.textContent = hint;
-  strokeHintEl.hidden = !hint;
-
   if (!scored) {
+    const expected = expectedStrokes(currentLetter, currentIsUppercase);
     $('letterWritingScore').textContent = expected ? `Expected: ${expected}` : '';
     $('letterWritingFeedback').textContent = '';
     $('letterWritingFeedback').className = 'letter-writing-feedback';
   }
+}
+
+function targetDisplayLabel(letter: string, isUppercase: boolean): string {
+  return isUppercase
+    ? `Uppercase ${letter.toUpperCase()}`
+    : `lowercase ${letter.toLowerCase()}`;
 }
 
 export function refreshWritingFeedbackDisplay(attempt: LetterWritingAttempt): void {
@@ -274,21 +274,39 @@ async function finaliseAttempt(): Promise<void> {
   let mlGuessLetter: string | null = null;
   let mlConfidence: number | null = null;
   let mlPass: boolean | null = null;
+  let caseMismatch = false;
 
   if (ml) {
     mlGuessLetter = ml.guessedLetter;
     mlConfidence = ml.confidence;
     mlPass = ml.pass;
-    modelLines.push({
-      text: `Read “${ml.guessedLetter}” (${Math.round(ml.confidence * 100)}% confidence).`,
-      source: 'model',
-    });
-    modelLines.push({
-      text: ml.pass
-        ? `Target “${currentLetter}” match (${Math.round(ml.targetProbability * 100)}%).`
-        : `Expected “${currentLetter}” (${Math.round(ml.targetProbability * 100)}% on target).`,
-      source: 'model',
-    });
+
+    const guessedUpper = ml.guessedLetter.toUpperCase();
+    const targetUpper = currentLetter.toUpperCase();
+    const guessedIsUppercase = ml.guessedLetter === guessedUpper;
+    const sameLetterDifferentCase =
+      guessedUpper === targetUpper && guessedIsUppercase !== currentIsUppercase;
+    caseMismatch = sameLetterDifferentCase && ml.confidence >= 0.5;
+
+    if (caseMismatch) {
+      modelLines.push({
+        text: currentIsUppercase
+          ? `That looks like lowercase “${ml.guessedLetter}” — try the uppercase “${currentLetter}” instead.`
+          : `That looks like uppercase “${ml.guessedLetter}” — try the lowercase “${currentLetter}” instead.`,
+        source: 'model',
+      });
+    } else {
+      modelLines.push({
+        text: `Read “${ml.guessedLetter}” (${Math.round(ml.confidence * 100)}% confidence).`,
+        source: 'model',
+      });
+      modelLines.push({
+        text: ml.pass
+          ? `Target “${currentLetter}” match (${Math.round(ml.targetProbability * 100)}%).`
+          : `Expected “${currentLetter}” (${Math.round(ml.targetProbability * 100)}% on target).`,
+        source: 'model',
+      });
+    }
   } else {
     modelLines.push({
       text: 'Writing model not ready — record teacher writing seed first.',
@@ -297,7 +315,7 @@ async function finaliseAttempt(): Promise<void> {
   }
 
   const feedbackLines = [...heuristicLines, ...modelLines];
-  const appPass = !result.hardFail && (mlPass ?? result.pass);
+  const appPass = !result.hardFail && !caseMismatch && (mlPass ?? result.pass);
 
   const attempt = logWritingAttempt({
     letter: currentLetter,
@@ -456,9 +474,9 @@ export function initLetterWritingUi(callbacks: LetterWritingCallbacks = {}): voi
 
 export function setLetterWritingTarget(item: CurriculumItem): void {
   const letter = item.display.trim().charAt(0) || 'A';
-  const isUppercase = letter === letter.toUpperCase();
+  const isUppercase = letter === letter.toUpperCase() && /[A-Z]/.test(letter);
   setCurrentLetter(letter, isUppercase);
-  $('letterWritingTarget').textContent = item.display;
+  $('letterWritingTarget').textContent = targetDisplayLabel(letter, isUppercase);
   $('letterWritingPrompt').textContent = bootstrapMode
     ? 'Teacher writing seed — write each letter once'
     : 'Practice writing this letter';

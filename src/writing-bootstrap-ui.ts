@@ -7,6 +7,7 @@ import {
   isWritingBankComplete,
   refreshWritingSeedExportButtons,
   tryExportWritingSeedForPublish,
+  WRITING_BANK_LETTERS,
 } from './letter-writing-bank';
 import {
   deleteLetterWritingModel,
@@ -23,18 +24,27 @@ import { $, hide, show } from './ui';
 
 let active = false;
 let letterIndex = 0;
-const LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+const LETTERS = WRITING_BANK_LETTERS;
 
 let onComplete: (() => void) | null = null;
 
+function isUpperLetter(letter: string): boolean {
+  return /[A-Z]/.test(letter);
+}
+
+function caseLabel(letter: string): string {
+  return isUpperLetter(letter) ? `Uppercase ${letter}` : `lowercase ${letter}`;
+}
+
 function currentItem(): CurriculumItem {
   const letter = LETTERS[letterIndex];
+  const upper = isUpperLetter(letter);
   return {
-    key: letter.toLowerCase(),
+    key: `${upper ? 'U' : 'L'}-${letter.toLowerCase()}`,
     display: letter,
     spokenName: letter,
     phonemeNote: '',
-    aliases: [letter.toLowerCase(), letter],
+    aliases: [letter],
   };
 }
 
@@ -48,7 +58,8 @@ function firstMissingIndex(): number {
 function updateBootstrapUi(): void {
   const { done, total } = countWritingBankRecorded();
   $('writingBootstrapProgress').textContent = `${done} / ${total} letters seeded`;
-  $('writingBootstrapTarget').textContent = `${LETTERS[letterIndex]} — write this letter on the lines`;
+  $('writingBootstrapTarget').textContent =
+    `${caseLabel(LETTERS[letterIndex])} — write this letter on the lines`;
 }
 
 export function isWritingBootstrapActive(): boolean {
@@ -107,10 +118,11 @@ async function saveBootstrapSample(): Promise<void> {
     return;
   }
 
-  addWritingBankSample(LETTERS[letterIndex], strokes);
+  const letter = LETTERS[letterIndex];
+  addWritingBankSample(letter, strokes);
   clearWritingInkOnly();
   refreshWritingSeedExportButtons();
-  $('writingBootstrapStatus').textContent = `Saved ${LETTERS[letterIndex]}.`;
+  $('writingBootstrapStatus').textContent = `Saved ${caseLabel(letter)}.`;
 
   if (isWritingBankComplete()) {
     $('writingBootstrapStatus').textContent = 'Training writing model…';

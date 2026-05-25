@@ -15,9 +15,10 @@ import {
 } from './letter-writing-bank';
 import { RASTER_SIZE, rasterizeStrokes } from './letter-writing-raster';
 
-const LOCAL_MODEL_URL = 'localstorage://early-letter-writing-v1';
+const LOCAL_MODEL_URL = 'localstorage://early-letter-writing-v2';
+const LEGACY_LOCAL_MODEL_URL = 'localstorage://early-letter-writing-v1';
 const STAGE_ID = 'letter-writing' as const;
-const NUM_CLASSES = 26;
+const NUM_CLASSES = 52;
 const ML_PASS_THRESHOLD = 0.45;
 
 let model: tf.LayersModel | null = null;
@@ -35,14 +36,23 @@ function ensureWasm(): void {
   wasmConfigured = true;
 }
 
+/**
+ * Map a letter to its class index (case-sensitive).
+ *   A–Z → 0..25
+ *   a–z → 26..51
+ */
 function letterToIndex(letter: string): number {
-  const code = letter.toUpperCase().charCodeAt(0);
-  if (code < 65 || code > 90) return -1;
-  return code - 65;
+  const ch = letter.charAt(0);
+  const code = ch.charCodeAt(0);
+  if (code >= 65 && code <= 90) return code - 65;
+  if (code >= 97 && code <= 122) return 26 + (code - 97);
+  return -1;
 }
 
 function indexToLetter(index: number): string {
-  return String.fromCharCode(65 + index);
+  if (index < 0 || index > 51) return '?';
+  if (index < 26) return String.fromCharCode(65 + index);
+  return String.fromCharCode(97 + (index - 26));
 }
 
 function createModel(): tf.LayersModel {
@@ -222,6 +232,13 @@ export async function initLetterWritingModel(): Promise<LetterWritingModelSource
   const published = await tryLoadPublishedModel();
   if (published) return 'published';
 
+  // Clear any legacy 26-class model so it doesn't keep tripping the loader.
+  try {
+    await tf.io.removeModel(LEGACY_LOCAL_MODEL_URL);
+  } catch {
+    /* not saved */
+  }
+
   try {
     model = await tf.loadLayersModel(LOCAL_MODEL_URL);
     if (modelMatchesVocab()) {
@@ -252,10 +269,12 @@ export async function retrainFromWritingBank(): Promise<boolean> {
 }
 
 export async function deleteLetterWritingModel(): Promise<void> {
-  try {
-    await tf.io.removeModel(LOCAL_MODEL_URL);
-  } catch {
-    /* not saved */
+  for (const url of [LOCAL_MODEL_URL, LEGACY_LOCAL_MODEL_URL]) {
+    try {
+      await tf.io.removeModel(url);
+    } catch {
+      /* not saved */
+    }
   }
   model?.dispose();
   model = null;

@@ -1,32 +1,59 @@
 import type { Stroke } from './letter-writing-data';
 import { loadSettings } from './settings';
 
-const BANK_KEY = 'early.writingBank.v1';
+const BANK_KEY = 'early.writingBank.v2';
+const LEGACY_BANK_KEY = 'early.writingBank.v1';
 
-/** Uppercase A–Z keys used by Unit 1 letter-writing curriculum. */
-export const WRITING_BANK_LETTERS = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split('');
+/**
+ * 52 letters used by the letter-writing curriculum.
+ * Uppercase A–Z first, then lowercase a–z — sample keys are case-sensitive.
+ */
+export const WRITING_BANK_LETTERS: readonly string[] = [
+  ...'ABCDEFGHIJKLMNOPQRSTUVWXYZ'.split(''),
+  ...'abcdefghijklmnopqrstuvwxyz'.split(''),
+];
 
 export interface WritingBank {
-  version: 1;
-  /** One or more reference stroke sets per letter (teacher seed). */
+  version: 2;
+  /** One or more reference stroke sets per letter (teacher seed). Case-sensitive keys. */
   samples: Record<string, Stroke[][]>;
   updatedAt: string;
 }
 
 function emptyBank(): WritingBank {
-  return { version: 1, samples: {}, updatedAt: new Date().toISOString() };
+  return { version: 2, samples: {}, updatedAt: new Date().toISOString() };
 }
 
+/**
+ * Load (and one-time migrate) the writing bank.
+ * v1 banks only contained uppercase samples; their data is preserved when
+ * upgrading so the teacher only has to record the new lowercase samples.
+ */
 export function loadWritingBank(): WritingBank {
   try {
     const raw = localStorage.getItem(BANK_KEY);
-    if (!raw) return emptyBank();
-    const bank = JSON.parse(raw) as WritingBank;
-    if (bank.version !== 1) return emptyBank();
-    return bank;
+    if (raw) {
+      const bank = JSON.parse(raw) as WritingBank;
+      if (bank.version === 2 && bank.samples) return bank;
+    }
+
+    const legacyRaw = localStorage.getItem(LEGACY_BANK_KEY);
+    if (legacyRaw) {
+      const legacy = JSON.parse(legacyRaw) as { samples?: Record<string, Stroke[][]> };
+      if (legacy.samples) {
+        const upgraded: WritingBank = {
+          version: 2,
+          samples: { ...legacy.samples },
+          updatedAt: new Date().toISOString(),
+        };
+        localStorage.setItem(BANK_KEY, JSON.stringify(upgraded));
+        return upgraded;
+      }
+    }
   } catch {
-    return emptyBank();
+    /* fall through */
   }
+  return emptyBank();
 }
 
 function saveBank(bank: WritingBank): void {
@@ -35,22 +62,22 @@ function saveBank(bank: WritingBank): void {
 }
 
 export function addWritingBankSample(letter: string, strokes: Stroke[]): void {
-  const key = letter.toUpperCase();
   const bank = loadWritingBank();
-  if (!bank.samples[key]) bank.samples[key] = [];
-  bank.samples[key].push(strokes.map((s) => s.map((p) => ({ ...p }))));
+  if (!bank.samples[letter]) bank.samples[letter] = [];
+  bank.samples[letter].push(strokes.map((s) => s.map((p) => ({ ...p }))));
   saveBank(bank);
 }
 
 export function clearWritingBank(): void {
   localStorage.removeItem(BANK_KEY);
+  localStorage.removeItem(LEGACY_BANK_KEY);
 }
 
 /** Download teacher seed JSON for PC training (data/writing-bank/teacher-seed.json). */
 export function downloadWritingBankForPublish(): void {
   const bank = loadWritingBank();
   const payload = {
-    version: 1,
+    version: 2,
     exportedAt: new Date().toISOString(),
     samples: bank.samples,
   };
@@ -102,5 +129,5 @@ export function isWritingBankComplete(): boolean {
 }
 
 export function getWritingBankSamples(letter: string): Stroke[][] {
-  return loadWritingBank().samples[letter.toUpperCase()] ?? [];
+  return loadWritingBank().samples[letter] ?? [];
 }

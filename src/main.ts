@@ -512,6 +512,19 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
     }
 
     await ensureWritingModelForPractice();
+
+    // Stale published model (e.g. older vocab/class count) — kick collectors
+    // back into bootstrap so they can re-record the missing letters.
+    if (
+      settings.collectorMode &&
+      publishedManifest &&
+      !isLetterWritingModelReady() &&
+      !isWritingBankComplete()
+    ) {
+      await startWritingBootstrap();
+      return;
+    }
+
     const src = getLetterWritingModelSource();
     if (isLetterWritingModelReady()) {
       if (src === 'published' && publishedManifest) {
