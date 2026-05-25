@@ -152,6 +152,22 @@ export async function hasPublishedLetterWritingModel(): Promise<boolean> {
   return manifest !== null;
 }
 
+/**
+ * Run a thunk on the CPU backend (WASM can't backprop conv2d) and restore
+ * the previous backend afterwards. Inference stays on WASM for speed.
+ */
+async function withTrainingBackend<T>(fn: () => Promise<T>): Promise<T> {
+  const previous = tf.getBackend();
+  if (previous !== 'cpu') await tf.setBackend('cpu');
+  try {
+    return await fn();
+  } finally {
+    if (previous && previous !== 'cpu') {
+      await tf.setBackend(previous);
+    }
+  }
+}
+
 async function fitRasters(
   flats: Float32Array[],
   labels: number[],
@@ -160,14 +176,16 @@ async function fitRasters(
 ): Promise<void> {
   if (!model || flats.length === 0 || (await isPublishedModelActive())) return;
   ensureCompiled();
-  const xs = tf.stack(flats.map((f) => tf.tensor3d(f, [RASTER_SIZE, RASTER_SIZE, 1])));
-  const ys = tf.oneHot(tf.tensor1d(labels, 'int32'), NUM_CLASSES);
-  try {
-    await model.fit(xs, ys, { epochs, batchSize, shuffle: true, verbose: 0 });
-  } finally {
-    xs.dispose();
-    ys.dispose();
-  }
+  await withTrainingBackend(async () => {
+    const xs = tf.stack(flats.map((f) => tf.tensor3d(f, [RASTER_SIZE, RASTER_SIZE, 1])));
+    const ys = tf.oneHot(tf.tensor1d(labels, 'int32'), NUM_CLASSES);
+    try {
+      await model!.fit(xs, ys, { epochs, batchSize, shuffle: true, verbose: 0 });
+    } finally {
+      xs.dispose();
+      ys.dispose();
+    }
+  });
 }
 
 function buildBootstrapBatch(): { flats: Float32Array[]; labels: number[] } | null {
