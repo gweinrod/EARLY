@@ -63,10 +63,12 @@
 
   <div id="writingBootstrap" class="writing-bootstrap" style="display:none">
     <h2 class="writing-bootstrap-title">Teacher writing seed (one time)</h2>
-    <p class="writing-bootstrap-lead">Write each uppercase letter once in <strong>your</strong> handwriting. This trains the letter-recognition model. Students improve it through your practice judgments only.</p>
-    <p id="writingBootstrapProgress" class="bootstrap-progress">0 / 26 recorded</p>
-    <p id="writingBootstrapTarget" class="bootstrap-target">A — write this letter on the lines</p>
+    <p class="writing-bootstrap-lead">Write each letter once in <strong>your</strong> handwriting (uppercase A–Z, then lowercase a–z). This trains the letter-recognition model. Students improve it through your practice judgments only.</p>
+    <p id="writingBootstrapProgress" class="bootstrap-progress">0 / 52 recorded</p>
+    <p id="writingBootstrapTarget" class="bootstrap-target">Uppercase A — write this letter on the lines</p>
     <button type="button" class="btn-secondary" id="btnWritingBootstrapSave">Save sample &amp; next</button>
+    <button type="button" class="btn-secondary" id="btnImportWritingSeed">Import seed JSON…</button>
+    <input type="file" id="fileImportWritingSeed" accept="application/json,.json" style="display:none" />
     <p id="writingBootstrapStatus" class="bootstrap-status"></p>
   </div>
 

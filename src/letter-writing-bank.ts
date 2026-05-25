@@ -117,6 +117,54 @@ export function tryExportWritingSeedForPublish(): void {
   }
 }
 
+export interface ImportSeedResult {
+  importedLetters: number;
+  importedSamples: number;
+  done: number;
+  total: number;
+}
+
+/**
+ * Merge teacher-seed.json (v1 or v2 export) into the local writing bank.
+ *
+ * Useful when localStorage was cleared but the previously exported seed file
+ * still exists on disk — lets the teacher resume from the next missing letter
+ * (typically 'a' after migrating an uppercase-only v1 export).
+ */
+export async function importWritingSeedFromFile(file: File): Promise<ImportSeedResult> {
+  const text = await file.text();
+  const payload = JSON.parse(text) as {
+    samples?: Record<string, unknown>;
+  };
+  const incoming = payload?.samples;
+  if (!incoming || typeof incoming !== 'object') {
+    throw new Error('Seed JSON missing samples');
+  }
+
+  const bank = loadWritingBank();
+  let importedSamples = 0;
+  let importedLetters = 0;
+
+  for (const [letter, sets] of Object.entries(incoming)) {
+    if (!Array.isArray(sets) || sets.length === 0) continue;
+    if (!bank.samples[letter]) bank.samples[letter] = [];
+    let addedHere = 0;
+    for (const strokes of sets) {
+      if (!Array.isArray(strokes)) continue;
+      bank.samples[letter].push(strokes as Stroke[]);
+      addedHere++;
+    }
+    if (addedHere > 0) {
+      importedSamples += addedHere;
+      importedLetters++;
+    }
+  }
+
+  saveBank(bank);
+  const { done, total } = countWritingBankRecorded();
+  return { importedLetters, importedSamples, done, total };
+}
+
 export function countWritingBankRecorded(): { done: number; total: number } {
   const bank = loadWritingBank();
   const done = WRITING_BANK_LETTERS.filter((l) => (bank.samples[l]?.length ?? 0) > 0).length;

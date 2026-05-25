@@ -4,6 +4,7 @@ import {
   clearWritingBank,
   countWritingBankRecorded,
   getWritingBankSamples,
+  importWritingSeedFromFile,
   isWritingBankComplete,
   refreshWritingSeedExportButtons,
   tryExportWritingSeedForPublish,
@@ -86,7 +87,44 @@ export function initWritingBootstrapUi(deps: { onComplete: () => void }): void {
 
   $('btnExportWritingSeed').addEventListener('click', tryExportWritingSeedForPublish);
   $('btnExportWritingSeedInline').addEventListener('click', tryExportWritingSeedForPublish);
+
+  const fileInput = $('fileImportWritingSeed') as HTMLInputElement;
+  $('btnImportWritingSeed').addEventListener('click', () => fileInput.click());
+  fileInput.addEventListener('change', () => {
+    const file = fileInput.files?.[0];
+    fileInput.value = '';
+    if (file) void importSeedFile(file);
+  });
+
   refreshWritingSeedExportButtons();
+}
+
+async function importSeedFile(file: File): Promise<void> {
+  try {
+    const result = await importWritingSeedFromFile(file);
+    refreshWritingSeedExportButtons();
+    $('writingBootstrapStatus').textContent =
+      `Imported ${result.importedLetters} letters (${result.importedSamples} samples). ${result.done} / ${result.total} seeded.`;
+
+    if (active) {
+      if (isWritingBankComplete()) {
+        $('writingBootstrapStatus').textContent =
+          `Imported ${result.importedLetters} letters. Training writing model…`;
+        const ok = await retrainFromWritingBank();
+        $('writingBootstrapStatus').textContent = ok
+          ? 'Writing model ready.'
+          : 'Training failed — try saving samples again.';
+        hideBootstrap();
+        return;
+      }
+      letterIndex = firstMissingIndex();
+      setLetterWritingTarget(currentItem());
+      updateBootstrapUi();
+    }
+  } catch (err) {
+    $('writingBootstrapStatus').textContent =
+      `Import failed: ${err instanceof Error ? err.message : String(err)}`;
+  }
 }
 
 export async function startWritingBootstrap(forceReset = false): Promise<void> {
