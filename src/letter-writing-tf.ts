@@ -1,6 +1,7 @@
 import * as tf from '@tensorflow/tfjs';
 import { setWasmPaths } from '@tensorflow/tfjs-backend-wasm';
 import '@tensorflow/tfjs-backend-wasm';
+import '@tensorflow/tfjs-backend-webgl';
 import type { Stroke } from './letter-writing-data';
 import {
   fetchPublishedManifest,
@@ -129,14 +130,22 @@ async function tryLoadPublishedModel(): Promise<PublishedModelManifest | null> {
     const loaded = await tf.loadLayersModel(manifest.modelUrl);
     model?.dispose();
     model = loaded;
+    const classCount = getModelClassCount();
     if (!modelMatchesVocab()) {
+      console.warn(
+        `EARLY: published letter-writing model has ${classCount} classes, expected ${NUM_CLASSES}. Falling back.`,
+      );
       model.dispose();
       model = null;
       ready = false;
       return null;
     }
     ensureCompiled();
-    await model.save(LOCAL_MODEL_URL);
+    try {
+      await model.save(LOCAL_MODEL_URL);
+    } catch (err) {
+      console.warn('EARLY: failed to cache published letter-writing model locally', err);
+    }
     setStoredPublishedVersion(STAGE_ID, manifest.version);
     ready = true;
     modelSource = 'published';
@@ -153,17 +162,30 @@ export async function hasPublishedLetterWritingModel(): Promise<boolean> {
 }
 
 /**
- * Run a thunk on the CPU backend (WASM can't backprop conv2d) and restore
- * the previous backend afterwards. Inference stays on WASM for speed.
+ * Run a thunk on a backend that supports conv2d backprop (WebGL preferred,
+ * CPU fallback) and restore the previous backend afterwards. Inference stays
+ * on WASM for speed; CPU is a last resort because pure-JS conv backprop
+ * blocks the main thread for many seconds on a 64x64 raster.
  */
+async function trySetBackend(name: string): Promise<boolean> {
+  try {
+    const ok = await tf.setBackend(name);
+    if (ok) await tf.ready();
+    return Boolean(ok);
+  } catch {
+    return false;
+  }
+}
+
 async function withTrainingBackend<T>(fn: () => Promise<T>): Promise<T> {
   const previous = tf.getBackend();
-  if (previous !== 'cpu') await tf.setBackend('cpu');
+  const switched = (await trySetBackend('webgl')) || (await trySetBackend('cpu'));
   try {
     return await fn();
   } finally {
-    if (previous && previous !== 'cpu') {
+    if (switched && previous && previous !== tf.getBackend()) {
       await tf.setBackend(previous);
+      await tf.ready();
     }
   }
 }
@@ -271,7 +293,12 @@ export async function initLetterWritingModel(): Promise<LetterWritingModelSource
     /* no saved model */
   }
 
-  if (isWritingBankComplete() && !(await isPublishedModelActive())) {
+  // Skip the expensive on-device bootstrap if a published manifest exists
+  // (even if its load failed this time) — that path can block the main thread
+  // for a long time on slow backends, and the published model will succeed on
+  // the next page load once the deploy / cache settles.
+  const manifest = await fetchPublishedManifest(STAGE_ID);
+  if (!manifest && isWritingBankComplete()) {
     const ok = await runBootstrapTraining();
     return ok ? 'bootstrap' : 'none';
   }
