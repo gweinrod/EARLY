@@ -126,8 +126,16 @@ async function tryLoadPublishedModel(): Promise<PublishedModelManifest | null> {
   const stored = getStoredPublishedVersion(STAGE_ID);
   if (manifest.version < stored) return null;
 
+  // Bypass the browser cache for BOTH model.json and the weight shard.
+  // Cache-busting model.json only does not help because tfjs resolves the
+  // bin's URL from the JSON without preserving the query string.
+  const noStoreFetch: typeof fetch = (input, init) =>
+    fetch(input, { ...init, cache: 'no-store' });
+
   try {
-    const loaded = await tf.loadLayersModel(manifest.modelUrl);
+    const loaded = await tf.loadLayersModel(manifest.modelUrl, {
+      fetchFunc: noStoreFetch as typeof fetch,
+    });
     model?.dispose();
     model = loaded;
     const classCount = getModelClassCount();
