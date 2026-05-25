@@ -28,7 +28,14 @@ const DASHED_LINE_COLOR = '#3b82f6';
 const DASHED_LINE_WIDTH = 4;
 const DASHED_LINE_DASH = [18, 12] as const;
 const BOUNDARY_COLOR = '#000000';
+/** Idle delay after the last stroke when the student has drawn at least the
+ *  expected minimum number of strokes — generous debounce so they can lift
+ *  briefly between strokes without being scored prematurely. */
 const SCORE_IDLE_MS = 2500;
+/** Hard cap when the student has stopped before drawing enough strokes (e.g.
+ *  they wrote a lowercase b for an uppercase B). Score with whatever they gave
+ *  us so the UI never hangs waiting for strokes that never come. */
+const SCORE_MAX_WAIT_MS = 5000;
 
 let canvas: HTMLCanvasElement | null = null;
 let ctx: CanvasRenderingContext2D | null = null;
@@ -247,7 +254,6 @@ function minStrokesExpected(): number {
 async function finaliseAttempt(): Promise<void> {
   scoreTimer = null;
   if (bootstrapMode || scored || strokes.length === 0) return;
-  if (strokes.length < minStrokesExpected()) return;
 
   scored = true;
 
@@ -324,9 +330,11 @@ async function finaliseAttempt(): Promise<void> {
 function scheduleScore(): void {
   if (scored || bootstrapMode) return;
   cancelScoreTimer();
+  const delay =
+    strokes.length >= minStrokesExpected() ? SCORE_IDLE_MS : SCORE_MAX_WAIT_MS;
   scoreTimer = setTimeout(() => {
     void finaliseAttempt();
-  }, SCORE_IDLE_MS);
+  }, delay);
 }
 
 export function clearWritingInkOnly(): void {
