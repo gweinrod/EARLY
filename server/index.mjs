@@ -37,7 +37,13 @@ const DATABASE_URL = process.env.DATABASE_URL;
 const DATA_DIR = process.env.DATA_DIR ?? '/var/lib/early/samples';
 
 /** DB kind → on-disk folder (matches legacy Blob prefixes). */
-const FS_KIND = { calibration: 'calibration', voice_bank: 'voice-bank' };
+const FS_KIND = {
+  calibration: 'calibration',
+  voice_bank: 'voice-bank',
+  writing_judgment: 'writing-calibration',
+};
+
+const WRITING_STAGE_ID = 'letter-writing';
 
 if (!DATABASE_URL) {
   console.error('Set DATABASE_URL (see server/.env.example)');
@@ -202,6 +208,48 @@ function validateVoiceBody(b) {
   return voiceBodyRejectReason(b) === null;
 }
 
+/**
+ * Validate a writing-judgment payload.
+ *
+ *   {
+ *     v: 1,
+ *     kind: 'writing_judgment',
+ *     letter: 'a',
+ *     isUppercase: false,
+ *     strokes: [[{x, y, t}, ...], ...],   // 0-1 normalised coordinates
+ *     teacherPass: true,                  // only positive samples ever sent
+ *     attemptId?: string,
+ *     studentId?: string,
+ *     appVersion?: string,
+ *     createdAt: string,
+ *   }
+ *
+ * Returns a reject reason or null if valid.
+ */
+function writingJudgmentRejectReason(b) {
+  if (!b || typeof b !== 'object') return 'missing_body';
+  if (b.v !== 1) return `bad_version (got ${b.v}, need 1)`;
+  if (b.kind !== 'writing_judgment') return 'bad_kind';
+  if (typeof b.letter !== 'string' || b.letter.length === 0) return 'bad_letter';
+  if (typeof b.isUppercase !== 'boolean') return 'bad_isUppercase';
+  if (b.teacherPass !== true) return 'teacherPass_must_be_true';
+  if (!Array.isArray(b.strokes) || b.strokes.length === 0) return 'no_strokes';
+  for (const stroke of b.strokes) {
+    if (!Array.isArray(stroke)) return 'stroke_not_array';
+    for (const pt of stroke) {
+      if (
+        !pt ||
+        typeof pt.x !== 'number' ||
+        typeof pt.y !== 'number' ||
+        typeof pt.t !== 'number'
+      ) {
+        return 'bad_point';
+      }
+    }
+  }
+  return null;
+}
+
 const app = express();
 app.use(express.json({ limit: '256kb' }));
 
@@ -263,13 +311,50 @@ app.post('/api/voice-bank', async (req, res) => {
   }
 });
 
+app.get('/api/writing-judgments', async (_req, res) => {
+  try {
+    const stats = await getStats('writing_judgment', WRITING_STAGE_ID);
+    res.json(stats);
+  } catch (e) {
+    res.status(500).json({ error: 'stats_failed', message: String(e) });
+  }
+});
+
+app.post('/api/writing-judgments', async (req, res) => {
+  const b = req.body;
+  const reject = writingJudgmentRejectReason(b);
+  if (reject) {
+    return res.status(400).json({
+      error: 'invalid_sample',
+      reason: reject,
+    });
+  }
+  try {
+    const result = await insertSample(
+      'writing_judgment',
+      WRITING_STAGE_ID,
+      b,
+      b.attemptId ?? null,
+    );
+    res.status(201).json({ ok: true, id: result.id, pathname: result.pathname });
+  } catch (e) {
+    res.status(500).json({ error: 'upload_failed', message: String(e) });
+  }
+});
+
 app.post('/api/clear-training-data', async (_req, res) => {
   try {
     const calibration = await clearKind('calibration');
     const voiceBank = await clearKind('voice_bank');
+    const writingJudgments = await clearKind('writing_judgment');
     res.json({
       ok: true,
-      deleted: { calibration, voiceBank, total: calibration + voiceBank },
+      deleted: {
+        calibration,
+        voiceBank,
+        writingJudgments,
+        total: calibration + voiceBank + writingJudgments,
+      },
     });
   } catch (e) {
     res.status(500).json({ error: 'clear_failed', message: String(e) });

@@ -42,13 +42,17 @@ export default async function handler(req: VercelRequest, res: VercelResponse): 
   }
 
   try {
-    let calibration = 0;
-    let voiceBank = 0;
-    calibration = await deletePrefix('calibration/', blobToken);
-    voiceBank = await deletePrefix('voice-bank/', blobToken);
+    const calibration = await deletePrefix('calibration/', blobToken);
+    const voiceBank = await deletePrefix('voice-bank/', blobToken);
+    const writingJudgments = await deletePrefix('writing-judgments/', blobToken);
     res.status(200).json({
       ok: true,
-      deleted: { calibration, voiceBank, total: calibration + voiceBank },
+      deleted: {
+        calibration,
+        voiceBank,
+        writingJudgments,
+        total: calibration + voiceBank + writingJudgments,
+      },
     });
   } catch (e) {
     res.status(500).json({ error: 'clear_failed', message: String(e) });

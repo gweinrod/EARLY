@@ -23,7 +23,9 @@
     "publish:model": "scripts\\publish-shared-model.bat",
     "publish:model:postgres": "scripts\\publish-shared-model-postgres.bat",
     "publish:writing-model": "scripts\\publish-letter-writing.bat",
-    "writing:train": "python tools/train_letter_writing_model.py"
+    "writing:train": "python tools/train_letter_writing_model.py",
+    "writing:pull": "node tools/pull_calibration_from_postgres.mjs",
+    "writing:pull:blob": "node tools/pull_calibration_samples.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.2",

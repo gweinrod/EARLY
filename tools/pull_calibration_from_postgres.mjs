@@ -37,6 +37,13 @@ const pool = new pg.Pool({ connectionString: url });
 const OUT = {
   calibration: path.join(root, 'data', 'calibration'),
   voice_bank: path.join(root, 'data', 'voice-bank'),
+  writing_judgment: path.join(root, 'data', 'writing-calibration'),
+};
+
+const FILE_PREFIX = {
+  calibration: 'calibration',
+  voice_bank: 'voice-bank',
+  writing_judgment: 'writing-judgment',
 };
 
 function clearJsonDir(dir) {
@@ -54,8 +61,9 @@ async function exportKind(kind) {
     `SELECT id, stage_id, payload FROM training_samples WHERE kind = $1 ORDER BY created_at`,
     [kind],
   );
+  const prefix = FILE_PREFIX[kind] ?? kind;
   for (const row of rows) {
-    const name = `${kind === 'calibration' ? 'calibration' : 'voice-bank'}_${row.stage_id}_${row.id}.json`;
+    const name = `${prefix}_${row.stage_id}_${row.id}.json`;
     fs.writeFileSync(path.join(outDir, name), JSON.stringify(row.payload));
   }
   return rows.length;
@@ -63,7 +71,9 @@ async function exportKind(kind) {
 
 const cal = await exportKind('calibration');
 const voice = await exportKind('voice_bank');
+const writing = await exportKind('writing_judgment');
 await pool.end();
 
 console.log(`Exported ${cal} judgments → data/calibration`);
 console.log(`Exported ${voice} voice samples → data/voice-bank`);
+console.log(`Exported ${writing} writing judgments → data/writing-calibration`);

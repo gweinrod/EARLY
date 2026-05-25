@@ -66,6 +66,10 @@ import {
 import { deriveAppPass } from './scoring';
 import { acousticStudentMessage, toStudentFeedback } from './student-feedback';
 import {
+  flushWritingJudgmentQueue,
+  refreshWritingJudgmentServerCount,
+} from './cloud-writing-judgments';
+import {
   flushCloudQueue,
   formatCloudSyncLine,
   refreshCloudStats,
@@ -749,6 +753,7 @@ function init(): void {
     refreshLocalTrainingStatus(curStageId);
     void flushCloudQueue()
       .then(() => flushVoiceBankQueue())
+      .then(() => flushWritingJudgmentQueue())
       .then(async () => {
         if (
           settings.collectorMode &&
@@ -758,6 +763,7 @@ function init(): void {
           await syncLocalVoiceBankToCloud(curStageId);
         }
         await refreshCloudStats(curStageId, getVoiceBankQueueLength(), { force: true });
+        await refreshWritingJudgmentServerCount();
       });
   }
 

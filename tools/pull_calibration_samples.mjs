@@ -45,6 +45,11 @@ async function pullPrefix(prefix, outDir) {
 
 const cal = await pullPrefix('calibration/', path.join(root, 'data', 'calibration'));
 const voice = await pullPrefix('voice-bank/', path.join(root, 'data', 'voice-bank'));
+const writing = await pullPrefix(
+  'writing-judgments/',
+  path.join(root, 'data', 'writing-calibration'),
+);
 
 console.log(`Downloaded ${cal} judgment samples → data/calibration`);
 console.log(`Downloaded ${voice} voice-bank samples → data/voice-bank`);
+console.log(`Downloaded ${writing} writing judgments → data/writing-calibration`);

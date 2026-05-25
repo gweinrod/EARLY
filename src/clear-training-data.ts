@@ -1,6 +1,7 @@
 import { ALL_STAGE_IDS } from './curriculum';
 import { clearCloudQueue } from './cloud-calibration';
 import { clearSyncedVoiceBank, clearVoiceBankQueue } from './cloud-voice-bank';
+import { clearWritingCloudQueue } from './cloud-writing-judgments';
 import { clearSessionLog } from './session-log';
 import { deleteStoredModel } from './tf-phoneme';
 import { clearWritingAttempts } from './letter-writing-data';
@@ -13,6 +14,7 @@ export async function clearLocalTrainingData(): Promise<void> {
   clearSessionLog();
   clearCloudQueue();
   clearVoiceBankQueue();
+  clearWritingCloudQueue();
   clearWritingAttempts();
   clearWritingBank();
   await deleteLetterWritingModel();
@@ -29,7 +31,12 @@ export async function clearLocalTrainingData(): Promise<void> {
 
 export interface ClearServerResult {
   ok: boolean;
-  deleted?: { calibration: number; voiceBank: number; total: number };
+  deleted?: {
+    calibration: number;
+    voiceBank: number;
+    writingJudgments?: number;
+    total: number;
+  };
   error?: string;
 }
 
@@ -55,5 +62,6 @@ export function formatClearServerMessage(result: ClearServerResult): string {
   }
   const d = result.deleted;
   if (!d) return 'Server training data cleared.';
-  return `Server cleared: ${d.voiceBank} voice, ${d.calibration} judgments (${d.total} files).`;
+  const writing = d.writingJudgments ?? 0;
+  return `Server cleared: ${d.voiceBank} voice, ${d.calibration} speech judgments, ${writing} writing judgments (${d.total} files).`;
 }

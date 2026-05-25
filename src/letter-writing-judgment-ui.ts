@@ -1,7 +1,11 @@
 import type { LetterWritingAttempt } from './letter-writing-data';
-import { updateTeacherFeedback } from './letter-writing-data';
+import { getWritingSession, updateTeacherFeedback } from './letter-writing-data';
 import { trainWritingJudgment } from './letter-writing-tf';
 import { refreshWritingFeedbackDisplay } from './letter-writing-ui';
+import {
+  refreshWritingJudgmentServerCount,
+  uploadWritingJudgment,
+} from './cloud-writing-judgments';
 import { $, hide, show } from './ui';
 
 let pendingAttempt: LetterWritingAttempt | null = null;
@@ -32,6 +36,19 @@ function commit(pass: boolean): void {
   void trainWritingJudgment(updated.strokes, updated.letter, pass).then(() => {
     refreshWritingFeedbackDisplay(updated);
   });
+
+  // Cloud upload — only positive samples ever leave the device.
+  if (pass) {
+    void uploadWritingJudgment({
+      letter: updated.letter,
+      isUppercase: updated.isUppercase,
+      strokes: updated.strokes,
+      attemptId: updated.id,
+      studentId: getWritingSession().studentId || undefined,
+    }).then(() => {
+      void refreshWritingJudgmentServerCount();
+    });
+  }
 
   pendingAttempt = null;
   hide('letterWritingJudgmentBlock');
