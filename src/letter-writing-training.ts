@@ -173,7 +173,15 @@ export interface TrainingReadiness {
   message: string;
 }
 
-const MIN_SAMPLES_FOR_TRAINING = 26;   // at least one teacher accept per letter half
+/**
+ * Smallest export size that's worth shipping to the Python trainer.
+ *
+ * Each judgment sample is a single teacher-accepted attempt; even one new
+ * raster per letter helps the CNN learn that letter's variation. The PC
+ * trainer always re-uses the teacher seed for full alphabet coverage, so
+ * the judgments file only needs to be non-empty.
+ */
+const MIN_SAMPLES_FOR_TRAINING = 1;
 
 export function getTrainingReadiness(): TrainingReadiness {
   // exportWritingTrainingSamples() already returns only teacher-accepted attempts.
