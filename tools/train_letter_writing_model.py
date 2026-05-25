@@ -81,30 +81,59 @@ def load_bootstrap_samples() -> tuple[list[list[float]], list[int]]:
     return xs, ys
 
 
+def _iter_calibration_rows(path: Path):
+    """Yield individual sample dicts from either a single-object or array/payload file."""
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(raw, list):
+        for item in raw:
+            if isinstance(item, dict):
+                yield item
+    elif isinstance(raw, dict):
+        samples = raw.get("samples")
+        if isinstance(samples, list):
+            for item in samples:
+                if isinstance(item, dict):
+                    yield item
+        else:
+            yield raw
+
+
 def load_judgment_samples(
     xs: list[list[float]], ys: list[int], seen: set[str]
 ) -> int:
+    """
+    Load extra training samples from data/writing-calibration/*.json.
+
+    Only attempts where the teacher explicitly accepted (teacherPass === true)
+    are used. Model self-accepts and heuristic passes are NEVER consumed here —
+    that would let the model reinforce its own mistakes.
+    """
     if not CALIBRATION_DIR.is_dir():
         return 0
 
     added = 0
     for path in sorted(CALIBRATION_DIR.glob("*.json")):
-        row = json.loads(path.read_text(encoding="utf-8"))
-        if row.get("teacherPass") is not True and row.get("pass") is not True:
+        try:
+            rows = list(_iter_calibration_rows(path))
+        except json.JSONDecodeError as err:
+            print(f"  skipping unreadable calibration file {path.name}: {err}")
             continue
-        letter = row.get("letter") or row.get("targetLetter")
-        idx = letter_to_index(str(letter or ""))
-        strokes = row.get("strokes") or []
-        if idx < 0 or not strokes:
-            continue
-        flat = rasterize_strokes(strokes)
-        key = f"{idx}:{flat[0]:.4f}:{len(flat)}"
-        if key in seen:
-            continue
-        seen.add(key)
-        xs.append(flat)
-        ys.append(idx)
-        added += 1
+        for row in rows:
+            if row.get("teacherPass") is not True:
+                continue
+            letter = row.get("letter") or row.get("targetLetter")
+            idx = letter_to_index(str(letter or ""))
+            strokes = row.get("strokes") or []
+            if idx < 0 or not strokes:
+                continue
+            flat = rasterize_strokes(strokes)
+            key = f"{idx}:{flat[0]:.4f}:{len(flat)}"
+            if key in seen:
+                continue
+            seen.add(key)
+            xs.append(flat)
+            ys.append(idx)
+            added += 1
     return added
 
 

@@ -313,13 +313,21 @@ export function predictLetterWriting(
   }
 }
 
-/** On-device fit from teacher judgment — skipped when shared published model is active. */
+/**
+ * On-device fit from teacher judgment.
+ *
+ * Strictly limited to attempts the teacher explicitly accepted (teacherPass === true).
+ * Model self-accepts, heuristic passes, and teacher rejections all return early —
+ * they MUST NOT feed back into the learning model. Also skipped when the shared
+ * published model is active (retraining happens in the Python pipeline instead).
+ */
 export async function trainWritingJudgment(
   strokes: Stroke[],
   targetLetter: string,
   teacherPass: boolean,
 ): Promise<void> {
-  if (!teacherPass || trainingBusy || !model || !ready) return;
+  if (teacherPass !== true) return;
+  if (trainingBusy || !model || !ready) return;
   if (await isPublishedModelActive()) return;
   const idx = letterToIndex(targetLetter);
   if (idx < 0) return;

@@ -324,32 +324,53 @@ export function getAllMasteryStats(): {
 // Training data export
 // ---------------------------------------------------------------------------
 
+/**
+ * One labelled sample for retraining the shared letter-writing model.
+ * ONLY emitted for attempts the teacher explicitly accepted via the
+ * "Student wrote X correctly — accept" button. Model self-accepts and
+ * heuristic-only passes do NOT feed back into training.
+ */
 export interface WritingTrainingSample {
   letter: string;
   isUppercase: boolean;
+  strokes: Stroke[];
   features: LetterStrokeFeatures;
-  /** Ground truth: teacher override when available, else heuristic. */
-  pass: boolean;
-  source: 'heuristic' | 'teacher';
+  /** Always true — only teacher-accepted samples are exported. */
+  teacherPass: true;
+  source: 'teacher';
+  timestamp: string;
 }
 
+/**
+ * Returns only teacher-accepted attempts (`teacherPass === true`).
+ * The Python training pipeline consumes these as ground-truth positives.
+ */
 export function exportWritingTrainingSamples(): WritingTrainingSample[] {
-  return loadWritingAttempts().map((a) => ({
-    letter: a.letter,
-    isUppercase: a.isUppercase,
-    features: a.features,
-    pass: effectivePass(a),
-    source: a.teacherPass !== null ? 'teacher' : 'heuristic',
-  }));
+  return loadWritingAttempts()
+    .filter((a) => a.teacherPass === true)
+    .map((a) => ({
+      letter: a.letter,
+      isUppercase: a.isUppercase,
+      strokes: a.strokes,
+      features: a.features,
+      teacherPass: true as const,
+      source: 'teacher' as const,
+      timestamp: a.timestamp,
+    }));
 }
 
 export function downloadWritingTrainingData(): void {
   const samples = exportWritingTrainingSamples();
-  const blob = new Blob([JSON.stringify(samples, null, 2)], { type: 'application/json' });
+  const payload = {
+    version: 1,
+    exportedAt: new Date().toISOString(),
+    samples,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
   const url = URL.createObjectURL(blob);
   const a = document.createElement('a');
   a.href = url;
-  a.download = `letter-writing-training-${new Date().toISOString().slice(0, 10)}.json`;
+  a.download = `letter-writing-judgments-${new Date().toISOString().slice(0, 10)}.json`;
   a.click();
   URL.revokeObjectURL(url);
 }

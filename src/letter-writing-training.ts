@@ -164,33 +164,35 @@ export function formatMasteryTable(): string {
 // ---------------------------------------------------------------------------
 
 export interface TrainingReadiness {
-  totalSamples: number;
-  teacherLabelledSamples: number;
-  coveragePercent: number;   // fraction of 52 letters that have ≥1 sample
-  ready: boolean;            // enough data to attempt training
+  /** Number of teacher-accepted samples available for training. */
+  teacherAcceptedSamples: number;
+  /** Fraction of 52 letters that have ≥1 teacher-accepted sample. */
+  coveragePercent: number;
+  /** Enough data to attempt retraining. */
+  ready: boolean;
   message: string;
 }
 
-const MIN_SAMPLES_FOR_TRAINING = 26;   // at least half the alphabet represented
+const MIN_SAMPLES_FOR_TRAINING = 26;   // at least one teacher accept per letter half
 
 export function getTrainingReadiness(): TrainingReadiness {
+  // exportWritingTrainingSamples() already returns only teacher-accepted attempts.
   const samples = exportWritingTrainingSamples();
   const total = samples.length;
-  const teacherLabelled = samples.filter((s) => s.source === 'teacher').length;
   const covered = new Set(samples.map((s) => `${s.isUppercase ? 'U' : 'L'}-${s.letter}`)).size;
   const coveragePercent = Math.round((covered / 52) * 100);
   const ready = total >= MIN_SAMPLES_FOR_TRAINING;
 
   let message: string;
   if (total === 0) {
-    message = 'No writing samples yet — start practising to build training data.';
+    message = 'No teacher-accepted writing samples yet — accept student attempts to grow training data.';
   } else if (!ready) {
-    message = `${total} sample${total > 1 ? 's' : ''} collected (need ${MIN_SAMPLES_FOR_TRAINING} to train). Keep practising!`;
+    message = `${total} teacher-accepted sample${total > 1 ? 's' : ''} (need ${MIN_SAMPLES_FOR_TRAINING} to train). Keep accepting good attempts.`;
   } else {
-    message = `${total} samples (${teacherLabelled} teacher-labelled) · ${coveragePercent}% letter coverage — ready to export.`;
+    message = `${total} teacher-accepted samples · ${coveragePercent}% letter coverage — ready to export.`;
   }
 
-  return { totalSamples: total, teacherLabelledSamples: teacherLabelled, coveragePercent, ready, message };
+  return { teacherAcceptedSamples: total, coveragePercent, ready, message };
 }
 
 // ---------------------------------------------------------------------------
