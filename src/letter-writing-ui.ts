@@ -252,7 +252,7 @@ async function finaliseAttempt(): Promise<void> {
   scored = true;
 
   const features = extractStrokeFeatures(strokes, attemptStartTime);
-  const result = scoreLetterAttempt(currentLetter, currentIsUppercase, features);
+  const result = scoreLetterAttempt(currentLetter, currentIsUppercase, features, strokes);
 
   const heuristicLines: FeedbackLine[] = [
     ...result.feedback.map((text) => ({ text, source: 'heuristic' as const })),
@@ -291,7 +291,7 @@ async function finaliseAttempt(): Promise<void> {
   }
 
   const feedbackLines = [...heuristicLines, ...modelLines];
-  const appPass = mlPass ?? result.pass;
+  const appPass = !result.hardFail && (mlPass ?? result.pass);
 
   const attempt = logWritingAttempt({
     letter: currentLetter,

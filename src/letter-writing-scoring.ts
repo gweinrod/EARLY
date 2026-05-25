@@ -149,6 +149,24 @@ function emptyFeatures(): LetterStrokeFeatures {
 // Per-letter rule definitions
 // ---------------------------------------------------------------------------
 
+/**
+ * Mandatory crossbar/horizontal-stroke check (relative to the letter bbox).
+ * Failing this is a hard fail — the student's pass is denied even if score and
+ * ML model would otherwise accept (e.g. a triangle drawn for "A").
+ */
+export interface CrossbarRequirement {
+  /** Vertical band where the crossbar must sit, as a fraction of letter bbox (0=top, 1=bottom). */
+  yRange: [number, number];
+  /** Minimum crossbar width as a fraction of letter bbox width. */
+  minXSpanFraction: number;
+  /** Maximum crossbar thickness as a fraction of letter bbox height. */
+  maxThicknessFraction: number;
+  /** Maximum |dy/dx| slope (0 = perfectly horizontal). */
+  maxSlope: number;
+  /** Feedback line shown when the crossbar is missing. */
+  missingMessage: string;
+}
+
 interface LetterRule {
   /** Expected number of strokes [min, max]. */
   strokes: [number, number];
@@ -167,11 +185,29 @@ interface LetterRule {
   hasAscender: boolean;
   /** Human-readable stroke hint shown before drawing. */
   strokeHint: string;
+  /** Hard requirement for a near-horizontal crossbar stroke (e.g. A, H, T, E, F). */
+  crossbar?: CrossbarRequirement;
 }
 
 /** Rules indexed by letter (uppercase) */
 const UPPER_RULES: Record<string, LetterRule> = {
-  A: { strokes: [2, 3], minCoverage: 0.65, aspectRatio: [0.4, 1.1], isRound: false, hasDescender: false, hasAscender: true,  strokeHint: 'Two diagonal lines meeting at the top, then a crossbar.' },
+  A: {
+    strokes: [2, 3],
+    minCoverage: 0.65,
+    aspectRatio: [0.4, 1.1],
+    isRound: false,
+    hasDescender: false,
+    hasAscender: true,
+    strokeHint: 'Two diagonal lines meeting at the top, then a crossbar.',
+    crossbar: {
+      yRange: [0.30, 0.75],
+      minXSpanFraction: 0.30,
+      maxThicknessFraction: 0.30,
+      maxSlope: 0.4,
+      missingMessage:
+        'A needs a horizontal crossbar near the dashed blue midline — draw it as a separate stroke.',
+    },
+  },
   B: { strokes: [2, 3], minCoverage: 0.65, aspectRatio: [0.4, 0.9], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then two bumps on the right.' },
   C: { strokes: [1, 1], minCoverage: 0.60, aspectRatio: [0.5, 1.1], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'One curved stroke, open on the right.' },
   D: { strokes: [2, 2], minCoverage: 0.65, aspectRatio: [0.4, 0.9], isRound: true,  hasDescender: false, hasAscender: true,  strokeHint: 'Straight line down, then a big curve on the right.' },
@@ -243,6 +279,57 @@ export interface ScoringResult {
   pass: boolean;
   feedback: string[];   // human-readable feedback items
   warnings: string[];   // soft hints (not counted against pass)
+  /**
+   * True when a structural requirement (e.g. missing A crossbar) failed.
+   * Caller should deny the student's pass regardless of score or ML prediction.
+   */
+  hardFail: boolean;
+}
+
+/**
+ * Look for a near-horizontal "crossbar" stroke that satisfies the requirement.
+ * A whole stroke qualifies when its own bbox is thin, wide enough, low-slope,
+ * and centered in the required vertical band (relative to the letter bbox).
+ */
+function hasCrossbar(strokes: Stroke[], req: CrossbarRequirement): boolean {
+  const allPoints = strokes.flat();
+  if (allPoints.length < 2) return false;
+
+  let lminX = Infinity, lmaxX = -Infinity, lminY = Infinity, lmaxY = -Infinity;
+  for (const p of allPoints) {
+    if (p.x < lminX) lminX = p.x;
+    if (p.x > lmaxX) lmaxX = p.x;
+    if (p.y < lminY) lminY = p.y;
+    if (p.y > lmaxY) lmaxY = p.y;
+  }
+  const letterW = Math.max(lmaxX - lminX, 1e-6);
+  const letterH = Math.max(lmaxY - lminY, 1e-6);
+  const yMinAbs = lminY + req.yRange[0] * letterH;
+  const yMaxAbs = lminY + req.yRange[1] * letterH;
+
+  for (const stroke of strokes) {
+    if (stroke.length < 2) continue;
+    let sMinX = Infinity, sMaxX = -Infinity, sMinY = Infinity, sMaxY = -Infinity;
+    for (const p of stroke) {
+      if (p.x < sMinX) sMinX = p.x;
+      if (p.x > sMaxX) sMaxX = p.x;
+      if (p.y < sMinY) sMinY = p.y;
+      if (p.y > sMaxY) sMaxY = p.y;
+    }
+    const sW = sMaxX - sMinX;
+    const sH = sMaxY - sMinY;
+    const midY = (sMinY + sMaxY) / 2;
+
+    if (sW < req.minXSpanFraction * letterW) continue;
+    if (sH > req.maxThicknessFraction * letterH) continue;
+    if (midY < yMinAbs || midY > yMaxAbs) continue;
+
+    const slope = sW > 0 ? sH / sW : Infinity;
+    if (slope > req.maxSlope) continue;
+
+    return true;
+  }
+  return false;
 }
 
 /**
@@ -258,6 +345,7 @@ export function scoreLetterAttempt(
   letter: string,
   isUppercase: boolean,
   features: LetterStrokeFeatures,
+  strokes: Stroke[] = [],
 ): ScoringResult {
   const feedback: string[] = [];
   const warnings: string[] = [];
@@ -265,14 +353,19 @@ export function scoreLetterAttempt(
 
   // Trivial reject — nothing drawn
   if (features.strokeCount === 0 || features.totalInkNorm < 0.02) {
-    return { score: 0, pass: false, feedback: ['Nothing was drawn yet — give it a try!'], warnings: [] };
+    return {
+      score: 0,
+      pass: false,
+      feedback: ['Nothing was drawn yet — give it a try!'],
+      warnings: [],
+      hardFail: false,
+    };
   }
 
   const rule = getLetterRule(letter, isUppercase);
   if (!rule) {
-    // Unknown letter — just check ink
     score = features.totalInkNorm > 0.05 ? 70 : 30;
-    return { score, pass: score >= 60, feedback: [], warnings: [] };
+    return { score, pass: score >= 60, feedback: [], warnings: [], hardFail: false };
   }
 
   // --- Coverage (30 pts) ---
@@ -325,17 +418,22 @@ export function scoreLetterAttempt(
     }
   }
 
-  const pass = score >= 60;
+  let hardFail = false;
+  if (rule.crossbar && strokes.length > 0 && !hasCrossbar(strokes, rule.crossbar)) {
+    hardFail = true;
+    feedback.unshift(rule.crossbar.missingMessage);
+  }
+
+  const pass = !hardFail && score >= 60;
   if (pass && feedback.length === 0) {
     feedback.push(`Great job writing ${letter}!`);
-  } else if (!pass) {
-    // Ensure at least one actionable hint
+  } else if (!pass && !hardFail) {
     if (feedback.length === 0) {
       feedback.push(`Keep practising ${letter} — you're getting there!`);
     }
   }
 
-  return { score, pass, feedback, warnings };
+  return { score, pass, feedback, warnings, hardFail };
 }
 
 /** Return the stroke hint for display before the student writes. */
