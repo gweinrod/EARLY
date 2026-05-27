@@ -12,6 +12,7 @@ Requires: pip install -r tools/requirements-train.txt
 
 from __future__ import annotations
 
+import hashlib
 import json
 import subprocess
 import sys
@@ -31,6 +32,9 @@ NUM_CLASSES = 52
 BANK_PATH = ROOT / "data" / "writing-bank" / "teacher-seed.json"
 CALIBRATION_DIR = ROOT / "data" / "writing-calibration"
 STAGE_DIR = ROOT / "public" / "models" / STAGE_ID
+# Mirror bootstrap: each accepted judgment is repeated this many times so
+# teacher corrections are not drowned out by 4× seed copies per letter.
+JUDGMENT_COPIES = 4
 
 
 def build_model() -> tf.keras.Model:
@@ -98,26 +102,48 @@ def _iter_calibration_rows(path: Path):
             yield raw
 
 
+def _judgment_dedupe_key(row: dict, flat: list[float], class_idx: int) -> str:
+    """
+    Unique key per teacher-accepted attempt.
+
+    Do NOT use flat[0] — with canvas-relative rasters the top-left pixel is
+    almost always background (0), so every judgment for "o" looked identical
+    and only one survived training.
+    """
+    attempt_id = row.get("attemptId")
+    if attempt_id:
+        return f"id:{attempt_id}"
+    digest = hashlib.sha256(np.array(flat, dtype=np.float32).tobytes()).hexdigest()[:16]
+    return f"r:{class_idx}:{digest}"
+
+
 def load_judgment_samples(
     xs: list[list[float]], ys: list[int], seen: set[str]
-) -> int:
+) -> tuple[int, int, int]:
     """
     Load extra training samples from data/writing-calibration/*.json.
 
     Only attempts where the teacher explicitly accepted (teacherPass === true)
     are used. Model self-accepts and heuristic passes are NEVER consumed here —
     that would let the model reinforce its own mistakes.
+
+    Returns (raster_count_added, judgment_files_read, duplicate_attempts_skipped).
     """
     if not CALIBRATION_DIR.is_dir():
-        return 0
+        return 0, 0, 0
 
-    added = 0
+    files_read = 0
+    duplicate_attempts = 0
+    unique_judgments = 0
+    rasters_added = 0
+
     for path in sorted(CALIBRATION_DIR.glob("*.json")):
         try:
             rows = list(_iter_calibration_rows(path))
         except json.JSONDecodeError as err:
             print(f"  skipping unreadable calibration file {path.name}: {err}")
             continue
+        files_read += 1
         for row in rows:
             if row.get("teacherPass") is not True:
                 continue
@@ -127,14 +153,26 @@ def load_judgment_samples(
             if idx < 0 or not strokes:
                 continue
             flat = rasterize_strokes(strokes)
-            key = f"{idx}:{flat[0]:.4f}:{len(flat)}"
+            key = _judgment_dedupe_key(row, flat, idx)
             if key in seen:
+                duplicate_attempts += 1
                 continue
             seen.add(key)
-            xs.append(flat)
-            ys.append(idx)
-            added += 1
-    return added
+            unique_judgments += 1
+            for _ in range(JUDGMENT_COPIES):
+                xs.append(flat)
+                ys.append(idx)
+                rasters_added += 1
+
+    if files_read:
+        print(
+            f"  Judgments: {files_read} files -> {unique_judgments} unique accepts "
+            f"({duplicate_attempts} true duplicates skipped) "
+            f"-> {rasters_added} training rasters (x{JUDGMENT_COPIES})",
+            flush=True,
+        )
+
+    return rasters_added, files_read, duplicate_attempts
 
 
 def read_manifest_version() -> float:
@@ -190,15 +228,18 @@ def export_train_weights(model: tf.keras.Model, path: Path) -> None:
 
 def main() -> None:
     xs, ys = load_bootstrap_samples()
+    bootstrap_rasters = len(xs)
     seen: set[str] = set()
-    judgment_count = load_judgment_samples(xs, ys, seen)
+    judgment_rasters, judgment_files, _judgment_dupes = load_judgment_samples(xs, ys, seen)
+    unique_judgments = judgment_rasters // JUDGMENT_COPIES if judgment_rasters else 0
 
     x_arr = np.array(xs, dtype=np.float32).reshape(-1, RASTER_SIZE, RASTER_SIZE, 1)
     y_arr = tf.keras.utils.to_categorical(ys, NUM_CLASSES)
 
     print(
         f"Training letter-writing CNN: {len(xs)} rasters "
-        f"({len(LETTERS)} bootstrap letters, +{judgment_count} judgments)",
+        f"({bootstrap_rasters} from seed, +{judgment_rasters} from "
+        f"{unique_judgments} judgments in {judgment_files} files)",
         flush=True,
     )
 
@@ -232,7 +273,8 @@ def main() -> None:
         "trainedAt": datetime.now(timezone.utc).isoformat(),
         "sampleCount": len(xs),
         "bootstrapLetters": len(LETTERS),
-        "judgmentSamples": judgment_count,
+        "judgmentSamples": unique_judgments,
+        "judgmentRasters": judgment_rasters,
     }
     (STAGE_DIR / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 

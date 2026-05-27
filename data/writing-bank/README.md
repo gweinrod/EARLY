@@ -36,3 +36,13 @@ The script (`scripts/publish-letter-writing.bat`) runs:
 Pass `skip-pull` to retrain offline from cached `data/writing-calibration/`,
 or `push-only` to ship the current `public/models/letter-writing/` files
 without retraining.
+
+## Judgment files vs training rasters
+
+- **One Postgres row** → one JSON file in `data/writing-calibration/`.
+- The trainer dedupes by **`attemptId`** (each teacher accept), not by shape.
+  Older builds wrongly used the top-left raster pixel (always 0 for
+  canvas-relative rasters), so multiple accepts for the same letter (e.g. `o`)
+  collapsed to a single training example.
+- Each unique judgment is repeated **4×** in training (same as bootstrap seed
+  copies per letter) so teacher corrections are not drowned out by the seed.
