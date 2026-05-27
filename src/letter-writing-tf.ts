@@ -16,8 +16,14 @@ import {
 } from './letter-writing-bank';
 import { RASTER_SIZE, rasterizeStrokes } from './letter-writing-raster';
 
-const LOCAL_MODEL_URL = 'localstorage://early-letter-writing-v2';
-const LEGACY_LOCAL_MODEL_URL = 'localstorage://early-letter-writing-v1';
+const LOCAL_MODEL_URL = 'localstorage://early-letter-writing-v3';
+// v1: 26 classes (case-insensitive). v2: 52 classes, per-letter normalised
+// raster. v3: 52 classes, canvas-relative raster (preserves position so
+// O / o, C / c, etc. are separable). Both legacy URLs are discarded on load.
+const LEGACY_LOCAL_MODEL_URLS = [
+  'localstorage://early-letter-writing-v1',
+  'localstorage://early-letter-writing-v2',
+];
 const STAGE_ID = 'letter-writing' as const;
 const NUM_CLASSES = 52;
 const ML_PASS_THRESHOLD = 0.45;
@@ -280,11 +286,13 @@ export async function initLetterWritingModel(): Promise<LetterWritingModelSource
   const published = await tryLoadPublishedModel();
   if (published) return 'published';
 
-  // Clear any legacy 26-class model so it doesn't keep tripping the loader.
-  try {
-    await tf.io.removeModel(LEGACY_LOCAL_MODEL_URL);
-  } catch {
-    /* not saved */
+  // Clear any legacy local model (26-class or per-letter-normalised raster).
+  for (const url of LEGACY_LOCAL_MODEL_URLS) {
+    try {
+      await tf.io.removeModel(url);
+    } catch {
+      /* not saved */
+    }
   }
 
   try {
@@ -322,7 +330,7 @@ export async function retrainFromWritingBank(): Promise<boolean> {
 }
 
 export async function deleteLetterWritingModel(): Promise<void> {
-  for (const url of [LOCAL_MODEL_URL, LEGACY_LOCAL_MODEL_URL]) {
+  for (const url of [LOCAL_MODEL_URL, ...LEGACY_LOCAL_MODEL_URLS]) {
     try {
       await tf.io.removeModel(url);
     } catch {
