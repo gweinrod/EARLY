@@ -75,9 +75,9 @@ if errorlevel 2 (
 )
 
 echo [2/6] Pull samples from Postgres...
-call npm run calibration:pull:postgres
+call npm run calibration:pull
 if errorlevel 1 (
-  echo FAILED at calibration:pull:postgres
+  echo FAILED at calibration:pull
   echo Is the SSH tunnel open and DATABASE_URL correct?
   exit /b 1
 )

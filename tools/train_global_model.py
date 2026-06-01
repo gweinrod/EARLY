@@ -2,7 +2,7 @@
 """
 Train the shared EARLY phoneme classifier from downloaded cloud samples.
 
-  npm run calibration:pull
+  npm run training:pull
   python tools/train_global_model.py --stage alphabet
 
 Writes TensorFlow.js weights to public/models/<stage>/ and updates manifest.json.
@@ -236,7 +236,7 @@ def main() -> None:
     if len(xs) < 5:
         raise SystemExit(
             f"Need at least 5 samples for {args.stage}; found {len(xs)}. "
-            "Run: npm run calibration:pull (after voice setup + judgments on live app)."
+            "Run: npm run training:pull (after voice setup + judgments on live app)."
         )
 
     x_t = tf.constant(xs, dtype=tf.float32)
@@ -324,7 +324,7 @@ def main() -> None:
     (stage_dir / "manifest.json").write_text(json.dumps(manifest, indent=2) + "\n", encoding="utf-8")
 
     print(f"Wrote {stage_dir} — v{next_version} from {len(xs)} samples.")
-    print("Commit public/models/ and deploy to Vercel so all devices load the new model.")
+    print("Commit public/models/ and deploy to VPS so all devices load the new model.")
 
 
 if __name__ == "__main__":

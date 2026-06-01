@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-/** Copy @tensorflow/tfjs-backend-wasm binaries into public/ for Vite + Vercel. */
+/** Copy @tensorflow/tfjs-backend-wasm binaries into public/ for Vite and static deploy. */
 import fs from 'fs';
 import path from 'path';
 import { fileURLToPath } from 'url';

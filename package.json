@@ -12,22 +12,17 @@
     "dev:lan": "vite --host",
     "build": "tsc && vite build",
     "verify": "npm run build",
-    "preview": "vite preview",
-    "calibration:pull": "node tools/pull_calibration_samples.mjs",
-    "calibration:pull:postgres": "node tools/pull_calibration_from_postgres.mjs",
+    "calibration:pull": "node tools/pull_calibration_from_postgres.mjs",
     "calibration:import:postgres": "node tools/import_json_to_postgres.mjs",
     "training:archive": "node tools/archive_training_samples.mjs",
     "training:export-base": "node tools/export_base_weights.mjs",
-    "seed:blob-counts": "node tools/seed-blob-counts.mjs",
     "calibration:train": "python tools/train_global_model.py",
     "training:pull": "node tools/pull_calibration_from_postgres.mjs",
-    "publish:model": "scripts\\publish-shared-model.bat",
-    "publish:model:postgres": "scripts\\publish-shared-model-postgres.bat",
+    "publish:model": "scripts\\publish-shared-model-postgres.bat",
     "publish:unit1": "scripts\\publish-unit1-training.bat",
     "publish:writing-model": "scripts\\publish-letter-writing.bat",
     "writing:train": "python tools/train_letter_writing_model.py",
-    "writing:pull": "node tools/pull_calibration_from_postgres.mjs",
-    "writing:pull:blob": "node tools/pull_calibration_samples.mjs"
+    "writing:pull": "node tools/pull_calibration_from_postgres.mjs"
   },
   "devDependencies": {
     "typescript": "^5.7.2",
@@ -36,8 +31,6 @@
   "dependencies": {
     "@tensorflow/tfjs": "^4.22.0",
     "@tensorflow/tfjs-backend-wasm": "^4.22.0",
-    "@vercel/blob": "^0.27.3",
-    "pg": "^8.13.1",
-    "@vercel/node": "^5.0.2"
+    "pg": "^8.13.1"
   }
 }

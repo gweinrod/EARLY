@@ -1,7 +1,7 @@
 #!/usr/bin/env node
 /**
  * Merge pulled cloud samples into a permanent local archive (survives "clear server").
- * Run after calibration:pull, or via publish-shared-model.bat.
+ * Run after npm run training:pull, or via publish scripts.
  */
 import fs from 'fs';
 import path from 'path';

@@ -5,7 +5,7 @@ import { APP_VERSION } from './version';
 
 const QUEUE_KEY = 'early.cloudQueue.v2';
 const UPLOADED_ATTEMPTS_KEY = 'early.cloudUploadedAttempts.v2';
-/** Min interval between server stat fetches (each used to call Blob list). */
+/** Min interval between server stat fetches (avoids hammering stats endpoints). */
 const STATS_REFRESH_MS = 5 * 60 * 1000;
 let lastStatsRefreshAt = 0;
 
@@ -204,7 +204,7 @@ export async function flushCloudQueue(): Promise<void> {
   emit();
 }
 
-/** Fetch server counts (throttled — avoids Blob list on every judgment). */
+/** Fetch server counts (throttled). */
 export async function refreshCloudStats(
   stageId: CurriculumStageId,
   voicePending = 0,
@@ -279,7 +279,7 @@ export function formatCloudSyncLine(
     s.serverTotal === null &&
     s.voiceBankTotal === null
   ) {
-    return 'Cloud training: not connected (enable Vercel Blob on deploy).';
+    return 'Cloud training: not connected to server.';
   }
   const voice = s.voiceBankTotal ?? 0;
   const judgments = s.serverTotal ?? 0;

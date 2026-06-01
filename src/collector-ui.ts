@@ -44,7 +44,7 @@ function showDataStatus(msg: string): void {
 async function onClearServer(): Promise<void> {
   if (
     !confirm(
-      'Delete ALL voice samples and teacher judgments from the server (Vercel Blob)?\n\n' +
+      'Delete ALL voice samples and teacher judgments from the server?\n\n' +
         'The shared classroom model on the app is NOT removed.\n' +
         'Run publish from your PC after new practice to add training data back into the model.\n\n' +
         'Required after landmark embedding upgrade — old 13-D samples are invalid.\n' +

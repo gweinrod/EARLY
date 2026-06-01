@@ -6,7 +6,7 @@ Browser-based phoneme pronunciation practice for **iPad in the classroom**. Stud
 
 - Node.js 18+ (development)
 - **Safari on iPad** (production) — all iOS browsers use WebKit
-- HTTPS (e.g. [Vercel](https://vercel.com)) for microphone access
+- HTTPS on your VPS (e.g. `https://early.gregtutors.com`) for microphone access
 
 ## Quick start (development)
 
@@ -22,11 +22,11 @@ Open `http://localhost:5173` in Chrome or Safari.
 Step-by-step: [`docs/DEPLOY.md`](docs/DEPLOY.md)
 
 1. Push to a **private** GitHub repo named `EARLY`.
-2. Import in Vercel → deploy (HTTPS URL).
+2. Deploy static `dist/` + `server/index.mjs` on your VPS (nginx → API, static files).
 3. Classroom iPad: Safari → URL → Share → **Add to Home Screen**.
 4. Week-by-week plan: [`docs/EARLY_MONTH_ONE.md`](docs/EARLY_MONTH_ONE.md).
 
-Local LAN dev (optional): `npm run dev:lan` — use Vercel HTTPS for real mic tests on iPad.
+Local LAN dev (optional): `npm run dev:lan` — use production HTTPS for real mic tests on iPad.
 
 ## Classroom session workflow
 
@@ -59,6 +59,7 @@ URL overrides: `?debug=1`, `?student=1`, `?nonsense=1`
 | `src/student-feedback.ts` | Child-friendly messages |
 | `src/dsp.ts` | MFCC pipeline (demo parity) |
 | `src/net.ts` | Session NN (silent collection) |
+| `server/` | Training + auth API (Postgres) |
 | `claude imports/` | Claude handoff PDFs and original demo |
 | `docs/EARLY_MONTH_ONE.md` | iPad + month-one plan from Claude |
 
@@ -75,4 +76,5 @@ Or with GitHub CLI: `gh repo create EARLY --private --source=. --push`
 
 - `npm run dev` — Vite dev server
 - `npm run build` — production build in `dist/`
-- `npm run preview` — preview production build
+- `npm run training:pull` — export calibration + voice-bank from Postgres
+- `npm run publish:model` — pull → train → version bump (see [`docs/CLOUD_TRAINING.md`](docs/CLOUD_TRAINING.md))

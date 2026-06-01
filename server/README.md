@@ -1,6 +1,6 @@
 # EARLY training API (Postgres)
 
-Replaces Vercel Blob for `/api/calibration`, `/api/voice-bank`, and `/api/clear-training-data`.
+EARLY training + auth API: `/api/calibration`, `/api/voice-bank`, `/api/writing-judgments`, `/api/auth/*`, `/api/clear-training-data`.
 
 ## Why Postgres
 
@@ -62,17 +62,6 @@ location /api/ {
 ```
 
 Reload nginx after adding. The static app and API share `early.gregtutors.com` (no CORS issues).
-
-## Migrate existing Blob data (one-time)
-
-While Blob token still works:
-
-```bash
-npm run calibration:pull
-node tools/import_json_to_postgres.mjs
-```
-
-Or restore counts only from archive on disk (see import script).
 
 ## Pull for training on your PC
 

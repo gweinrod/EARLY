@@ -40,7 +40,7 @@ export interface ClearServerResult {
   error?: string;
 }
 
-/** Delete all calibration + voice-bank blobs on Vercel. */
+/** Delete all training samples on the server (Postgres). */
 export async function clearServerTrainingData(): Promise<ClearServerResult> {
   try {
     const res = await fetch('/api/clear-training-data', { method: 'POST' });
@@ -57,7 +57,7 @@ export async function clearServerTrainingData(): Promise<ClearServerResult> {
 export function formatClearServerMessage(result: ClearServerResult): string {
   if (!result.ok) {
     return result.error === 'cloud_storage_not_configured'
-      ? 'Server clear failed — Blob not configured on Vercel.'
+      ? 'Server clear failed — API not configured.'
       : `Server clear failed: ${result.error ?? 'unknown error'}`;
   }
   const d = result.deleted;

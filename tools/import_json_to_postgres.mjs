@@ -3,7 +3,7 @@
  * One-time: import data/calibration/*.json and data/voice-bank/*.json into Postgres.
  * Rebuilds stage_sample_counts from inserted rows (no per-file list on the server).
  *
- *   npm run calibration:pull   # optional, from Blob
+ *   npm run training:pull      # optional, export from Postgres first
  *   DATABASE_URL=... node tools/import_json_to_postgres.mjs
  */
 import fs from 'fs';

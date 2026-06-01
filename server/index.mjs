@@ -1,6 +1,6 @@
 /**
  * EARLY training API — Postgres + optional JSON files on disk.
- * Same routes as Vercel Blob handlers; GET stats never lists all samples.
+ * Training + auth API for EARLY (Postgres). GET stats never lists all samples.
  */
 import crypto from 'node:crypto';
 import { execSync } from 'node:child_process';

@@ -2,7 +2,7 @@
  * Cloud queue for letter-writing teacher judgments.
  *
  * Each teacher-accepted writing attempt is POSTed to /api/writing-judgments
- * (Vercel Blob or VPS Postgres) so the PC retrainer can pull every
+ * (VPS Postgres) so the PC retrainer can pull every
  * device's judgments via `npm run writing:pull`.
  *
  * Mirrors the cloud-calibration / cloud-voice-bank pattern: optimistic

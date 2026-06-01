@@ -13,7 +13,7 @@ Source: [`claude imports/EARLY_cursor_context.pdf`](../claude%20imports/EARLY_cu
 
 | Week | Focus |
 |------|--------|
-| 1–2 | iPad reliability: Safari, `audio/mp4` recording, PWA, Vercel deploy, large touch targets |
+| 1–2 | iPad reliability: Safari, `audio/mp4` recording, PWA, VPS HTTPS deploy, large touch targets |
 | 3 | Child-friendly feedback; portrait layout; curriculum words; **ML collects silently** (no NN UI) |
 | 4 | Sit-with-student trials; export session logs; expand to small group |
 
@@ -22,7 +22,7 @@ Source: [`claude imports/EARLY_cursor_context.pdf`](../claude%20imports/EARLY_cu
 - Showing neural-net output to students
 - Login / multi-user accounts
 - EARLY Teach / EARLY Assess
-- App Store (PWA + Vercel is enough)
+- App Store (PWA + HTTPS VPS is enough)
 
 ## Session log (training data)
 
@@ -47,9 +47,9 @@ Export: **Teacher session → export session log** (JSON download).
 
 ## iPad checklist before class
 
-See [`DEPLOY.md`](DEPLOY.md) for GitHub + Vercel commands.
+See [`DEPLOY.md`](DEPLOY.md) for GitHub + VPS deploy.
 
-1. Deploy to Vercel (HTTPS required for mic)
+1. Deploy to VPS with HTTPS (required for mic)
 2. Open in **Safari** on the classroom iPad
 3. Share → Add to Home Screen
 4. Enter anonymous student ID at start of each session

@@ -865,7 +865,7 @@ function init(): void {
   });
 
   if (!navigator.mediaDevices?.getUserMedia) {
-    showErr('Microphone needs HTTPS or localhost (e.g. https://early-sigma.vercel.app or npm run dev).');
+    showErr('Microphone needs HTTPS or localhost (e.g. https://early.gregtutors.com or npm run dev).');
   }
 
   void prepareStage(curStageId);
