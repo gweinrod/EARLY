@@ -1,0 +1,7 @@
+{
+  "version": 0.01,
+  "stageId": "consonants",
+  "modelUrl": "/models/consonants/model.json",
+  "trainedAt": "2026-06-01T20:36:11.379702+00:00",
+  "sampleCount": 24
+}
