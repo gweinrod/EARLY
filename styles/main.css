@@ -153,9 +153,9 @@ body.ml-debug #netBadge { display: none !important; }
   margin: 0 0 0.35rem;
 }
 .teacher-mode-toggle { white-space: nowrap; }
-.btn-logout {
-  font-size: 13px;
-  padding: 6px 10px;
+.app-top-actions .pill.btn-logout {
+  font: inherit;
+  line-height: inherit;
 }
 .teacher-tools { margin-top: 0.5rem; }
 
