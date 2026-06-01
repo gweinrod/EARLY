@@ -10,7 +10,7 @@ REM Optional: MANIFEST_VERSION=0.92  MANIFEST_BUMP=major|minor
 cd /d "%~dp0.."
 
 set "STAGE=alphabet"
-set "GIT_BRANCH=letter-writing-ml"
+set "GIT_BRANCH=main"
 set "PUSH_ONLY=0"
 set "API_HOST=https://early.gregtutors.com"
 

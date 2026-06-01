@@ -1,12 +1,12 @@
 #!/bin/bash
 # VPS: install as /app/deploy-early.sh (chmod +x).
-# Pulls latest letter-writing-ml branch, builds dist/, prints deployed commit.
+# Pulls latest main branch, builds dist/, prints deployed commit.
 # Do not run git pull separately before this script.
 set -e
 cd /app/early
 git fetch origin
-git checkout letter-writing-ml
-git pull origin letter-writing-ml
+git checkout main
+git pull origin main
 npm ci
 npm run build
 if [ -f server/package.json ]; then

@@ -16,7 +16,7 @@ REM Flags:
 REM   skip-pull   Use cached data\ folders (offline retrain)
 REM   push-only   Skip pull+train; build and push current model files
 
-set "GIT_BRANCH=letter-writing-ml"
+set "GIT_BRANCH=main"
 set "PUSH_ONLY=0"
 set "SKIP_PULL=0"
 
