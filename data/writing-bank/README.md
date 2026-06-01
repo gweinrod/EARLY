@@ -9,7 +9,18 @@ Place **`teacher-seed.json`** here before running the publish script.
    (next to “Record teacher writing (seed)”).
 3. Save the download as `data/writing-bank/teacher-seed.json` on your PC.
 
-## Pull judgments + retrain (recommended)
+## Pull everything + retrain Unit 1 (recommended)
+
+Letter names, letter sounds, and letter writing in one step:
+
+```powershell
+ssh -L 5433:127.0.0.1:5432 early@early.gregtutors.com
+cd C:\EARLY
+npm run publish:unit1
+ssh early@early.gregtutors.com /app/deploy-early.sh
+```
+
+## Pull judgments + retrain writing only
 
 Every time a teacher hits **Student wrote “x” correctly — accept** in the
 app, the device uploads that attempt (letter + raw strokes + studentId) to

@@ -28,6 +28,10 @@ function copyDir(srcDir, destDir) {
 const pairs = [
   [path.join(root, 'data', 'calibration'), path.join(root, 'data', 'training-archive', 'calibration')],
   [path.join(root, 'data', 'voice-bank'), path.join(root, 'data', 'training-archive', 'voice-bank')],
+  [
+    path.join(root, 'data', 'writing-calibration'),
+    path.join(root, 'data', 'training-archive', 'writing-calibration'),
+  ],
 ];
 
 let added = 0;
@@ -42,6 +46,11 @@ const voiceTotal = fs.existsSync(pairs[1][1])
   ? fs.readdirSync(pairs[1][1]).filter((f) => f.endsWith('.json')).length
   : 0;
 
+const writingDir = pairs[2][1];
+const writingTotal = fs.existsSync(writingDir)
+  ? fs.readdirSync(writingDir).filter((f) => f.endsWith('.json')).length
+  : 0;
+
 console.log(
-  `Training archive: +${added} new file(s) → ${calTotal} judgments, ${voiceTotal} voice (total kept locally).`,
+  `Training archive: +${added} new file(s) → ${calTotal} speech judgments, ${voiceTotal} voice, ${writingTotal} writing (kept locally).`,
 );

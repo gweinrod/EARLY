@@ -361,7 +361,32 @@ body.ml-debug #netBadge { display: none !important; }
   margin: 0 0 0.75rem;
   min-height: 1.1rem;
 }
-.writing-stats { margin: 0.5rem 0 0.75rem; }
+.stage-progress-section {
+  margin: 0.75rem 0 1rem;
+  padding: 12px 14px;
+  background: #f8fafc;
+  border: 1px solid #e2e8f0;
+  border-radius: 10px;
+}
+.stage-progress-section .cloud-sync-status {
+  margin: 0 0 4px;
+  font-size: 13px;
+}
+.stage-progress-panel {
+  margin-top: 10px;
+  padding-top: 10px;
+  border-top: 1px solid #e2e8f0;
+  font-size: 14px;
+  color: #374151;
+}
+.stage-progress-title {
+  font-weight: 600;
+  margin-bottom: 6px;
+  color: #1e293b;
+}
+.stage-progress-line {
+  margin: 2px 0;
+}
 .btn-clear-writing {
   display: block;
   margin: 0 auto 1rem;

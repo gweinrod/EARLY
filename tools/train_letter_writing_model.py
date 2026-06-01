@@ -31,6 +31,7 @@ LETTERS = list("ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz")
 NUM_CLASSES = 52
 BANK_PATH = ROOT / "data" / "writing-bank" / "teacher-seed.json"
 CALIBRATION_DIR = ROOT / "data" / "writing-calibration"
+CALIBRATION_ARCHIVE_DIR = ROOT / "data" / "training-archive" / "writing-calibration"
 STAGE_DIR = ROOT / "public" / "models" / STAGE_ID
 # Mirror bootstrap: each accepted judgment is repeated this many times so
 # teacher corrections are not drowned out by 4× seed copies per letter.
@@ -129,7 +130,8 @@ def load_judgment_samples(
 
     Returns (raster_count_added, judgment_files_read, duplicate_attempts_skipped).
     """
-    if not CALIBRATION_DIR.is_dir():
+    judgment_dirs = [d for d in (CALIBRATION_ARCHIVE_DIR, CALIBRATION_DIR) if d.is_dir()]
+    if not judgment_dirs:
         return 0, 0, 0
 
     files_read = 0
@@ -137,7 +139,11 @@ def load_judgment_samples(
     unique_judgments = 0
     rasters_added = 0
 
-    for path in sorted(CALIBRATION_DIR.glob("*.json")):
+    paths: list[Path] = []
+    for judgment_dir in judgment_dirs:
+        paths.extend(sorted(judgment_dir.glob("*.json")))
+
+    for path in paths:
         try:
             rows = list(_iter_calibration_rows(path))
         except json.JSONDecodeError as err:

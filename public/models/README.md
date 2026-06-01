@@ -4,8 +4,11 @@ Ship TensorFlow.js exports here after training scripts.
 
 | Stage | Train command | Manifest |
 |-------|---------------|----------|
-| `alphabet` (speech) | `python tools/train_global_model.py --stage alphabet` | `alphabet/manifest.json` |
+| `alphabet` (letter names) | `python tools/train_global_model.py --stage alphabet` | `alphabet/manifest.json` |
+| `consonants` (letter sounds) | `python tools/train_global_model.py --stage consonants` | `consonants/manifest.json` |
 | `letter-writing` | `python tools/train_letter_writing_model.py` | `letter-writing/manifest.json` |
+
+**All Unit 1 models:** `npm run publish:unit1` (pull Postgres → archive → train all three → push).
 
 - **`*/manifest.json`** — float version devices compare (e.g. `0.9`, `0.91`; major releases `1.0`, `2.0`)
 - **`*/model.json` + weight shards** — loaded by the app

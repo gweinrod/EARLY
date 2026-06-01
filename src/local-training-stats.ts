@@ -1,8 +1,9 @@
 import type { CurriculumStageId } from './curriculum';
-import { getTrainingReadiness } from './letter-writing-training';
+import { exportWritingTrainingSamples } from './letter-writing-data';
 import { isLetterWritingStage } from './units';
 import { $ } from './ui';
 import { countCalibrationQueueForStage } from './cloud-calibration';
+import { getWritingJudgmentQueueLength } from './cloud-writing-judgments';
 import { countVoiceQueueForStage } from './cloud-voice-bank';
 import { loadAttempts } from './session-log';
 import { loadVoiceBank } from './voice-bank';
@@ -25,17 +26,20 @@ export function countLocalJudgments(stageId: CurriculumStageId): number {
   return judged + countCalibrationQueueForStage(stageId);
 }
 
+export function countLocalWritingJudgments(): number {
+  return exportWritingTrainingSamples().length + getWritingJudgmentQueueLength();
+}
+
 export function formatLocalTrainingLine(stageId: CurriculumStageId): string {
+  if (isLetterWritingStage(stageId)) {
+    const judgments = countLocalWritingJudgments();
+    return `Local training: ${judgments} judgments on local`;
+  }
   const voice = countLocalVoiceSamples(stageId);
   const judgments = countLocalJudgments(stageId);
   return `Local training: ${voice} voice on local · ${judgments} judgments on local`;
 }
 
 export function refreshLocalTrainingStatus(stageId: CurriculumStageId): void {
-  if (isLetterWritingStage(stageId)) {
-    $('localTrainingStatus').textContent =
-      `Letter writing: ${getTrainingReadiness().message}`;
-    return;
-  }
   $('localTrainingStatus').textContent = formatLocalTrainingLine(stageId);
 }

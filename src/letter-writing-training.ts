@@ -24,12 +24,6 @@ import {
   type LetterMastery,
   type WritingTrainingSample,
 } from './letter-writing-data';
-import { downloadWritingBankForPublish } from './letter-writing-bank';
-import {
-  getWritingCloudState,
-  refreshWritingJudgmentServerCount,
-  subscribeWritingCloudSync,
-} from './cloud-writing-judgments';
 
 // ---------------------------------------------------------------------------
 // Session summary
@@ -214,69 +208,3 @@ export function getTrainingReadiness(): TrainingReadiness {
 
 export { downloadWritingTrainingData, getAllMasteryStats, exportWritingTrainingSamples };
 
-// ---------------------------------------------------------------------------
-// Render a mini stats widget (no framework dependency)
-// ---------------------------------------------------------------------------
-
-/**
- * Mount a small stats panel into `container`.
- * Call `refreshStats()` to update after new attempts.
- */
-export function mountWritingStatsPanel(container: HTMLElement): { refresh: () => void } {
-  container.style.cssText =
-    'font-family:system-ui,sans-serif;font-size:13px;color:#374151;' +
-    'background:#fff;border-radius:8px;padding:12px 16px;' +
-    'box-shadow:0 1px 3px rgba(0,0,0,0.08);max-width:340px;';
-
-  function cloudLine(): string {
-    const s = getWritingCloudState();
-    if (!s.enabled && s.serverTotal == null && s.pending === 0) {
-      return 'Cloud judgments: not connected to server yet.';
-    }
-    const server = s.serverTotal ?? 0;
-    let line = `Cloud judgments: ${server} on server`;
-    if (s.pending > 0) line += ` · ${s.pending} waiting to upload`;
-    if (s.lastError) line += ` · ${s.lastError}`;
-    return line;
-  }
-
-  function refresh(): void {
-    const stats = getAllMasteryStats();
-    const session = getSessionSummary();
-    const readiness = getTrainingReadiness();
-
-    container.innerHTML = `
-      <div style="font-weight:600;margin-bottom:8px;">Letter Writing Progress</div>
-      <div>📝 Session: ${session.totalAttempts} attempts · ${Math.round(session.accuracy * 100)}% pass rate</div>
-      <div>⭐ Mastered: ${stats.mastered} / ${stats.totalLetters} letters</div>
-      <div>📊 Overall accuracy: ${Math.round(stats.overallAccuracy * 100)}%</div>
-      <div style="margin-top:8px;color:#6b7280;font-size:12px;">${readiness.message}</div>
-      <div style="margin-top:4px;color:#6b7280;font-size:12px;" id="lwCloudLine">${cloudLine()}</div>
-      ${readiness.ready
-        ? `<button id="lwExportBtn" style="margin-top:8px;padding:5px 12px;border:1px solid #d1d5db;
-              border-radius:6px;background:#f9fafb;cursor:pointer;font-size:12px;">
-              Export local judgments
-           </button>`
-        : ''}
-      <button id="lwExportSeedBtn" style="margin-top:8px;margin-left:6px;padding:5px 12px;border:1px solid #d1d5db;
-            border-radius:6px;background:#f9fafb;cursor:pointer;font-size:12px;">
-        Export writing seed
-      </button>
-    `;
-
-    const exportBtn = container.querySelector('#lwExportBtn') as HTMLButtonElement | null;
-    exportBtn?.addEventListener('click', downloadWritingTrainingData);
-    const seedBtn = container.querySelector('#lwExportSeedBtn') as HTMLButtonElement | null;
-    seedBtn?.addEventListener('click', downloadWritingBankForPublish);
-  }
-
-  // Live-update the cloud line when uploads succeed / queue changes.
-  subscribeWritingCloudSync(() => {
-    const el = container.querySelector('#lwCloudLine');
-    if (el) el.textContent = cloudLine();
-  });
-
-  void refreshWritingJudgmentServerCount();
-  refresh();
-  return { refresh };
-}

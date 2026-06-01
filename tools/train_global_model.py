@@ -43,9 +43,16 @@ def read_embedding_len() -> int:
 
 EMBEDDING_LEN = read_embedding_len()
 
-# Alphabet stage keys (must match src/word-vocabulary.ts: a-z + silence "")
+# Stage vocabs (must match setVocabularyStage() in src/word-vocabulary.ts)
 SILENCE_KEY = ""
 ALPHABET_KEYS = [*list("abcdefghijklmnopqrstuvwxyz"), SILENCE_KEY]
+# Consonant phonemes only (curriculum consonants stage excludes a, e, i, o, u)
+CONSONANT_KEYS = [*list("bcdfghjklmnpqrstvwxyz"), SILENCE_KEY]
+
+STAGE_VOCAB: dict[str, list[str]] = {
+    "alphabet": ALPHABET_KEYS,
+    "consonants": CONSONANT_KEYS,
+}
 
 
 def _add_sample(
@@ -82,9 +89,11 @@ def _add_sample(
 
 
 def load_samples(stage_id: str) -> tuple[list[list[float]], list[int], dict[str, int]]:
-    vocab = {k: i for i, k in enumerate(ALPHABET_KEYS)}
-    if stage_id != "alphabet":
-        raise SystemExit("Only --stage alphabet is wired in train_global_model.py for now.")
+    keys = STAGE_VOCAB.get(stage_id)
+    if not keys:
+        known = ", ".join(sorted(STAGE_VOCAB))
+        raise SystemExit(f"Unknown --stage {stage_id!r}. Supported: {known}")
+    vocab = {k: i for i, k in enumerate(keys)}
 
     xs: list[list[float]] = []
     ys: list[int] = []
@@ -106,7 +115,7 @@ def load_samples(stage_id: str) -> tuple[list[list[float]], list[int], dict[str,
                 continue
             _add_sample(row, stage_id, xs, ys, vocab, seen)
 
-    append_silence_training(xs, ys, vocab, seen)
+    append_silence_training(xs, ys, vocab, seen, stage_id)
     return xs, ys, vocab
 
 
@@ -115,6 +124,7 @@ def append_silence_training(
     ys: list[int],
     vocab: dict[str, int],
     seen: set[str],
+    stage_id: str,
 ) -> None:
     """Ensure silence class exists (matches client syntheticSilenceEmbedding + augments)."""
     import random
@@ -136,7 +146,7 @@ def append_silence_training(
                 row = json.loads(path.read_text(encoding="utf-8"))
             except json.JSONDecodeError:
                 continue
-            if row.get("stageId") != "alphabet":
+            if row.get("stageId") != stage_id:
                 continue
             e = row.get("embedding")
             if row.get("targetKey") == SILENCE_KEY and isinstance(e, list) and len(e) == EMBEDDING_LEN:

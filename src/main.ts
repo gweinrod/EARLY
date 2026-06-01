@@ -30,7 +30,7 @@ import {
 } from './letter-writing-ui';
 import { setWritingStudentId } from './letter-writing-data';
 import { refreshWritingSeedExportButtons } from './letter-writing-bank';
-import { mountWritingStatsPanel } from './letter-writing-training';
+import { mountStageProgressPanel, showStageProgressSection } from './stage-progress';
 import {
   getLetterWritingModelSource,
   isLetterWritingModelReady,
@@ -40,6 +40,7 @@ import { isWritingBankComplete } from './letter-writing-bank';
 import {
   initWritingJudgmentUi,
   promptWritingTeacherJudgment,
+  setWritingJudgmentHandler,
 } from './letter-writing-judgment-ui';
 import {
   ensureWritingModelForPractice,
@@ -68,6 +69,7 @@ import { acousticStudentMessage, toStudentFeedback } from './student-feedback';
 import {
   flushWritingJudgmentQueue,
   refreshWritingJudgmentServerCount,
+  subscribeWritingCloudSync,
 } from './cloud-writing-judgments';
 import {
   flushCloudQueue,
@@ -107,6 +109,7 @@ import {
 } from './ui';
 
 let settings: AppSettings = loadSettings();
+let refreshStageProgress: (stageId: CurriculumStageId) => void = () => {};
 let audioCtx: AudioContext | null = null;
 let recChunks: Blob[] = [];
 let mediaRec: MediaRecorder | null = null;
@@ -414,6 +417,7 @@ function finishAttempt(): void {
       curriculumStage: curStageId,
     });
     lastLoggedAttemptId = attempt.id;
+    refreshStageProgress(curStageId);
     promptTeacherJudgment(attempt, curStageId);
   }
 }
@@ -466,6 +470,8 @@ async function onTeacherJudgment(j: {
   }).then(() => {
     void flushCloudQueue().then(() => flushVoiceBankQueue());
   });
+  refreshStageProgress(curStageId);
+  refreshLocalTrainingStatus(curStageId);
 }
 
 function applyModelLoadStatus(load: TfInitResult): void {
@@ -506,8 +512,9 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
 
   if (isLetterWritingStage(stageId)) {
     setTargetItem(getStage(stageId).items[0] ?? curItem);
-    void refreshCloudStats(stageId, 0);
+    void refreshWritingJudgmentServerCount().then(() => refreshCloudStats(stageId, 0));
     refreshLocalTrainingStatus(stageId);
+    refreshStageProgress(stageId);
 
     const publishedManifest = await fetchPublishedManifest('letter-writing');
     if (settings.collectorMode && !isWritingBankComplete() && !publishedManifest) {
@@ -564,6 +571,7 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
 
   void refreshCloudStats(stageId, getVoiceBankQueueLength());
   refreshLocalTrainingStatus(stageId);
+  refreshStageProgress(stageId);
 }
 
 async function switchStage(stageId: CurriculumStageId): Promise<void> {
@@ -720,8 +728,13 @@ function applySettingsUi(): void {
 
   if (settings.collectorMode) show('collectorPanel');
   else hide('collectorPanel');
+  showStageProgressSection(settings.collectorMode);
   hide('netBadge');
   refreshWritingSeedExportButtons();
+  if (settings.collectorMode) {
+    refreshLocalTrainingStatus(curStageId);
+    refreshStageProgress(curStageId);
+  }
 }
 
 function init(): void {
@@ -741,13 +754,31 @@ function init(): void {
       void onTeacherJudgment(j);
     });
     setCloudRefreshHandler(() => {
-      void refreshCloudStats(curStageId, getVoiceBankQueueLength(), { force: true });
+      void refreshCloudStats(curStageId, getVoiceBankQueueLength(), { force: true }).then(
+        () => refreshStageProgress(curStageId),
+      );
     });
     const meta = getSessionMeta();
     syncStudentIdField(meta.studentId);
     if (meta.studentId) setWritingStudentId(meta.studentId);
     subscribeCloudSync((s) => {
-      $('cloudSyncStatus').textContent = formatCloudSyncLine(s);
+      $('cloudSyncStatus').textContent = formatCloudSyncLine(s, curStageId);
+      refreshLocalTrainingStatus(curStageId);
+    });
+    subscribeWritingCloudSync(() => {
+      if (!isLetterWritingStage(curStageId)) return;
+      $('cloudSyncStatus').textContent = formatCloudSyncLine(
+        {
+          enabled: false,
+          pending: 0,
+          serverTotal: null,
+          voiceBankTotal: null,
+          voicePending: 0,
+          lastUploadAt: null,
+          lastError: null,
+        },
+        curStageId,
+      );
       refreshLocalTrainingStatus(curStageId);
     });
     refreshLocalTrainingStatus(curStageId);
@@ -762,8 +793,9 @@ function init(): void {
         ) {
           await syncLocalVoiceBankToCloud(curStageId);
         }
-        await refreshCloudStats(curStageId, getVoiceBankQueueLength(), { force: true });
         await refreshWritingJudgmentServerCount();
+        await refreshCloudStats(curStageId, getVoiceBankQueueLength(), { force: true });
+        refreshStageProgress(curStageId);
       });
   }
 
@@ -773,12 +805,17 @@ function init(): void {
   });
   initWritingBootstrapUi({ onComplete: onWritingBootstrapComplete });
   initWritingJudgmentUi();
-  const { refresh: refreshWritingStats } = mountWritingStatsPanel(
-    $('writingStats') as HTMLElement,
+  setWritingJudgmentHandler(() => {
+    refreshStageProgress(curStageId);
+    refreshLocalTrainingStatus(curStageId);
+  });
+  const { refresh: refreshStageProgressFn } = mountStageProgressPanel(
+    $('stageProgressPanel') as HTMLElement,
   );
+  refreshStageProgress = refreshStageProgressFn;
   initLetterWritingUi({
     onAttemptLogged(attempt) {
-      refreshWritingStats();
+      refreshStageProgress(curStageId);
       if (settings.collectorMode) {
         promptWritingTeacherJudgment(attempt);
       }

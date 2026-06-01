@@ -30,9 +30,6 @@
       student ID (anonymous)
       <input type="text" id="studentId" class="text-input" placeholder="e.g. S12" autocomplete="off" />
     </label>
-    <p id="cloudSyncStatus" class="cloud-sync-status debug-only">Cloud training: checking…</p>
-    <p id="localTrainingStatus" class="cloud-sync-status debug-only">Local training: …</p>
-    <div id="writingStats" class="writing-stats debug-only"></div>
     <p id="dataClearStatus" class="data-clear-status" style="display:none"></p>
     <div class="teacher-toggles">
       <label class="mode-toggle"><input type="checkbox" id="debugMode" /> Show Debug</label>
@@ -76,6 +73,12 @@
   <div id="netBadge" class="tech-only">
     &#x25CF;&nbsp;
     <span id="netTxt">collecting training data silently</span>
+  </div>
+
+  <div id="stageProgressSection" class="stage-progress-section" style="display:none">
+    <p id="cloudSyncStatus" class="cloud-sync-status">Cloud training: checking…</p>
+    <p id="localTrainingStatus" class="cloud-sync-status">Local training: …</p>
+    <div id="stageProgressPanel"></div>
   </div>
 
   <p class="sec-label">Unit</p>
