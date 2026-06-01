@@ -7,7 +7,7 @@ Source: [`EARLY_CURRICULUM_SCOPE.md`](EARLY_CURRICULUM_SCOPE.md)
 | Stage | Pills label | Student says |
 |-------|-------------|--------------|
 | **1 ù alphabet** (default) | S1 ù letter names | Letter **names** (bee, dee, ù) |
-| **2 ù consonants** | S2 ù consonant sounds | Phoneme only (/b/, /d/, ù) |
+| **2 ? consonants** | S2 ? letter sounds | Consonants (/b/, /d/, ?) + short vowels (ah, eh, ih, aw, uh) |
 | **3 ù short vowels** | S3 ù short vowels (CVC) | CVC words (bat, bit, ù) ù small set for now |
 | Legacy blend groups | Hidden | Original demo lists (`?stage=legacy-cvc`) |
 

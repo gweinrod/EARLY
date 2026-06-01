@@ -79,7 +79,7 @@ const ALPHABET_ITEMS: CurriculumItem[] = [
   { key: 'z', display: 'Z', spokenName: 'zee', phonemeNote: 'name contains /z/', aliases: ['z', 'zee', 'zed'] },
 ];
 
-/** Stage 2  consonant phonemes (letter name as anchor). */
+/** Stage 2 — consonant phonemes + short vowels a, e, i, o, u. */
 /**
  * Letter-writing stage — A–Z then a–z (52 items).
  *
@@ -101,12 +101,59 @@ const LETTER_WRITING_ITEMS: CurriculumItem[] = [
   })),
 ];
 
-const CONSONANT_ITEMS: CurriculumItem[] = ALPHABET_ITEMS.filter((x) => !'aeiou'.includes(x.key)).map((x) => ({
-  ...x,
-  spokenName: x.key,
-  phonemeNote: `phoneme /${x.key}/ (from ${x.spokenName === x.key ? ALPHABET_ITEMS.find((a) => a.key === x.key)?.spokenName : x.spokenName})`,
-  aliases: [x.key, ...(ALPHABET_ITEMS.find((a) => a.key === x.key)?.aliases ?? [])],
-}));
+/** Short vowel phonemes for Letter Sounds (not letter names). */
+const SHORT_VOWEL_SOUND_ITEMS: Record<string, CurriculumItem> = {
+  a: {
+    key: 'a',
+    display: 'A',
+    spokenName: 'ah',
+    phonemeNote: 'short /æ/ (as in apple)',
+    aliases: ['a', 'ah', 'aa'],
+  },
+  e: {
+    key: 'e',
+    display: 'E',
+    spokenName: 'eh',
+    phonemeNote: 'short /ɛ/ (as in egg)',
+    aliases: ['e', 'eh'],
+  },
+  i: {
+    key: 'i',
+    display: 'I',
+    spokenName: 'ih',
+    phonemeNote: 'short /ɪ/ (as in igloo)',
+    aliases: ['i', 'ih', 'it'],
+  },
+  o: {
+    key: 'o',
+    display: 'O',
+    spokenName: 'aw',
+    phonemeNote: 'short /ɒ/ (as in octopus)',
+    aliases: ['o', 'aw'],
+  },
+  u: {
+    key: 'u',
+    display: 'U',
+    spokenName: 'uh',
+    phonemeNote: 'short /ʌ/ (as in umbrella)',
+    aliases: ['u', 'uh'],
+  },
+};
+
+function letterSoundItem(x: CurriculumItem): CurriculumItem {
+  const vowel = SHORT_VOWEL_SOUND_ITEMS[x.key];
+  if (vowel) return vowel;
+  const letterName = ALPHABET_ITEMS.find((a) => a.key === x.key)?.spokenName ?? x.spokenName;
+  return {
+    ...x,
+    spokenName: x.key,
+    phonemeNote: `phoneme /${x.key}/ (not letter name "${letterName}")`,
+    aliases: [x.key, ...(ALPHABET_ITEMS.find((a) => a.key === x.key)?.aliases ?? [])],
+  };
+}
+
+/** Letter Sounds: all consonants + short vowels a, e, i, o, u (A–Z order). */
+const LETTER_SOUND_ITEMS: CurriculumItem[] = ALPHABET_ITEMS.map((x) => letterSoundItem(x));
 
 /** Stage 3  short vowels in CVC (subset; full list expands later). */
 const SHORT_VOWEL_CVC: CurriculumItem[] = [
@@ -128,7 +175,7 @@ export const CURRICULUM_STAGES: Partial<Record<CurriculumStageId, CurriculumStag
     id: 'consonants',
     label: 'Letter Sounds',
     subtitle: '',
-    items: CONSONANT_ITEMS,
+    items: LETTER_SOUND_ITEMS,
   },
   'letter-writing': {
     id: 'letter-writing',

@@ -46,8 +46,8 @@ EMBEDDING_LEN = read_embedding_len()
 # Stage vocabs (must match setVocabularyStage() in src/word-vocabulary.ts)
 SILENCE_KEY = ""
 ALPHABET_KEYS = [*list("abcdefghijklmnopqrstuvwxyz"), SILENCE_KEY]
-# Consonant phonemes only (curriculum consonants stage excludes a, e, i, o, u)
-CONSONANT_KEYS = [*list("bcdfghjklmnpqrstvwxyz"), SILENCE_KEY]
+# Letter sounds: consonants + short vowels a, e, i, o, u (matches curriculum consonants stage)
+CONSONANT_KEYS = [*list("abcdefghijklmnopqrstuvwxyz"), SILENCE_KEY]
 
 STAGE_VOCAB: dict[str, list[str]] = {
     "alphabet": ALPHABET_KEYS,
