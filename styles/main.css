@@ -8,6 +8,7 @@ body {
 }
 
 .container {
+  position: relative;
   max-width: 680px;
   margin: 0 auto;
   padding: 1.25rem 1.25rem 2rem;
@@ -17,11 +18,27 @@ body {
   flex-direction: column;
 }
 
+.app-top-actions {
+  position: absolute;
+  top: max(1.25rem, env(safe-area-inset-top));
+  right: max(1.25rem, env(safe-area-inset-right));
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  max-width: min(100%, 280px);
+}
+
 .portrait-app {
   overflow-x: hidden;
 }
 
-.app-header { margin-bottom: 1rem; }
+.app-header {
+  margin-bottom: 1rem;
+  padding-right: 7.5rem;
+}
 .app-title { font-size: 1.25rem; font-weight: 700; letter-spacing: 0.06em; }
 .app-version {
   font-size: 12px;
@@ -129,26 +146,11 @@ body.ml-debug #netBadge { display: none !important; }
 }
 .collector-actions { margin: 0.5rem 0; display: flex; flex-wrap: wrap; gap: 8px; }
 
-.user-bar-header {
-  display: flex;
-  align-items: flex-start;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 0.35rem;
-}
 .student-display-name {
   font-size: 15px;
   font-weight: 600;
   color: #1e293b;
-  margin: 0;
-  flex: 1;
-}
-.user-bar-actions {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  gap: 8px;
-  flex-shrink: 0;
+  margin: 0 0 0.35rem;
 }
 .teacher-mode-toggle { white-space: nowrap; }
 .btn-logout {

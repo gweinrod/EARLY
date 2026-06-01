@@ -16,6 +16,11 @@
 <body class="portrait-app">
 <div class="container">
 
+  <div class="app-top-actions" aria-label="Account and teacher options">
+    <label class="mode-toggle teacher-mode-toggle"><input type="checkbox" id="teacherMode" /> Teacher mode</label>
+    <button type="button" class="btn-secondary btn-logout" id="btnLogout">Log out</button>
+  </div>
+
   <header class="app-header">
     <h1 class="app-title" id="appTitle">EARLY</h1>
     <p class="app-version" id="appVersion" aria-label="app version"></p>
@@ -37,13 +42,7 @@
   </div>
 
   <div id="collectorPanel" class="collector-panel user-bar">
-    <div class="user-bar-header">
-      <p id="studentDisplayName" class="student-display-name">Student — …</p>
-      <div class="user-bar-actions">
-        <label class="mode-toggle teacher-mode-toggle"><input type="checkbox" id="teacherMode" /> Teacher mode</label>
-        <button type="button" class="btn-secondary btn-logout" id="btnLogout">Log out</button>
-      </div>
-    </div>
+    <p id="studentDisplayName" class="student-display-name">Student — …</p>
     <p id="dataClearStatus" class="data-clear-status" style="display:none"></p>
     <div id="teacherTools" class="teacher-tools" hidden>
       <div class="teacher-toggles">
