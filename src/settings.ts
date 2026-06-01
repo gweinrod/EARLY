@@ -5,6 +5,8 @@ import {
   isKnownStageId,
   isKnownUnitId,
   isStageInUnit,
+  isUnitNavVisible,
+  UNIT_NAV_VISIBLE,
 } from './units';
 
 /** Runtime flags for EARLY Student (classroom iPad vs developer debug). */
@@ -60,6 +62,9 @@ function resolveCurriculum(
   let unit: CurriculumUnitId =
     query.curriculumUnit ?? stored.curriculumUnit ?? 1;
   if (!isKnownUnitId(unit)) unit = 1;
+  if (!isUnitNavVisible(unit)) {
+    unit = UNIT_NAV_VISIBLE[0] ?? 1;
+  }
 
   let stage: CurriculumStageId =
     query.curriculumStage ?? stored.curriculumStage ?? defaultStageForUnit(unit);

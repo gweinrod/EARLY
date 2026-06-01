@@ -8,6 +8,7 @@ export {
   ALL_STAGE_IDS,
   CURRICULUM_UNITS,
   STAGE_PILL_LABEL,
+  UNIT_NAV_VISIBLE,
   UNIT_ORDER,
   defaultStageForUnit,
   getStageIdsForUnit,

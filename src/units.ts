@@ -91,6 +91,13 @@ function hundredStageId(label: (typeof U7_HUNDRED_LABELS)[number]): CurriculumSt
 
 export const UNIT_ORDER: CurriculumUnitId[] = [1, 2, 3, 4, 5, 6, 7];
 
+/** Units shown as pills in the UI (units 2–7 hidden until ready). */
+export const UNIT_NAV_VISIBLE: readonly CurriculumUnitId[] = [1];
+
+export function isUnitNavVisible(unitId: CurriculumUnitId): boolean {
+  return (UNIT_NAV_VISIBLE as readonly number[]).includes(unitId);
+}
+
 export const CURRICULUM_UNITS: Record<CurriculumUnitId, CurriculumUnitDef> = {
   1: {
     id: 1,

@@ -17,7 +17,7 @@ import {
   pickNextItemInOrder,
   pickPreviousItemInOrder,
   STAGE_PILL_LABEL,
-  UNIT_ORDER,
+  UNIT_NAV_VISIBLE,
   defaultStageForUnit,
   getStageIdsForUnit,
   getUnitForStage,
@@ -692,7 +692,7 @@ function renderStagePills(): void {
 function initUnitPills(): void {
   const container = $('unitPillGroup');
   container.innerHTML = '';
-  for (const unitId of UNIT_ORDER) {
+  for (const unitId of UNIT_NAV_VISIBLE) {
     const unit = getUnit(unitId);
     const btn = document.createElement('button');
     btn.type = 'button';
