@@ -1,11 +1,9 @@
 #!/bin/bash
-# VPS: install as /app/deploy-early.sh or /app/deploy_early.sh (chmod +x).
+# VPS: install as /app/deploy_early.sh (chmod +x). Same as deploy-early.sh.
 # Pulls latest main branch, builds dist/, prints deployed commit.
-# Do not run git pull separately before this script.
 set -e
 cd /app/early
 git fetch origin --prune
-# -B main tracks origin/main even if the clone was on a deleted branch
 git checkout -B main origin/main
 git pull origin main
 npm ci
