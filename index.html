@@ -25,21 +25,37 @@
 
   <div id="errBox"></div>
 
-  <div id="collectorPanel" class="collector-panel">
-    <label class="field-label">
-      student ID (anonymous)
-      <input type="text" id="studentId" class="text-input" placeholder="e.g. S12" autocomplete="off" />
-    </label>
-    <p id="dataClearStatus" class="data-clear-status" style="display:none"></p>
-    <div class="teacher-toggles">
-      <label class="mode-toggle"><input type="checkbox" id="debugMode" /> Show Debug</label>
-      <button type="button" class="btn-secondary" id="btnRedoVoiceBank">Record teacher voice (seed)</button>
-      <button type="button" class="btn-secondary" id="btnRedoWritingBank">Record teacher writing (seed)</button>
-      <button type="button" class="btn-secondary" id="btnExportWritingSeed">Export writing seed</button>
+  <div id="loginModal" class="login-modal" role="dialog" aria-modal="true" aria-labelledby="loginModalTitle" style="display:none">
+    <div class="login-modal-card">
+      <h2 id="loginModalTitle" class="login-modal-title">Sign in</h2>
+      <p class="login-modal-lead">Enter your first name to continue.</p>
+      <label class="field-label" for="loginName">Your name</label>
+      <input type="text" id="loginName" class="text-input" autocomplete="name" placeholder="First name" />
+      <p id="loginError" class="login-error" style="display:none" role="alert"></p>
+      <button type="button" class="btn-secondary login-submit" id="btnLogin">Log in</button>
     </div>
-    <div class="collector-actions debug-only">
-      <button type="button" class="btn-secondary btn-danger" id="btnClearServer">Clear Server</button>
-      <button type="button" class="btn-secondary btn-danger" id="btnClearLocal">Clear Device</button>
+  </div>
+
+  <div id="collectorPanel" class="collector-panel user-bar">
+    <div class="user-bar-header">
+      <p id="studentDisplayName" class="student-display-name">Student — …</p>
+      <div class="user-bar-actions">
+        <label class="mode-toggle teacher-mode-toggle"><input type="checkbox" id="teacherMode" /> Teacher mode</label>
+        <button type="button" class="btn-secondary btn-logout" id="btnLogout">Log out</button>
+      </div>
+    </div>
+    <p id="dataClearStatus" class="data-clear-status" style="display:none"></p>
+    <div id="teacherTools" class="teacher-tools" hidden>
+      <div class="teacher-toggles">
+        <label class="mode-toggle teacher-only-tool"><input type="checkbox" id="debugMode" /> Show Debug</label>
+        <button type="button" class="btn-secondary teacher-only-tool" id="btnRedoVoiceBank" hidden>Record teacher voice (seed)</button>
+        <button type="button" class="btn-secondary teacher-only-tool" id="btnRedoWritingBank" hidden>Record teacher writing (seed)</button>
+        <button type="button" class="btn-secondary teacher-only-tool" id="btnExportWritingSeed" hidden>Export writing seed</button>
+      </div>
+      <div class="collector-actions teacher-only-tool">
+        <button type="button" class="btn-secondary btn-danger" id="btnClearServer">Clear Server</button>
+        <button type="button" class="btn-secondary btn-danger" id="btnClearLocal">Clear Device</button>
+      </div>
     </div>
     <div id="legacyToggles" class="teacher-toggles" style="display:none">
       <label class="mode-toggle"><input type="checkbox" id="nonsenseMode" /> nonsense words (legacy)</label>

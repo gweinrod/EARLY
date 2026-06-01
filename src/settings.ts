@@ -12,8 +12,10 @@ import {
 export interface AppSettings {
   /** Show MFCC heatmap, NN bars, technical feedback (off in classroom). */
   showMlDebug: boolean;
-  /** Teacher session logging + agree/disagree (on by default). */
-  collectorMode: boolean;
+  /** Teacher tools: debug, seeds, judgments (off = student mode). */
+  teacherMode: boolean;
+  /** @deprecated Use teacherMode. Loaded for migration only. */
+  collectorMode?: boolean;
   /** @deprecated Hold for legacy mode only. */
   useNonsenseWords: boolean;
   /** Active unit (1–7). */
@@ -28,7 +30,8 @@ function fromQuery(): Partial<AppSettings> {
   const q = new URLSearchParams(window.location.search);
   const out: Partial<AppSettings> = {};
   if (q.has('debug')) out.showMlDebug = q.get('debug') === '1';
-  if (q.has('student')) out.collectorMode = q.get('student') !== '1';
+  if (q.has('teacher')) out.teacherMode = q.get('teacher') === '1';
+  if (q.has('student')) out.teacherMode = q.get('student') !== '1';
   if (q.has('nonsense')) out.useNonsenseWords = q.get('nonsense') === '1';
   if (q.has('unit')) {
     const u = Number(q.get('unit'));
@@ -73,18 +76,23 @@ export function loadSettings(): AppSettings {
   const curriculum = resolveCurriculum(stored, query);
   return {
     showMlDebug: query.showMlDebug ?? stored.showMlDebug ?? false,
-    collectorMode: query.collectorMode ?? stored.collectorMode ?? true,
+    teacherMode:
+      query.teacherMode ??
+      stored.teacherMode ??
+      (stored.collectorMode !== undefined ? stored.collectorMode : false),
     useNonsenseWords: query.useNonsenseWords ?? stored.useNonsenseWords ?? false,
     ...curriculum,
   };
 }
 
 export function saveSettings(settings: AppSettings): void {
-  localStorage.setItem(STORAGE_KEY, JSON.stringify(settings));
+  const { collectorMode: _legacy, ...toSave } = settings;
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(toSave));
 }
 
 export function applySettingsToDocument(settings: AppSettings): void {
-  document.body.classList.toggle('collector-mode', settings.collectorMode);
+  document.body.classList.toggle('teacher-mode', settings.teacherMode);
+  document.body.classList.toggle('collector-mode', settings.teacherMode);
   document.body.classList.toggle('ml-debug', settings.showMlDebug);
-  document.body.classList.toggle('student-face', settings.collectorMode && !settings.showMlDebug);
+  document.body.classList.toggle('student-face', !settings.teacherMode || !settings.showMlDebug);
 }

@@ -1,11 +1,13 @@
 import { APP_VERSION } from './version';
+import { getAuthUser } from './auth';
+import { bootstrapAuth } from './auth-ui';
 import {
   initCollectorPanel,
   promptTeacherJudgment,
   setCloudRefreshHandler,
   setJudgmentCompleteHandler,
-  syncStudentIdField,
 } from './collector-ui';
+import { applyTeacherToolsUi } from './teacher-ui';
 import {
   type CurriculumItem,
   type CurriculumStageId,
@@ -189,7 +191,7 @@ function previousItem(): void {
 }
 
 function displayFeedback(items: DspPrediction['heuristicItems']): void {
-  const shown = settings.collectorMode && !settings.showMlDebug ? toStudentFeedback(items) : items;
+  const shown = settings.teacherMode && !settings.showMlDebug ? toStudentFeedback(items) : items;
   for (const fb of shown) addFB(fb);
 }
 
@@ -380,7 +382,7 @@ function finishAttempt(): void {
   addHistory(curItem.display, heardDisplay, appPass, history);
   showResultBanner(appPass);
 
-  const studentMsg = settings.collectorMode && !settings.showMlDebug
+  const studentMsg = settings.teacherMode && !settings.showMlDebug
     ? acousticStudentMessage(appPass)
     : {
         t: appPass ? ('pass' as const) : ('fail' as const),
@@ -388,9 +390,7 @@ function finishAttempt(): void {
       };
   addFB(studentMsg, true);
 
-  if (settings.collectorMode) {
-    const sidInput = $('studentId') as HTMLInputElement;
-    if (sidInput.value.trim()) setStudentId(sidInput.value);
+  if (settings.teacherMode) {
     const meta = getSessionMeta();
     const attempt = logAttempt({
       studentId: meta.studentId,
@@ -434,7 +434,7 @@ function applyTeacherAcceptAsPass(teacherHeard: string): void {
   renderHistory(history);
   showResultBanner(true);
 
-  if (settings.collectorMode && !settings.showMlDebug) {
+  if (settings.teacherMode && !settings.showMlDebug) {
     addFB(acousticStudentMessage(true), true);
   }
 }
@@ -509,6 +509,7 @@ function applyModelLoadStatus(load: TfInitResult): void {
 
 async function prepareStage(stageId: CurriculumStageId): Promise<void> {
   applyPracticeLayout();
+  applyTeacherToolsUi(settings, stageId);
 
   if (isLetterWritingStage(stageId)) {
     setTargetItem(getStage(stageId).items[0] ?? curItem);
@@ -517,7 +518,7 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
     refreshStageProgress(stageId);
 
     const publishedManifest = await fetchPublishedManifest('letter-writing');
-    if (settings.collectorMode && !isWritingBankComplete() && !publishedManifest) {
+    if (settings.teacherMode && !isWritingBankComplete() && !publishedManifest) {
       await startWritingBootstrap();
       return;
     }
@@ -527,7 +528,7 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
     // Stale published model (e.g. older vocab/class count) — kick collectors
     // back into bootstrap so they can re-record the missing letters.
     if (
-      settings.collectorMode &&
+      settings.teacherMode &&
       publishedManifest &&
       !isLetterWritingModelReady() &&
       !isWritingBankComplete()
@@ -552,7 +553,7 @@ async function prepareStage(stageId: CurriculumStageId): Promise<void> {
       setModelLoadStatus('Could not load shared letter-writing model ? using heuristics', 'warn');
     } else {
       setModelLoadStatus(
-        settings.collectorMode
+        settings.teacherMode
           ? 'Writing model not ready ? record teacher writing seed'
           : 'Letter writing (model loading)',
         'warn',
@@ -591,7 +592,7 @@ function onWritingBootstrapComplete(): void {
 function onVoiceBootstrapComplete(): void {
   void (async () => {
     await ensureDspEngine(curStageId);
-    if (settings.collectorMode) {
+    if (settings.teacherMode) {
       await syncLocalVoiceBankToCloud(curStageId);
     }
     await prepareStage(curStageId);
@@ -722,16 +723,18 @@ function applySettingsUi(): void {
   applySettingsToDocument(settings);
   const debugToggle = $('debugMode') as HTMLInputElement;
   debugToggle.checked = settings.showMlDebug;
+  const teacherToggle = $('teacherMode') as HTMLInputElement;
+  teacherToggle.checked = settings.teacherMode;
   const legacyToggles = $('legacyToggles');
   if (curStageId === 'legacy-cvc') show('legacyToggles');
   else hide('legacyToggles');
 
-  if (settings.collectorMode) show('collectorPanel');
-  else hide('collectorPanel');
-  showStageProgressSection(settings.collectorMode);
+  show('collectorPanel');
+  applyTeacherToolsUi(settings, curStageId);
+  showStageProgressSection(settings.teacherMode);
   hide('netBadge');
   refreshWritingSeedExportButtons();
-  if (settings.collectorMode) {
+  if (settings.teacherMode) {
     refreshLocalTrainingStatus(curStageId);
     refreshStageProgress(curStageId);
   }
@@ -747,8 +750,15 @@ function init(): void {
   applySettingsUi();
   initUnitPills();
   renderStagePills();
-  if (settings.collectorMode) {
-    initCollectorPanel();
+
+  const authUser = getAuthUser();
+  if (authUser) {
+    setStudentId(authUser.userId);
+    setWritingStudentId(authUser.userId);
+  }
+
+  initCollectorPanel();
+  if (settings.teacherMode) {
     setJudgmentCompleteHandler((j) => {
       if (j.agrees) applyTeacherAcceptAsPass(j.teacherHeard);
       void onTeacherJudgment(j);
@@ -758,10 +768,9 @@ function init(): void {
         () => refreshStageProgress(curStageId),
       );
     });
-    const meta = getSessionMeta();
-    syncStudentIdField(meta.studentId);
-    if (meta.studentId) setWritingStudentId(meta.studentId);
-    subscribeCloudSync((s) => {
+  }
+
+  subscribeCloudSync((s) => {
       $('cloudSyncStatus').textContent = formatCloudSyncLine(s, curStageId);
       refreshLocalTrainingStatus(curStageId);
     });
@@ -787,7 +796,7 @@ function init(): void {
       .then(() => flushWritingJudgmentQueue())
       .then(async () => {
         if (
-          settings.collectorMode &&
+          settings.teacherMode &&
           !isLetterWritingStage(curStageId) &&
           isVoiceBankComplete(curStageId)
         ) {
@@ -797,10 +806,16 @@ function init(): void {
         await refreshCloudStats(curStageId, getVoiceBankQueueLength(), { force: true });
         refreshStageProgress(curStageId);
       });
-  }
+
+  $('teacherMode').addEventListener('change', (e) => {
+    settings.teacherMode = (e.target as HTMLInputElement).checked;
+    saveSettings(settings);
+    applySettingsUi();
+  });
 
   initVoiceBootstrapUi({
     getAudioContext,
+    getStageId: () => curStageId,
     onComplete: onVoiceBootstrapComplete,
   });
   initWritingBootstrapUi({ onComplete: onWritingBootstrapComplete });
@@ -816,7 +831,7 @@ function init(): void {
   initLetterWritingUi({
     onAttemptLogged(attempt) {
       refreshStageProgress(curStageId);
-      if (settings.collectorMode) {
+      if (settings.teacherMode) {
         promptWritingTeacherJudgment(attempt);
       }
     },
@@ -856,4 +871,4 @@ function init(): void {
   void prepareStage(curStageId);
 }
 
-init();
+void bootstrapAuth().then(() => init());

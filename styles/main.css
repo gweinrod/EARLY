@@ -129,6 +129,73 @@ body.ml-debug #netBadge { display: none !important; }
 }
 .collector-actions { margin: 0.5rem 0; display: flex; flex-wrap: wrap; gap: 8px; }
 
+.user-bar-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 0.35rem;
+}
+.student-display-name {
+  font-size: 15px;
+  font-weight: 600;
+  color: #1e293b;
+  margin: 0;
+  flex: 1;
+}
+.user-bar-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 8px;
+  flex-shrink: 0;
+}
+.teacher-mode-toggle { white-space: nowrap; }
+.btn-logout {
+  font-size: 13px;
+  padding: 6px 10px;
+}
+.teacher-tools { margin-top: 0.5rem; }
+
+.login-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 1000;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  background: rgba(15, 23, 42, 0.55);
+  padding: 1rem;
+}
+.login-modal[hidden] { display: none !important; }
+.login-modal-card {
+  background: #fff;
+  border-radius: 12px;
+  padding: 1.5rem 1.25rem;
+  max-width: 360px;
+  width: 100%;
+  box-shadow: 0 12px 40px rgba(0, 0, 0, 0.18);
+}
+.login-modal-title {
+  font-size: 1.25rem;
+  font-weight: 700;
+  margin: 0 0 0.35rem;
+}
+.login-modal-lead {
+  font-size: 14px;
+  color: #64748b;
+  margin: 0 0 1rem;
+}
+.login-error {
+  font-size: 13px;
+  color: #b91c1c;
+  margin: 0.5rem 0 0;
+}
+.login-submit {
+  margin-top: 1rem;
+  width: 100%;
+}
+
 .voice-bootstrap {
   background: #eff6ff;
   border: 1px solid #bfdbfe;

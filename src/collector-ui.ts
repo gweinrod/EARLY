@@ -1,7 +1,6 @@
 import type { CurriculumStageId } from './curriculum';
 import { getStage, resolveItemKey } from './curriculum';
-import { setWritingStudentId } from './letter-writing-data';
-import { setStudentId, updateTeacherJudgment, type AttemptLog } from './session-log';
+import { updateTeacherJudgment, type AttemptLog } from './session-log';
 import {
   clearLocalTrainingData,
   clearServerTrainingData,
@@ -76,23 +75,10 @@ async function onClearLocal(): Promise<void> {
 }
 
 export function initCollectorPanel(): void {
-  const studentInput = $('studentId') as HTMLInputElement;
-  const syncStudent = () => {
-    setStudentId(studentInput.value);
-    setWritingStudentId(studentInput.value);
-  };
-  studentInput.addEventListener('change', syncStudent);
-  studentInput.addEventListener('blur', syncStudent);
-
   $('btnHeSaidTarget').addEventListener('click', () => submitHeSaidTarget());
   $('btnClearServer').addEventListener('click', () => void onClearServer());
   $('btnClearLocal').addEventListener('click', () => void onClearLocal());
   hide('judgmentBlock');
-}
-
-export function syncStudentIdField(id: string): void {
-  const el = $('studentId') as HTMLInputElement;
-  if (!el.value) el.value = id;
 }
 
 function targetItemForAttempt(attempt: AttemptLog, stageId: CurriculumStageId) {

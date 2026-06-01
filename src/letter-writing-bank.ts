@@ -95,7 +95,7 @@ const WRITING_SEED_EXPORT_BTN_IDS = ['btnExportWritingSeed', 'btnExportWritingSe
 /** Show export buttons when collector has at least one seeded letter. */
 export function refreshWritingSeedExportButtons(): void {
   const { done } = countWritingBankRecorded();
-  const visible = loadSettings().collectorMode && done > 0;
+  const visible = loadSettings().teacherMode && done > 0;
   for (const id of WRITING_SEED_EXPORT_BTN_IDS) {
     const el = document.getElementById(id);
     if (el) el.style.display = visible ? '' : 'none';

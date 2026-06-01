@@ -45,3 +45,22 @@ BEGIN
     CHECK (kind IN ('calibration', 'voice_bank', 'writing_judgment'));
 EXCEPTION WHEN others THEN NULL;
 END $$;
+
+-- App users (simple login by first name; OAuth later)
+CREATE TABLE IF NOT EXISTS users (
+  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
+  first_name TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE UNIQUE INDEX IF NOT EXISTS users_first_name_lower
+  ON users (LOWER(TRIM(first_name)));
+
+-- Revoked JWT ids (logout)
+CREATE TABLE IF NOT EXISTS revoked_tokens (
+  jti TEXT PRIMARY KEY,
+  user_id UUID REFERENCES users(id) ON DELETE CASCADE,
+  revoked_at TIMESTAMPTZ NOT NULL DEFAULT NOW()
+);
+
+CREATE INDEX IF NOT EXISTS revoked_tokens_user_id ON revoked_tokens (user_id);

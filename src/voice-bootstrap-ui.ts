@@ -24,6 +24,7 @@ let recStream: MediaStream | null = null;
 let listening = false;
 
 let getAudioContext: () => AudioContext;
+let getStageId: () => CurriculumStageId = () => 'alphabet';
 let onComplete: (() => void) | null = null;
 
 export function isVoiceBootstrapActive(): boolean {
@@ -32,9 +33,11 @@ export function isVoiceBootstrapActive(): boolean {
 
 export function initVoiceBootstrapUi(deps: {
   getAudioContext: () => AudioContext;
+  getStageId: () => CurriculumStageId;
   onComplete: () => void;
 }): void {
   getAudioContext = deps.getAudioContext;
+  getStageId = deps.getStageId;
   onComplete = deps.onComplete;
 
   $('btnBootstrapRec').addEventListener('click', () => {
@@ -48,7 +51,7 @@ export function initVoiceBootstrapUi(deps: {
     ) {
       return;
     }
-    void startVoiceBootstrap(stageId, true);
+    void startVoiceBootstrap(getStageId(), true);
   });
 }
 

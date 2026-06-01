@@ -9,6 +9,14 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import express from 'express';
 import pg from 'pg';
+import {
+  authCookieOptions,
+  COOKIE_NAME,
+  DEFAULT_TTL_SEC,
+  parseCookieHeader,
+  signToken,
+  verifyToken,
+} from './auth.mjs';
 
 const REPO_ROOT = path.join(path.dirname(fileURLToPath(import.meta.url)), '..');
 
@@ -253,8 +261,131 @@ function writingJudgmentRejectReason(b) {
 const app = express();
 app.use(express.json({ limit: '256kb' }));
 
+function readAuthToken(req) {
+  const cookies = parseCookieHeader(req.headers.cookie);
+  const fromCookie = cookies[COOKIE_NAME];
+  if (fromCookie) return fromCookie;
+  const auth = req.headers.authorization;
+  if (auth?.startsWith('Bearer ')) return auth.slice(7);
+  return null;
+}
+
+async function isTokenRevoked(jti) {
+  const { rows } = await pool.query(`SELECT 1 FROM revoked_tokens WHERE jti = $1 LIMIT 1`, [jti]);
+  return rows.length > 0;
+}
+
+async function resolveAuth(req) {
+  const token = readAuthToken(req);
+  if (!token) return null;
+  const claims = verifyToken(token);
+  if (!claims) return null;
+  if (await isTokenRevoked(claims.jti)) return null;
+  return claims;
+}
+
+async function findOrCreateUser(firstName) {
+  const name = String(firstName ?? '').trim();
+  if (!name) return null;
+  const { rows: found } = await pool.query(
+    `SELECT id, first_name FROM users WHERE LOWER(TRIM(first_name)) = LOWER(TRIM($1)) LIMIT 1`,
+    [name],
+  );
+  if (found[0]) return found[0];
+  const { rows: created } = await pool.query(
+    `INSERT INTO users (first_name) VALUES ($1) RETURNING id, first_name`,
+    [name],
+  );
+  return created[0];
+}
+
+function setAuthCookie(res, token) {
+  const opts = authCookieOptions();
+  const parts = [
+    `${opts.name}=${encodeURIComponent(token)}`,
+    'HttpOnly',
+    `Path=${opts.path}`,
+    `Max-Age=${opts.maxAge}`,
+    `SameSite=${opts.sameSite}`,
+  ];
+  if (opts.secure) parts.push('Secure');
+  res.setHeader('Set-Cookie', parts.join('; '));
+}
+
+function clearAuthCookie(res) {
+  res.setHeader(
+    'Set-Cookie',
+    `${COOKIE_NAME}=; HttpOnly; Path=/; Max-Age=0; SameSite=Lax`,
+  );
+}
+
 app.get('/health', (_req, res) => {
   res.json({ ok: true });
+});
+
+app.post('/api/auth/login', async (req, res) => {
+  const firstName = req.body?.firstName ?? req.body?.name ?? '';
+  try {
+    const user = await findOrCreateUser(firstName);
+    if (!user) {
+      return res.status(400).json({ error: 'name_required' });
+    }
+    const jti = crypto.randomUUID();
+    const token = signToken({
+      userId: user.id,
+      firstName: user.first_name,
+      jti,
+    });
+    setAuthCookie(res, token);
+    res.status(200).json({
+      userId: user.id,
+      firstName: user.first_name,
+      displayName: user.first_name,
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'login_failed', message: String(e) });
+  }
+});
+
+app.post('/api/auth/logout', async (req, res) => {
+  try {
+    const claims = await resolveAuth(req);
+    if (claims) {
+      await pool.query(
+        `INSERT INTO revoked_tokens (jti, user_id) VALUES ($1, $2) ON CONFLICT (jti) DO NOTHING`,
+        [claims.jti, claims.userId],
+      );
+    }
+    clearAuthCookie(res);
+    res.status(200).json({ ok: true });
+  } catch (e) {
+    res.status(500).json({ error: 'logout_failed', message: String(e) });
+  }
+});
+
+app.get('/api/auth/me', async (req, res) => {
+  try {
+    const claims = await resolveAuth(req);
+    if (!claims) {
+      return res.status(401).json({ error: 'not_authenticated' });
+    }
+    const { rows } = await pool.query(
+      `SELECT id, first_name FROM users WHERE id = $1 LIMIT 1`,
+      [claims.userId],
+    );
+    const user = rows[0];
+    if (!user) {
+      clearAuthCookie(res);
+      return res.status(401).json({ error: 'not_authenticated' });
+    }
+    res.json({
+      userId: user.id,
+      firstName: user.first_name,
+      displayName: user.first_name,
+    });
+  } catch (e) {
+    res.status(500).json({ error: 'auth_failed', message: String(e) });
+  }
 });
 
 app.get('/api/calibration', async (req, res) => {

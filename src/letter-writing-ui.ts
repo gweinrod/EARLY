@@ -336,7 +336,7 @@ async function finaliseAttempt(): Promise<void> {
   lastAttempt = attempt;
   refreshWritingFeedbackDisplay(attempt);
 
-  if (loadSettings().collectorMode) {
+  if (loadSettings().teacherMode) {
     /* judgment buttons wired in letter-writing-judgment-ui */
   } else {
     hide('letterWritingJudgmentBlock');
