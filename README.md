@@ -1,5 +1,7 @@
 # EARLY
 
+**UCLA course project — [Prof-Rosario-UCLA/team1](https://github.com/Prof-Rosario-UCLA/team1)**
+
 Browser-based phoneme pronunciation practice for **iPad in the classroom**. Students hear a target word, speak it, and get simple feedback; the app **silently** records MFCC features and heuristic flags while you log **agree / disagree** judgments for ML training data.
 
 ## Requirements
